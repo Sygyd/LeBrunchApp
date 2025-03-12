@@ -1,5 +1,5 @@
 const bcrypt = require("bcrypt");
-const pool = require("../db");  // Aquí importamos el pool desde el archivo db.js
+const pool = require("./db");  // Aquí importamos el pool desde el archivo db.js
 
 const createUser = async (nombre, apellido, cedula, email, contrasena) => {
   try {
