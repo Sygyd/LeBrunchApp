@@ -16,13 +16,20 @@ class AddDishScreen extends StatefulWidget {
 class _AddDishScreenState extends State<AddDishScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _categoryController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _ingredientsController = TextEditingController();
 
   bool _isAvailable = true; // Estado del switch
-
   PlatformFile? _selectedFile;
+  String? _selectedCategory; // Almacena la categoría seleccionada
+
+  final List<String> _categories = [
+    'Tablas',
+    'Panquecas',
+    'Tostadas francesas',
+    'Gofres',
+    'Omelettes',
+  ];
 
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(
@@ -57,9 +64,9 @@ class _AddDishScreenState extends State<AddDishScreen> {
 
     final dish = {
       'nombre': _nameController.text,
-      'categoria': _categoryController.text,
+      'categoria': _selectedCategory, // Se usa la categoría seleccionada
       'precio': double.tryParse(_priceController.text) ?? 0.0,
-      'disponibilidad': _isAvailable, // Usa el valor del switch
+      'disponibilidad': _isAvailable,
       'ingredientes': _ingredientsController.text.split(','),
     };
 
@@ -89,12 +96,12 @@ class _AddDishScreenState extends State<AddDishScreen> {
   void _clearForm() {
     _formKey.currentState!.reset();
     _nameController.clear();
-    _categoryController.clear();
     _priceController.clear();
     _ingredientsController.clear();
     setState(() {
       _selectedFile = null;
-      _isAvailable = true; // Restablecer el estado del switch
+      _isAvailable = true;
+      _selectedCategory = null; // Restablecer la categoría
     });
   }
 
@@ -117,12 +124,29 @@ class _AddDishScreenState extends State<AddDishScreen> {
                   validator:
                       (value) => value!.isEmpty ? 'Campo requerido' : null,
                 ),
-                TextFormField(
-                  controller: _categoryController,
+                const SizedBox(height: 10),
+
+                DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Categoría'),
+                  value: _selectedCategory,
+                  items:
+                      _categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        );
+                      }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedCategory = value;
+                    });
+                  },
                   validator:
-                      (value) => value!.isEmpty ? 'Campo requerido' : null,
+                      (value) =>
+                          value == null ? 'Seleccione una categoría' : null,
                 ),
+                const SizedBox(height: 10),
+
                 TextFormField(
                   controller: _priceController,
                   decoration: const InputDecoration(labelText: 'Precio'),
@@ -133,6 +157,8 @@ class _AddDishScreenState extends State<AddDishScreen> {
                               ? 'Ingrese un número válido'
                               : null,
                 ),
+                const SizedBox(height: 10),
+
                 SwitchListTile(
                   title: const Text("Disponible"),
                   value: _isAvailable,
@@ -142,6 +168,8 @@ class _AddDishScreenState extends State<AddDishScreen> {
                     });
                   },
                 ),
+                const SizedBox(height: 10),
+
                 TextFormField(
                   controller: _ingredientsController,
                   decoration: const InputDecoration(
@@ -151,6 +179,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
                       (value) => value!.isEmpty ? 'Campo requerido' : null,
                 ),
                 const SizedBox(height: 20),
+
                 ElevatedButton.icon(
                   onPressed: _pickImage,
                   icon: const Icon(Icons.add_a_photo),
@@ -160,6 +189,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
                 _selectedFile != null
                     ? Image.memory(
                       _selectedFile!.bytes!,
@@ -168,6 +198,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
                     )
                     : const Center(child: Text('No se seleccionó imagen')),
                 const SizedBox(height: 20),
+
                 ElevatedButton(
                   onPressed: _submitDish,
                   style: ElevatedButton.styleFrom(
