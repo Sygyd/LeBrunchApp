@@ -3,6 +3,7 @@ import '/UI_Screens/Widgets/custom_scaffold.dart';
 import '/UI_Screens/widgets/welcome_button.dart';
 import '/UI_Screens/Auth_Screens/register.dart';
 import '/UI_Screens/Auth_Screens/login.dart';
+import '/theme/theme.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -63,7 +64,7 @@ class WelcomeScreen extends StatelessWidget {
                       buttonText: 'Registrate',
                       onTap: const RegisterScreen(),
                       color: Colors.white,
-                      textColor: Colors.white,
+                      textColor: lightColorScheme.primary,
                     ),
                   ),
                 ],

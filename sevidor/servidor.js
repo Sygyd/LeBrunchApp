@@ -5,6 +5,7 @@ const pool = require('./db');  // Conexión a PostgreSQL desde db.js
 const userRoutes = require("./login_register");
 const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
+const router = require('./login_register');
 
 
 
@@ -28,7 +29,7 @@ app.listen(3000, '0.0.0.0', () => {
   console.log("Servidor corriendo en http://0.0.0.0:3000");
 });
 
-app.post('/add-dish', async (req, res) => {
+router.post('/add-dish', async (req, res) => {
   const { nombre, categoria, precio, disponibilidad, ingredientes, imagen_url } = req.body;
 
   try {
