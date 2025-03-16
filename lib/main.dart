@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '/theme/theme.dart';
 import '/UI_Screens/Widgets/welcome.dart';
-import '/UI_Screens/Admin_Screens/AddDishScreen.dart';
+import '/UI_Screens/Admin_Screens/MenuScreen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Le Brunch App',
       theme: lightMode,
-      home: AddDishScreen(),
+      home: MenuScreen(),
     );
   }
 }
