@@ -18,11 +18,11 @@ class _MenuScreenState extends State<MenuScreen> {
   List<Map<String, dynamic>> _dishes = [];
 
   final List<Map<String, String>> _categories = [
-    {'name': 'Tablas', 'image': 'assets/tablas.jpg'},
-    {'name': 'Panquecas', 'image': 'assets/panquecas.jpg'},
-    {'name': 'Tostadas francesas', 'image': 'assets/tostadas.jpg'},
-    {'name': 'Gofres', 'image': 'assets/gofres.jpg'},
-    {'name': 'Omelettes', 'image': 'assets/omelettes.jpg'},
+    {'name': 'Tablas', 'image': 'assets/images/tablas.jpg'},
+    {'name': 'Panquecas', 'image': 'assets/images/panquecas.jpg'},
+    {'name': 'Tostadas francesas', 'image': 'assets/images/tostadas.jpg'},
+    {'name': 'Gofres', 'image': 'assets/images/gofres.jpg'},
+    {'name': 'Omelettes', 'image': 'assets/images/omelettes.jpg'},
   ];
 
   @override
@@ -106,14 +106,16 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   Widget _buildDishList() {
-    final filteredDishes = _dishes.where((dish) {
-      final nameMatch = dish['nombre']
-          .toLowerCase()
-          .contains(_searchController.text.toLowerCase());
-      final categoryMatch = _selectedCategory == null ||
-          dish['categoria'] == _selectedCategory;
-      return nameMatch && categoryMatch;
-    }).toList();
+    final filteredDishes =
+        _dishes.where((dish) {
+          final nameMatch = dish['nombre'].toLowerCase().contains(
+            _searchController.text.toLowerCase(),
+          );
+          final categoryMatch =
+              _selectedCategory == null ||
+              dish['categoria'] == _selectedCategory;
+          return nameMatch && categoryMatch;
+        }).toList();
 
     return ListView.builder(
       itemCount: filteredDishes.length,
@@ -128,15 +130,35 @@ class _MenuScreenState extends State<MenuScreen> {
     return Card(
       margin: const EdgeInsets.all(8),
       child: ListTile(
-        leading: Image.network(dish['imagen_url'], width: 50, height: 50),
-        title: Text(dish['nombre']),
-        subtitle: Text('Precio: \$${dish['precio']}'),
+        leading:
+            dish['imagen_url'] != null &&
+                    dish['imagen_url'].toString().isNotEmpty
+                ? Image.network(
+                  dish['imagen_url'],
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                )
+                : const Icon(
+                  Icons.image_not_supported,
+                  size: 50,
+                  color: Colors.grey,
+                ), // Icono si no hay imagen
+
+        title: Text(dish['nombre'] ?? 'Sin nombre'), // Nombre por defecto
+        subtitle: Text(
+          'Precio: \$${dish['precio'] ?? '0.00'}',
+        ), // Precio por defecto
+
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              dish['disponibilidad'] ? Icons.check_circle : Icons.cancel,
-              color: dish['disponibilidad'] ? Colors.green : Colors.red,
+              (dish['disponibilidad'] ?? false)
+                  ? Icons.check_circle
+                  : Icons.cancel,
+              color:
+                  (dish['disponibilidad'] ?? false) ? Colors.green : Colors.red,
             ),
             IconButton(
               icon: const Icon(Icons.edit),
@@ -155,29 +177,25 @@ class _MenuScreenState extends State<MenuScreen> {
     );
   }
 
-void _openAddDishModal() {
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => const AddDishScreen()),
-  ).then((value) {
-    if (value == true) {
-      _fetchDishes();
-    }
-  });
-}
+  void _openAddDishModal() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AddDishScreen()),
+    ).then((value) {
+      if (value == true) {
+        _fetchDishes();
+      }
+    });
+  }
 
-
-void _editDish(Map<String, dynamic> dish) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => AddDishScreen(dish: dish)),
-  ).then((value) {
-    if (value == true) {
-      _fetchDishes();
-    }
-  });
-}
-
-
-
+  void _editDish(Map<String, dynamic> dish) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddDishScreen(dish: dish)),
+    ).then((value) {
+      if (value == true) {
+        _fetchDishes();
+      }
+    });
+  }
 }
