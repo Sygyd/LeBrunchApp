@@ -4,11 +4,14 @@ import 'dart:io';
 import '/Api_services/menu/add_dish_service.dart';
 
 class AddDishScreen extends StatefulWidget {
-  const AddDishScreen({super.key});
+  final Map<String, dynamic>? dish; // Plato opcional para edición
+
+  const AddDishScreen({super.key, this.dish});
 
   @override
   State<AddDishScreen> createState() => _AddDishScreenState();
 }
+
 
 class _AddDishScreenState extends State<AddDishScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -26,6 +29,19 @@ class _AddDishScreenState extends State<AddDishScreen> {
     'Gofres',
     'Omelettes',
   ];
+
+    @override
+  void initState() {
+    super.initState();
+    if (widget.dish != null) {
+      _nameController.text = widget.dish!['nombre'];
+      _priceController.text = widget.dish!['precio'].toString();
+      _ingredientsController.text = widget.dish!['ingredientes'];
+      _selectedCategory = widget.dish!['categoria'];
+      _isAvailable = widget.dish!['disponibilidad'];
+    }
+  }
+
 
   Future<void> _pickImage() async {
     try {

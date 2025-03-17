@@ -39,6 +39,25 @@ router.post("/menu", upload.single("imagen"), async (req, res) => {
   }
 });
 
+
+
+// Ruta para obtener un plato específico por ID
+router.get('/menu/:id', async (req, res) => {
+  try {
+      const { id } = req.params;
+      const result = await pool.query('SELECT * FROM menu WHERE idplato = $1', [id]);
+
+      if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'Plato no encontrado' });
+      }
+
+      res.json(result.rows[0]);
+  } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Error al obtener el plato' });
+  }
+});
+
 // Servir archivos de imagen
 router.use("/uploads", express.static("uploads"));
 

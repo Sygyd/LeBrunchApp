@@ -22,28 +22,48 @@ class MenuService {
       throw Exception('Error de conexión: $e');
     }
   }
-
-        Future<String> updateDish({
+Future<bool> updateDish({
   required String id,
   required String nombre,
   required String categoria,
   required String precio,
   required String disponibilidad,
   required String ingredientes,
-  required File? imagenFile, // Si la imagen es un archivo
+  required File? imagenFile,
 }) async {
-  // Aquí puedes realizar la lógica de actualización de tu plato
-  // Ejemplo de cómo podrías enviar estos datos a tu API
-
-  // Prepara los datos para enviar
-  
-
-  // Llama a tu API para actualizar el plato con los datos
-  // Ejemplo de solicitud HTTP:
   try {
-    
+    var request = http.MultipartRequest(
+      'PUT', // O PATCH si el backend lo requiere
+      Uri.parse('https://panda-central-hyena.ngrok-free.app/menu/$id'),
+    );
+
+    // Agregar campos
+    request.fields['nombre'] = nombre;
+    request.fields['categoria'] = categoria;
+    request.fields['precio'] = precio;
+    request.fields['disponibilidad'] = disponibilidad;
+    request.fields['ingredientes'] = ingredientes;
+
+    // Agregar imagen si se proporciona
+    if (imagenFile != null) {
+      var file = await http.MultipartFile.fromPath(
+        'imagen', // Nombre del campo en el backend
+        imagenFile.path,
+      );
+      request.files.add(file);
+    }
+
+    // Enviar solicitud
+    var response = await request.send();
+
+    // Verificar respuesta
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      throw Exception('Error al actualizar plato: ${await response.stream.bytesToString()}');
+    }
   } catch (e) {
-    print('Error: $e');
+    throw Exception('Error al actualizar plato: $e');
   }
 }
 
