@@ -12,7 +12,6 @@ class AddDishScreen extends StatefulWidget {
   State<AddDishScreen> createState() => _AddDishScreenState();
 }
 
-
 class _AddDishScreenState extends State<AddDishScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
@@ -30,7 +29,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
     'Omelettes',
   ];
 
-    @override
+  @override
   void initState() {
     super.initState();
     if (widget.dish != null) {
@@ -41,7 +40,6 @@ class _AddDishScreenState extends State<AddDishScreen> {
       _isAvailable = widget.dish!['disponibilidad'];
     }
   }
-
 
   Future<void> _pickImage() async {
     try {
@@ -89,7 +87,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Plato agregado exitosamente')),
         );
-        _clearForm();
+        Navigator.pop(context, true);
       }
     } catch (e) {
       ScaffoldMessenger.of(
@@ -98,7 +96,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
     }
   }
 
-  void _clearForm() {
+  /*void _clearForm() {
     _formKey.currentState!.reset();
     _nameController.clear();
     _priceController.clear();
@@ -108,7 +106,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
       _isAvailable = true;
       _selectedCategory = null;
     });
-  }
+  }*/
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +148,12 @@ class _AddDishScreenState extends State<AddDishScreen> {
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor, ingresa el nombre del plato';
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 10),
 
@@ -163,6 +167,12 @@ class _AddDishScreenState extends State<AddDishScreen> {
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor, ingresa el precio';
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 10),
 
@@ -185,6 +195,12 @@ class _AddDishScreenState extends State<AddDishScreen> {
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor, selecciona una categoría';
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 10),
 
@@ -197,6 +213,12 @@ class _AddDishScreenState extends State<AddDishScreen> {
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor, ingresa los ingredientes';
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 10),
 
@@ -232,7 +254,6 @@ class _AddDishScreenState extends State<AddDishScreen> {
                           ),
                           const SizedBox(height: 10),
 
-                          // Vista previa de la imagen seleccionada
                           if (_selectedImage != null)
                             Container(
                               width: 100,

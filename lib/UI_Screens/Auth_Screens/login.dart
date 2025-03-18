@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (_formSignInKey.currentState!.validate()) {
       final response = await http.post(
-        Uri.parse("http://10.0.2.2:3000/login"),
+        Uri.parse('http://192.168.1.121:3000/login'),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "email": _emailController.text,

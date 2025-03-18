@@ -5,7 +5,7 @@ class MenuService {
   Future<List<Map<String, dynamic>>> getDishes() async {
     try {
       final response = await http.get(
-        Uri.parse('https://panda-central-hyena.ngrok-free.app/menu'),
+        Uri.parse('http://192.168.1.121:3000/menu'),
       );
 
       if (response.statusCode == 200) {

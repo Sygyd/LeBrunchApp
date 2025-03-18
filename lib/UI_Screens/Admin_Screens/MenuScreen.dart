@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 //import '/Api_services/menu/get_dishes_service.dart';
 import '/Api_services/menu/menu_service.dart';
 import 'dart:convert';
-
+import 'package:cached_network_image/cached_network_image.dart';
 import 'AddDishScreen.dart';
 
 class MenuScreen extends StatefulWidget {
@@ -32,10 +32,16 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   Future<void> _fetchDishes() async {
-    final data = await MenuService().getDishes();
-    setState(() {
-      _dishes = data;
-    });
+    try {
+      final data = await MenuService().getDishes();
+      setState(() {
+        _dishes = data;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al cargar platos: $e')));
+    }
   }
 
   @override
@@ -131,25 +137,23 @@ class _MenuScreenState extends State<MenuScreen> {
       margin: const EdgeInsets.all(8),
       child: ListTile(
         leading:
-            dish['imagen_url'] != null &&
-                    dish['imagen_url'].toString().isNotEmpty
-                ? Image.network(
-                  dish['imagen_url'],
+            dish['imagen_url'] != null && dish['imagen_url'].isNotEmpty
+                ? CachedNetworkImage(
+                  imageUrl: dish['imagen_url'],
                   width: 50,
                   height: 50,
                   fit: BoxFit.cover,
+                  placeholder:
+                      (context, url) => const CircularProgressIndicator(),
+                  errorWidget: (context, url, error) => const Icon(Icons.error),
                 )
                 : const Icon(
                   Icons.image_not_supported,
                   size: 50,
                   color: Colors.grey,
-                ), // Icono si no hay imagen
-
-        title: Text(dish['nombre'] ?? 'Sin nombre'), // Nombre por defecto
-        subtitle: Text(
-          'Precio: \$${dish['precio'] ?? '0.00'}',
-        ), // Precio por defecto
-
+                ),
+        title: Text(dish['nombre'] ?? 'Sin nombre'),
+        subtitle: Text('Precio: \$${dish['precio']?.toString() ?? '0.00'}'),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

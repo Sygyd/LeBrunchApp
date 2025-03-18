@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
 
 class MenuService {
   Future<bool> submitDish({
@@ -15,9 +14,7 @@ class MenuService {
       // Crear una solicitud multipart
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse(
-          'https://panda-central-hyena.ngrok-free.app/menu',
-        ), // Usa la IP correcta
+        Uri.parse('http://192.168.1.121:3000/menu'),
       );
 
       // Agregar campos del formulario

@@ -26,7 +26,7 @@ router.get("/menu", async (req, res) => {
 // Agregar un nuevo plato al menú
 router.post("/menu", upload.single("imagen"), async (req, res) => {
   const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
-  const imagen_url = req.file ? `http://localhost:3000/uploads/${req.file.filename}` : null;
+  const imagen_url = req.file ? `http://192.168.1.121:3000/uploads/${req.file.filename}` : null; // Usa la IP de tu máquina
 
   try {
     const result = await pool.query(
@@ -39,22 +39,39 @@ router.post("/menu", upload.single("imagen"), async (req, res) => {
   }
 });
 
-
-
 // Ruta para obtener un plato específico por ID
 router.get('/menu/:id', async (req, res) => {
   try {
-      const { id } = req.params;
-      const result = await pool.query('SELECT * FROM menu WHERE idplato = $1', [id]);
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM menu WHERE idplato = $1', [id]);
 
-      if (result.rows.length === 0) {
-          return res.status(404).json({ error: 'Plato no encontrado' });
-      }
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Plato no encontrado' });
+    }
 
-      res.json(result.rows[0]);
+    res.json(result.rows[0]);
   } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Error al obtener el plato' });
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener el plato' });
+  }
+});
+
+// Actualizar un plato existente
+router.put("/menu/:id", upload.single("imagen"), async (req, res) => {
+  const { id } = req.params;
+  const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
+  const imagen_url = req.file
+    ? `http://192.168.1.121:3000/uploads/${req.file.filename}`
+    : null;
+
+  try {
+    const result = await pool.query(
+      "UPDATE menu SET nombre = $1, categoria = $2, precio = $3, disponibilidad = $4, ingredientes = $5, imagen_url = COALESCE($6, imagen_url) WHERE idplato = $7 RETURNING *",
+      [nombre, categoria, precio, disponibilidad, ingredientes, imagen_url, id]
+    );
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

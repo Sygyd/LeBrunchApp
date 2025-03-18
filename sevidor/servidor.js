@@ -8,7 +8,11 @@ const menuRoutes = require("./menu");
 const router = require('./login_register');
 
 
+const ip = '192.168.1.121';
+const port = 3000;
+
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
@@ -24,8 +28,8 @@ app.use(menuRoutes);
   }
 })();
 
-app.listen(3000, '0.0.0.0', () => {
-  console.log("Servidor corriendo en http://0.0.0.0:3000");
+app.listen(port, ip, () => {
+  console.log(`Servidor corriendo en http://${ip}:${port}`);
 });
 
 
