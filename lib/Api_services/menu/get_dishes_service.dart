@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-class MenuService {
+class GetDishesService {
   Future<List<Map<String, dynamic>>> getDishes() async {
     try {
       final response = await http.get(
