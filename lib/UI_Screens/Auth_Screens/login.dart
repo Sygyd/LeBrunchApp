@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '/UI_Screens/Auth_Screens/register.dart';
 import '/UI_Screens/Widgets/custom_scaffold.dart';
+import '/UI_Screens/Admin_Screens/MenuScreen.dart'; // Importamos MenuScreen
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -34,6 +35,11 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: Text("Bienvenido, ${data['nombre']} ${data['apellido']}"),
           ),
+        );
+        // Navegar a MenuScreen después de un inicio de sesión exitoso
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MenuScreen()),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
