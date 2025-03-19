@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-//import '/Api_services/menu/get_dishes_service.dart';
-import '/Api_services/menu/menu_service.dart';
-import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
+import '/Api_services/menu/get_dishes_service.dart'; // Importa el servicio correcto
+import '/Api_services/menu/add_dish_service.dart'; // Importa el servicio para eliminar
 import 'AddDishScreen.dart';
 
 class MenuScreen extends StatefulWidget {
@@ -33,7 +32,7 @@ class _MenuScreenState extends State<MenuScreen> {
 
   Future<void> _fetchDishes() async {
     try {
-      final data = await MenuService().getDishes();
+      final data = await GetDishesService().getDishes();
       setState(() {
         _dishes = data;
       });
@@ -41,6 +40,50 @@ class _MenuScreenState extends State<MenuScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al cargar platos: $e')));
+    }
+  }
+
+  Future<void> _deleteDish(String id) async {
+    // Mostrar un diálogo de confirmación
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Eliminar Plato'),
+          content: const Text(
+            '¿Estás seguro de que deseas eliminar este plato?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Si el usuario confirma la eliminación
+    if (confirm == true) {
+      try {
+        final addDishService = AddDishService();
+        final isSuccess = await addDishService.deleteDish(id);
+
+        if (isSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Plato eliminado exitosamente')),
+          );
+          _fetchDishes(); // Actualizar la lista de platos
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al eliminar plato: $e')));
+      }
     }
   }
 
@@ -155,7 +198,9 @@ class _MenuScreenState extends State<MenuScreen> {
         title: Text(dish['nombre'] ?? 'Sin nombre'),
         subtitle: Text('Precio: \$${dish['precio']?.toString() ?? '0.00'}'),
         trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+              MainAxisSize
+                  .min, // Asegura que el Row ocupe solo el espacio necesario
           children: [
             Icon(
               (dish['disponibilidad'] ?? false)
@@ -164,9 +209,15 @@ class _MenuScreenState extends State<MenuScreen> {
               color:
                   (dish['disponibilidad'] ?? false) ? Colors.green : Colors.red,
             ),
+            const SizedBox(width: 8), // Espacio entre los iconos
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => _editDish(dish),
+            ),
+            //const SizedBox(width: 8), // Espacio entre los iconos
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _deleteDish(dish['idplato'].toString()),
             ),
           ],
         ),

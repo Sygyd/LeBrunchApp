@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '/Api_services/menu/add_dish_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '/Api_services/menu/add_dish_service.dart'; // Importa el servicio correcto
 
 class AddDishScreen extends StatefulWidget {
   final Map<String, dynamic>? dish; // Plato opcional para edición
@@ -33,6 +34,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
   void initState() {
     super.initState();
     if (widget.dish != null) {
+      // Si se está editando un plato, cargar sus datos
       _nameController.text = widget.dish!['nombre'];
       _priceController.text = widget.dish!['precio'].toString();
       _ingredientsController.text = widget.dish!['ingredientes'];
@@ -65,48 +67,50 @@ class _AddDishScreenState extends State<AddDishScreen> {
   Future<void> _submitDish() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecciona una imagen')),
-      );
-      return;
-    }
-
-    final menuService = MenuService();
+    final addDishService = AddDishService();
     try {
-      final isSuccess = await menuService.submitDish(
-        nombre: _nameController.text,
-        categoria: _selectedCategory ?? '',
-        precio: _priceController.text,
-        disponibilidad: _isAvailable.toString(),
-        ingredientes: _ingredientsController.text,
-        imagenFile: _selectedImage,
-      );
+      bool isSuccess;
+      if (widget.dish != null) {
+        // Si se está editando un plato, usar updateDish
+        isSuccess = await addDishService.updateDish(
+          id: widget.dish!['idplato'].toString(),
+          nombre: _nameController.text,
+          categoria: _selectedCategory ?? '',
+          precio: _priceController.text,
+          disponibilidad: _isAvailable.toString(),
+          ingredientes: _ingredientsController.text,
+          imagenFile: _selectedImage,
+        );
+      } else {
+        // Si se está agregando un plato, usar submitDish
+        isSuccess = await addDishService.submitDish(
+          nombre: _nameController.text,
+          categoria: _selectedCategory ?? '',
+          precio: _priceController.text,
+          disponibilidad: _isAvailable.toString(),
+          ingredientes: _ingredientsController.text,
+          imagenFile: _selectedImage,
+        );
+      }
 
       if (isSuccess) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Plato agregado exitosamente')),
+          SnackBar(
+            content: Text(
+              widget.dish != null
+                  ? 'Plato editado exitosamente'
+                  : 'Plato agregado exitosamente',
+            ),
+          ),
         );
-        Navigator.pop(context, true);
+        Navigator.pop(context, true); // Regresar a la pantalla anterior
       }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error al agregar plato: $e')));
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
-
-  /*void _clearForm() {
-    _formKey.currentState!.reset();
-    _nameController.clear();
-    _priceController.clear();
-    _ingredientsController.clear();
-    setState(() {
-      _selectedImage = null;
-      _isAvailable = true;
-      _selectedCategory = null;
-    });
-  }*/
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +122,7 @@ class _AddDishScreenState extends State<AddDishScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Menu',
+              'Menú',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -247,27 +251,74 @@ class _AddDishScreenState extends State<AddDishScreen> {
                           ElevatedButton.icon(
                             onPressed: _pickImage,
                             icon: const Icon(Icons.add_a_photo),
-                            label: const Text('Añadir Imagen'),
+                            label: Text(
+                              widget.dish != null
+                                  ? 'Cambiar Imagen'
+                                  : 'Añadir Imagen',
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.grey[700],
                             ),
                           ),
                           const SizedBox(height: 10),
 
+                          // Mostrar la imagen actual si se está editando
+                          if (widget.dish != null &&
+                              widget.dish!['imagen_url'] != null)
+                            Column(
+                              children: [
+                                const Text(
+                                  'Imagen actual:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                CachedNetworkImage(
+                                  imageUrl: widget.dish!['imagen_url'],
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                  placeholder:
+                                      (context, url) =>
+                                          const CircularProgressIndicator(),
+                                  errorWidget:
+                                      (context, url, error) =>
+                                          const Icon(Icons.error),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                            ),
+
+                          // Mostrar la nueva imagen seleccionada
                           if (_selectedImage != null)
-                            Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Image.file(
-                                _selectedImage!,
-                                fit: BoxFit.cover,
-                              ),
+                            Column(
+                              children: [
+                                const Text(
+                                  'Nueva imagen:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Container(
+                                  width: 100,
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Image.file(
+                                    _selectedImage!,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
                             )
-                          else
+                          else if (widget.dish == null)
                             const Text(
                               'No se ha seleccionado ninguna imagen',
                               style: TextStyle(
@@ -275,7 +326,6 @@ class _AddDishScreenState extends State<AddDishScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                          const SizedBox(height: 10),
 
                           Center(
                             child: ElevatedButton(
@@ -283,8 +333,8 @@ class _AddDishScreenState extends State<AddDishScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                               ),
-                              child: const Text(
-                                'GUARDAR',
+                              child: Text(
+                                widget.dish != null ? 'EDITAR' : 'GUARDAR',
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),

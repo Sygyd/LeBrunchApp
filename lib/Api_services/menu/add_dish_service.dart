@@ -98,4 +98,20 @@ class AddDishService {
       throw Exception('Error al actualizar plato: $e');
     }
   }
+
+  Future<bool> deleteDish(String id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('http://192.168.1.121:3000/menu/$id'),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        throw Exception('Error al eliminar plato: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error de conexión: $e');
+    }
+  }
 }
