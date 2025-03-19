@@ -13,7 +13,7 @@ class MenuScreen extends StatefulWidget {
 
 class _MenuScreenState extends State<MenuScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String? _selectedCategory;
+  List<String> _selectedCategories = []; // Lista de categorías seleccionadas
   List<Map<String, dynamic>> _dishes = [];
 
   final List<Map<String, String>> _categories = [
@@ -41,6 +41,22 @@ class _MenuScreenState extends State<MenuScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error al cargar platos: $e')));
     }
+  }
+
+  // Método para manejar la selección de categorías
+  void _toggleCategory(String category) {
+    setState(() {
+      if (_selectedCategories.contains(category)) {
+        _selectedCategories.remove(category); // Desactivar la categoría
+      } else {
+        _selectedCategories.add(category); // Activar la categoría
+      }
+    });
+  }
+
+  // Método para verificar si una categoría está activa
+  bool _isCategoryActive(String category) {
+    return _selectedCategories.contains(category);
   }
 
   Future<void> _deleteDish(String id) async {
@@ -125,8 +141,10 @@ class _MenuScreenState extends State<MenuScreen> {
         itemCount: _categories.length,
         itemBuilder: (context, index) {
           final category = _categories[index];
+          final isActive = _isCategoryActive(category['name']!);
+
           return GestureDetector(
-            onTap: () => setState(() => _selectedCategory = category['name']),
+            onTap: () => _toggleCategory(category['name']!),
             child: Container(
               margin: const EdgeInsets.all(8),
               width: 120,
@@ -136,6 +154,13 @@ class _MenuScreenState extends State<MenuScreen> {
                   fit: BoxFit.cover,
                 ),
                 borderRadius: BorderRadius.circular(10),
+                border:
+                    isActive
+                        ? Border.all(
+                          color: Colors.teal,
+                          width: 3,
+                        ) // Borde si está activo
+                        : null, // Sin borde si no está activo
               ),
               child: Center(
                 child: Text(
@@ -160,9 +185,12 @@ class _MenuScreenState extends State<MenuScreen> {
           final nameMatch = dish['nombre'].toLowerCase().contains(
             _searchController.text.toLowerCase(),
           );
+
+          // Si no hay categorías seleccionadas o están todas seleccionadas, mostrar todos los platos
           final categoryMatch =
-              _selectedCategory == null ||
-              dish['categoria'] == _selectedCategory;
+              _selectedCategories.isEmpty ||
+              _selectedCategories.contains(dish['categoria']);
+
           return nameMatch && categoryMatch;
         }).toList();
 
