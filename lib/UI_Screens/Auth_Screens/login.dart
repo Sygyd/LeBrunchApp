@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '/UI_Screens/Auth_Screens/register.dart';
 import '/UI_Screens/Widgets/custom_scaffold.dart';
-import '/UI_Screens/Admin_Screens/MenuScreen.dart'; // Importamos MenuScreen
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,16 +31,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Bienvenido, ${data['nombre']} ${data['apellido']}"),
-          ),
-        );
-        // Navegar a MenuScreen después de un inicio de sesión exitoso
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MenuScreen()),
-        );
+        final token = data['token']; // Token de autenticación
+        final rol = int.parse(
+          data['rol'].toString(),
+        ); // Asegurarse de que el rol sea un int
+
+        // Guardar el token y el rol en SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', token);
+        await prefs.setInt('user_rol', rol);
+
+        // Redirigir al usuario según su rol
+        if (rol == 0) {
+          // Rol 0: Administrador
+          Navigator.pushReplacementNamed(context, '/menu');
+        } else if (rol == 1) {
+          // Rol 1: Cliente
+          Navigator.pushReplacementNamed(context, '/client');
+        } else {
+          // Rol desconocido
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Rol de usuario no válido")),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Credenciales incorrectas")),
@@ -125,12 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const Text('¿No tienes cuenta? '),
                           GestureDetector(
                             onTap:
-                                () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (e) => const RegisterScreen(),
-                                  ),
-                                ),
+                                () => Navigator.pushNamed(context, '/register'),
                             child: const Text(
                               'Regístrate',
                               style: TextStyle(

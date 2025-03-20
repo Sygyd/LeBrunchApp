@@ -26,14 +26,11 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, contrasena } = req.body;
-    
+
     // Validación de los datos de entrada
     if (!email || !contrasena) {
       return res.status(400).json({ error: "Por favor, ingrese ambos campos." });
     }
-
-    console.log("🔹 Email recibido:", email);
-    console.log("🔹 Contraseña recibida:", contrasena);
 
     // Consulta en la base de datos
     const { rows } = await pool.query(
@@ -44,29 +41,24 @@ router.post("/login", async (req, res) => {
       [email]
     );
 
-    // Verificamos si la consulta devolvió resultados
     if (rows.length === 0) {
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
-    // Asignamos la variable 'usuario' solo si la consulta fue exitosa
     const usuario = rows[0];
-    console.log("🔹 Usuario encontrado:", usuario);
 
-    // Comparación de la contraseña ingresada con la guardada en la base de datos
+    // Comparación de la contraseña
     const passwordMatch = await bcrypt.compare(contrasena, usuario.contrasena);
 
     if (!passwordMatch) {
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
-    console.log("✅ Contraseña válida");
-
     // Generar el token JWT
     const token = jwt.sign(
-      { id: usuario.idpersona, rol: usuario.rol },  // Datos que deseas almacenar en el token
-      'monito',  // Cambia esto por una clave secreta segura
-      { expiresIn: '1h' }  // Expiración del token (1 hora en este caso)
+      { id: usuario.idpersona, rol: usuario.rol },
+      'monito',
+      { expiresIn: '1h' }
     );
 
     // Respuesta con el token y los datos del usuario
@@ -75,11 +67,24 @@ router.post("/login", async (req, res) => {
       id: usuario.idpersona,
       nombre: usuario.nombre,
       apellido: usuario.apellido,
-      rol: usuario.rol
+      rol: usuario.rol, // Aquí devuelves el rol del usuario
     });
 
   } catch (error) {
     console.error("❌ Error en login:", error);
+    return res.status(500).json({ error: "Error en el servidor" });
+  }
+});
+
+router.post("/logout", (req, res) => {
+  try {
+    // Aquí puedes invalidar el token si es necesario
+    // Por ejemplo, podrías agregar el token a una lista negra si estás usando JWT
+
+    // Respuesta exitosa
+    return res.status(200).json({ message: "Sesión cerrada exitosamente" });
+  } catch (error) {
+    console.error("Error al cerrar sesión:", error);
     return res.status(500).json({ error: "Error en el servidor" });
   }
 });

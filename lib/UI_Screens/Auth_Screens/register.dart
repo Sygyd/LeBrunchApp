@@ -23,37 +23,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController contrasenaController = TextEditingController();
 
-  // Función para registrar usuario
-  void registerUser() async {
-    if (_formSignupKey.currentState!.validate() && agreePersonalData) {
-      User user = User(
+  Future<void> _register() async {
+    if (_formSignupKey.currentState!.validate()) {
+      final user = User(
         nombre: nombreController.text,
         apellido: apellidoController.text,
         cedula: cedulaController.text,
         email: emailController.text,
-        contrasena: contrasenaController.text, // Aquí se envía la contraseña
+        contrasena: contrasenaController.text,
       );
 
-      bool success = await ApiService.registerUser(user);
+      final success = await ApiService.registerUser(user);
+
       if (success) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Registro exitoso")));
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
+        Navigator.pushReplacementNamed(context, '/login');
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("Error al registrar")));
+        ).showSnackBar(const SnackBar(content: Text("Error en el registro")));
       }
-    } else if (!agreePersonalData) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor aprueba enviar tu información'),
-        ),
-      );
     }
   }
 
@@ -62,7 +50,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return CustomScaffold(
       child: Column(
         children: [
-          const Expanded(flex: 1, child: SizedBox(height: 10)),
           Expanded(
             flex: 7,
             child: Container(
@@ -78,170 +65,120 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Form(
                   key: _formSignupKey,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        'Crea tu cuenta',
+                      const Text(
+                        'Regístrate',
                         style: TextStyle(
                           fontSize: 30.0,
                           fontWeight: FontWeight.w900,
-                          color: lightColorScheme.primary,
                         ),
                       ),
                       const SizedBox(height: 40.0),
-
-                      // Campo Nombre
                       TextFormField(
                         controller: nombreController,
                         validator:
                             (value) =>
-                                value!.isEmpty ? 'Ingresa tu nombre' : null,
+                                value == null || value.isEmpty
+                                    ? 'Ingresa tu nombre'
+                                    : null,
                         decoration: InputDecoration(
-                          label: const Text('Nombre'),
-                          hintText: 'Ingresa tu nombre',
-                          hintStyle: const TextStyle(color: Colors.black26),
+                          labelText: 'Nombre',
+                          hintText: 'Nombre',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                       const SizedBox(height: 25.0),
-
-                      // Campo Apellido
                       TextFormField(
                         controller: apellidoController,
                         validator:
                             (value) =>
-                                value!.isEmpty ? 'Ingresa tu apellido' : null,
+                                value == null || value.isEmpty
+                                    ? 'Ingresa tu apellido'
+                                    : null,
                         decoration: InputDecoration(
-                          label: const Text('Apellido'),
-                          hintText: 'Ingresa tu apellido',
-                          hintStyle: const TextStyle(color: Colors.black26),
+                          labelText: 'Apellido',
+                          hintText: 'Apellido',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                       const SizedBox(height: 25.0),
-
-                      // Campo Cédula
                       TextFormField(
                         controller: cedulaController,
                         validator:
                             (value) =>
-                                value!.isEmpty ? 'Ingresa tu cédula' : null,
+                                value == null || value.isEmpty
+                                    ? 'Ingresa tu cédula'
+                                    : null,
                         decoration: InputDecoration(
-                          label: const Text('Cédula'),
-                          hintText: 'Número de cédula',
-                          hintStyle: const TextStyle(color: Colors.black26),
+                          labelText: 'Cédula',
+                          hintText: 'Cédula',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                       const SizedBox(height: 25.0),
-
-                      // Campo Correo
                       TextFormField(
                         controller: emailController,
                         validator:
                             (value) =>
-                                value!.isEmpty ? 'Ingresa tu correo' : null,
+                                value == null || value.isEmpty
+                                    ? 'Ingresa tu email'
+                                    : null,
                         decoration: InputDecoration(
-                          label: const Text('Correo'),
-                          hintText: 'Correo electrónico',
-                          hintStyle: const TextStyle(color: Colors.black26),
+                          labelText: 'Email',
+                          hintText: 'Email',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                       const SizedBox(height: 25.0),
-
-                      // Campo Contraseña
                       TextFormField(
                         controller: contrasenaController,
                         obscureText: true,
-                        obscuringCharacter: '*',
                         validator:
                             (value) =>
-                                value!.isEmpty ? 'Ingresa tu contraseña' : null,
+                                value == null || value.isEmpty
+                                    ? 'Ingresa tu contraseña'
+                                    : null,
                         decoration: InputDecoration(
-                          label: const Text('Contraseña'),
+                          labelText: 'Contraseña',
                           hintText: 'Contraseña',
-                          hintStyle: const TextStyle(color: Colors.black26),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
                       const SizedBox(height: 25.0),
-
-                      // Checkbox de aprobación de datos
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: agreePersonalData,
-                            onChanged: (bool? value) {
-                              setState(() {
-                                agreePersonalData = value!;
-                              });
-                            },
-                            activeColor: lightColorScheme.primary,
-                          ),
-                          const Text(
-                            'Yo apruebo enviar mi ',
-                            style: TextStyle(color: Colors.black45),
-                          ),
-                          Text(
-                            'información personal',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: lightColorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 25.0),
-
-                      // Botón de registro
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: registerUser,
-                          child: const Text('Registrarse'),
+                          onPressed: _register,
+                          child: const Text('Registrar'),
                         ),
                       ),
-                      const SizedBox(height: 30.0),
-
-                      // ¿Ya tienes una cuenta?
+                      const SizedBox(height: 25.0),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            '¿Ya tienes una cuenta?',
-                            style: TextStyle(color: Colors.black45),
-                          ),
+                          const Text('¿Ya tienes cuenta? '),
                           GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (e) => const LoginScreen(),
-                                ),
-                              );
-                            },
-                            child: Text(
-                              ' Inicia sesión!',
+                            onTap: () => Navigator.pushNamed(context, '/login'),
+                            child: const Text(
+                              'Inicia sesión',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: lightColorScheme.primary,
+                                color: Colors.blue,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20.0),
                     ],
                   ),
                 ),

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AddDishService {
   // Método para agregar un nuevo plato
@@ -12,10 +13,16 @@ class AddDishService {
     required File? imagenFile,
   }) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('http://192.168.1.121:3000/menu'),
       );
+
+      // Agregar el token en los headers
+      request.headers['Authorization'] = 'Bearer $token';
 
       // Agregar campos del formulario
       request.fields['nombre'] = nombre;

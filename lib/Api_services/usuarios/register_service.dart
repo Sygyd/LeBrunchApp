@@ -4,7 +4,7 @@ import '/models/user.dart';
 
 class ApiService {
   static const String apiUrl =
-      "http://10.0.2.2:3000"; // Cambia la IP según tu servidor
+      "http://192.168.1.121:3000"; // Cambia la IP según tu servidor
 
   // Registrar usuario
   static Future<bool> registerUser(User user) async {

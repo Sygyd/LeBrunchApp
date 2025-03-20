@@ -1,9 +1,8 @@
 const bcrypt = require("bcrypt");
-const pool = require("./db");  // Aquí importamos el pool desde el archivo db.js
+const pool = require("./db");
 
 const createUser = async (nombre, apellido, cedula, email, contrasena) => {
   try {
-    // Hasheando la contraseña antes de guardarla en la base de datos
     const hashedPassword = await bcrypt.hash(contrasena, 10);
 
     const { rows: personas } = await pool.query(
@@ -15,7 +14,7 @@ const createUser = async (nombre, apellido, cedula, email, contrasena) => {
 
     const { rows } = await pool.query(
       "INSERT INTO usuario (idpersona, contrasena, rol) VALUES ($1, $2, $3) RETURNING *",
-      [idpersonas, hashedPassword, 1]
+      [idpersonas, hashedPassword, 1] // Asignar rol 1 por defecto
     );
 
     return rows[0];
@@ -25,4 +24,4 @@ const createUser = async (nombre, apellido, cedula, email, contrasena) => {
   }
 };
 
-module.exports = { createUser};
+module.exports = { createUser };

@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '/Api_services/menu/get_dishes_service.dart'; // Importa el servicio correcto
-import '/Api_services/menu/add_dish_service.dart'; // Importa el servicio para eliminar
+import '/Api_services/menu/get_dishes_service.dart';
+import '/Api_services/menu/add_dish_service.dart';
 import 'AddDishScreen.dart';
+import '/UI_Screens/Widgets/welcome.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '/UI_Screens/Widgets/custom_bottom_navigation_bar.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
+
+  Future<int?> getUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('user_rol'); // Devuelve el rol del usuario (0 o 1)
+  }
 
   @override
   State<MenuScreen> createState() => _MenuScreenState();
@@ -103,18 +112,104 @@ class _MenuScreenState extends State<MenuScreen> {
     }
   }
 
+  void _logout() async {
+    // Mostrar un diálogo de confirmación
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cerrar sesión'),
+          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+          actions: [
+            TextButton(
+              onPressed:
+                  () => Navigator.pop(context, false), // No cerrar sesión
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true), // Cerrar sesión
+              child: const Text('Cerrar sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Si el usuario confirma el cierre de sesión
+    if (confirm == true) {
+      try {
+        // Llamar al backend para cerrar sesión
+        final response = await http.post(
+          Uri.parse('http://192.168.1.121:3000/logout'),
+          headers: {"Content-Type": "application/json"},
+        );
+
+        if (response.statusCode == 200) {
+          // Limpiar el estado local (por ejemplo, eliminar el token de autenticación)
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('auth_token'); // Elimina el token almacenado
+
+          // Redirigir al usuario a la pantalla de bienvenida
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+          );
+        } else {
+          // Mostrar un mensaje de error si el cierre de sesión falla
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Error al cerrar sesión")),
+          );
+        }
+      } catch (e) {
+        // Manejar errores de conexión
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Menú')),
-      body: Column(
-        children: [
-          _buildSearchBar(),
-          _buildCategoryCarousel(),
-          Expanded(child: _buildDishList()),
-          _buildAddButton(),
-        ],
-      ),
+    return FutureBuilder<int?>(
+      future: widget.getUserRole(), // Obtener el rol del usuario
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const CircularProgressIndicator(); // Muestra un indicador de carga
+        }
+
+        final userRole = snapshot.data;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Menú'),
+            automaticallyImplyLeading: false,
+            actions: [
+              if (userRole ==
+                  0) // Solo muestra el botón de cerrar sesión si es admin
+                IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+            ],
+          ),
+          body: Column(
+            children: [
+              _buildSearchBar(),
+              _buildCategoryCarousel(),
+              Expanded(child: _buildDishList(userRole)),
+            ],
+          ),
+          floatingActionButton:
+              userRole ==
+                      0 // Solo muestra el botón de agregar si es admin
+                  ? FloatingActionButton(
+                    onPressed: _openAddDishModal,
+                    child: const Icon(Icons.add),
+                  )
+                  : null, // Oculta el botón si no es admin
+          bottomNavigationBar: CustomBottomNavigationBar(
+            userRole: userRole ?? 1,
+          ), // Añadir la barra de navegación inferior
+        );
+      },
     );
   }
 
@@ -179,7 +274,7 @@ class _MenuScreenState extends State<MenuScreen> {
     );
   }
 
-  Widget _buildDishList() {
+  Widget _buildDishList(int? userRole) {
     final filteredDishes =
         _dishes.where((dish) {
           final nameMatch = dish['nombre'].toLowerCase().contains(
@@ -198,12 +293,12 @@ class _MenuScreenState extends State<MenuScreen> {
       itemCount: filteredDishes.length,
       itemBuilder: (context, index) {
         final dish = filteredDishes[index];
-        return _buildDishCard(dish);
+        return _buildDishCard(dish, userRole);
       },
     );
   }
 
-  Widget _buildDishCard(Map<String, dynamic> dish) {
+  Widget _buildDishCard(Map<String, dynamic> dish, int? userRole) {
     return Card(
       margin: const EdgeInsets.all(8),
       child: ListTile(
@@ -225,30 +320,43 @@ class _MenuScreenState extends State<MenuScreen> {
                 ),
         title: Text(dish['nombre'] ?? 'Sin nombre'),
         subtitle: Text('Precio: \$${dish['precio']?.toString() ?? '0.00'}'),
-        trailing: Row(
-          mainAxisSize:
-              MainAxisSize
-                  .min, // Asegura que el Row ocupe solo el espacio necesario
-          children: [
-            Icon(
-              (dish['disponibilidad'] ?? false)
-                  ? Icons.check_circle
-                  : Icons.cancel,
-              color:
-                  (dish['disponibilidad'] ?? false) ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 8), // Espacio entre los iconos
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _editDish(dish),
-            ),
-            //const SizedBox(width: 8), // Espacio entre los iconos
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _deleteDish(dish['idplato'].toString()),
-            ),
-          ],
-        ),
+        trailing:
+            userRole == 0
+                ? Row(
+                  mainAxisSize:
+                      MainAxisSize
+                          .min, // Asegura que el Row ocupe solo el espacio necesario
+                  children: [
+                    Icon(
+                      (dish['disponibilidad'] ?? false)
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                      color:
+                          (dish['disponibilidad'] ?? false)
+                              ? Colors.green
+                              : Colors.red,
+                    ),
+                    const SizedBox(width: 8), // Espacio entre los iconos
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: () => _editDish(dish),
+                    ),
+                    //const SizedBox(width: 8), // Espacio entre los iconos
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteDish(dish['idplato'].toString()),
+                    ),
+                  ],
+                )
+                : Icon(
+                  (dish['disponibilidad'] ?? false)
+                      ? Icons.check_circle
+                      : Icons.cancel,
+                  color:
+                      (dish['disponibilidad'] ?? false)
+                          ? Colors.green
+                          : Colors.red,
+                ), // Oculta las opciones si no es admin
       ),
     );
   }
