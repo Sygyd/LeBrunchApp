@@ -41,9 +41,19 @@ class MyApp extends StatelessWidget {
           case '/menu':
             return MaterialPageRoute(builder: (context) => const MenuScreen());
           case '/client':
-            return MaterialPageRoute(
-              builder: (context) => const ClientHomeScreen(),
-            );
+            if (settings.arguments != null &&
+                settings.arguments is Map<String, dynamic>) {
+              final args = settings.arguments as Map<String, dynamic>;
+              return MaterialPageRoute(
+                builder:
+                    (context) => ClientHomeScreen(userName: args['userName']),
+              );
+            } else {
+              return MaterialPageRoute(
+                builder:
+                    (context) => const ClientHomeScreen(userName: 'Cliente'),
+              );
+            }
           case '/report':
             return MaterialPageRoute(
               builder: (context) => const ReportScreen(),
