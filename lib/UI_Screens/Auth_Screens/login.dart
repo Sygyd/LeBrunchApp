@@ -14,50 +14,62 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formSignInKey = GlobalKey<FormState>();
-  bool rememberPassword = true;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   Future<void> _login() async {
     if (_formSignInKey.currentState!.validate()) {
-      final response = await http.post(
-        Uri.parse('http://192.168.1.121:3000/login'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": _emailController.text,
-          "contrasena": _passwordController.text,
-        }),
-      );
+      try {
+        final response = await http.post(
+          Uri.parse('http://192.168.1.121:3000/login'),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "email": _emailController.text,
+            "contrasena": _passwordController.text,
+          }),
+        );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final token = data['token']; // Token de autenticación
-        final rol = int.parse(
-          data['rol'].toString(),
-        ); // Asegurarse de que el rol sea un int
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final token = data['token']; // Token de autenticación
+          final rol = int.parse(
+            data['rol'].toString(),
+          ); // Asegurarse de que el rol sea un int
 
-        // Guardar el token y el rol en SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', token);
-        await prefs.setInt('user_rol', rol);
+          // Guardar el token y el rol en SharedPreferences
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('auth_token', token);
+          await prefs.setInt('user_rol', rol);
 
-        // Redirigir al usuario según su rol
-        if (rol == 0) {
-          // Rol 0: Administrador
-          Navigator.pushReplacementNamed(context, '/menu');
-        } else if (rol == 1) {
-          // Rol 1: Cliente
-          Navigator.pushReplacementNamed(context, '/client');
+          // Verificar si el widget está montado antes de navegar
+          if (!mounted) return;
+
+          // Redirigir al usuario según su rol
+          if (rol == 0) {
+            // Rol 0: Administrador
+            Navigator.pushReplacementNamed(context, '/menu');
+          } else if (rol == 1) {
+            // Rol 1: Cliente
+            Navigator.pushReplacementNamed(
+              context,
+              '/client',
+              arguments: {'userName': 'Cliente'},
+            );
+          } else {
+            // Rol desconocido
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Rol de usuario no válido")),
+            );
+          }
         } else {
-          // Rol desconocido
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Rol de usuario no válido")),
+            const SnackBar(content: Text("Credenciales incorrectas")),
           );
         }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Credenciales incorrectas")),
-        );
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
       }
     }
   }

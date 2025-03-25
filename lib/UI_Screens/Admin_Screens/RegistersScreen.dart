@@ -5,9 +5,6 @@ class RegistersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registros')),
-      body: const Center(child: Text('Pantalla de Registros')),
-    );
+    return Center(child: Text('Pantalla de Registros'));
   }
 }

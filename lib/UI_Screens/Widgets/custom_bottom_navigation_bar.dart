@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '/UI_Screens/Widgets/logout_button.dart';
 import '/UI_Screens/Admin_Screens/ReportScreen.dart';
 import '/UI_Screens/Admin_Screens/RegistersScreen.dart';
-import '/UI_Screens/Admin_Screens/MenuScreen.dart';
+import '../Admin_Screens/menu_screen.dart';
 import '/UI_Screens/Admin_Screens/OrdersScreen.dart';
 import '/UI_Screens/Client_Screens/ClientHomeScreen.dart';
 import '/UI_Screens/Client_Screens/ChatScreen.dart';
@@ -30,9 +30,58 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     _pageController.jumpToPage(index);
   }
 
+  List<BottomNavigationBarItem> _buildBottomNavigationBarItems() {
+    if (widget.userRole == 0) {
+      return const <BottomNavigationBarItem>[
+        BottomNavigationBarItem(icon: Icon(Icons.report), label: 'Reporte'),
+        BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Registros'),
+        BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Menú'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_bag),
+          label: 'Pedidos',
+        ),
+      ];
+    } else {
+      return const <BottomNavigationBarItem>[
+        BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Bienvenida'),
+        BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Menú'),
+        BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chat'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_cart),
+          label: 'Carrito',
+        ),
+      ];
+    }
+  }
+
+  List<Widget> _buildPageViewChildren() {
+    if (widget.userRole == 0) {
+      return const <Widget>[
+        ReportScreen(),
+        RegistersScreen(),
+        MenuScreen(), // Mostrar MenuScreen para admin
+        OrdersScreen(),
+      ];
+    } else {
+      return const <Widget>[
+        ClientHomeScreen(
+          userName: 'Cliente',
+        ), // Ajusta el nombre del cliente según sea necesario
+        ClientMenuScreen(), // Mostrar MenuScreen para cliente
+        ChatScreen(),
+        CartScreen(),
+      ];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('App'),
+        automaticallyImplyLeading: false,
+        actions: [if (widget.userRole == 0) const LogoutButton()],
+      ),
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) {
@@ -40,63 +89,11 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
             _selectedIndex = index;
           });
         },
-        children:
-            widget.userRole == 0
-                ? const <Widget>[
-                  ReportScreen(),
-                  RegistersScreen(),
-                  MenuScreen(),
-                  OrdersScreen(),
-                ]
-                : const <Widget>[
-                  ClientHomeScreen(
-                    userName: 'Cliente',
-                  ), // Ajusta el nombre del cliente según sea necesario
-                  ClientMenuScreen(),
-                  ChatScreen(),
-                  CartScreen(),
-                ],
+        children: _buildPageViewChildren(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        items:
-            widget.userRole == 0
-                ? const <BottomNavigationBarItem>[
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.report),
-                    label: 'Reporte',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.person),
-                    label: 'Registros',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.menu),
-                    label: 'Menú',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.shopping_bag),
-                    label: 'Pedidos',
-                  ),
-                ]
-                : const <BottomNavigationBarItem>[
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.home),
-                    label: 'Bienvenida',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.menu),
-                    label: 'Menú',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.chat),
-                    label: 'Chat',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.shopping_cart),
-                    label: 'Carrito',
-                  ),
-                ],
+        items: _buildBottomNavigationBarItems(),
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.teal,
         onTap: _onItemTapped,

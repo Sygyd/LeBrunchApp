@@ -1,4 +1,3 @@
-// filepath: c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\logout_button.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -37,6 +36,7 @@ class LogoutButton extends StatelessWidget {
         if (response.statusCode == 200) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('auth_token');
+          if (!context.mounted) return;
           Navigator.pushReplacementNamed(context, '/');
         } else {
           ScaffoldMessenger.of(context).showSnackBar(

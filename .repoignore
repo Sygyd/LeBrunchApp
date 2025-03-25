@@ -1,0 +1,15 @@
+node_modules
+*.log
+.vscode
+.idea 
+.android
+.assets
+.build
+.ios 
+.linux 
+.macos 
+.node_modules 
+.web 
+.windows 
+.flutter-plugins
+.flutter-plugins-dependencies
