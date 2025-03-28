@@ -1,41 +1,58 @@
 import 'package:flutter/material.dart';
 
 class WelcomeButton extends StatelessWidget {
-  const WelcomeButton(
-      {super.key, this.buttonText, this.onTap, this.color, this.textColor});
-  final String? buttonText;
-  final Widget? onTap;
-  final Color? color;
-  final Color? textColor;
+  final String buttonText;
+  final VoidCallback onTap;
+
+  const WelcomeButton({required this.buttonText, required this.onTap, Key? key})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (e) => onTap!,
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(30.0),
-        decoration: BoxDecoration(
-          color: color!,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(50),
+    final theme = Theme.of(context);
+
+    return ElevatedButton(
+      onPressed: onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.transparent, // Fondo transparente
+        foregroundColor: Colors.white, // Texto blanco
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: theme.colorScheme.primary, // Borde verde (#3EA69B)
+            width: 2,
           ),
         ),
-        child: Text(
-          buttonText!,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 20.0,
-            fontWeight: FontWeight.bold,
-            color: textColor!,
+        elevation: 0,
+      ),
+      child: Stack(
+        children: [
+          // Texto con borde verde
+          Text(
+            buttonText,
+            style: TextStyle(
+              fontFamily: 'LightHouse',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              foreground:
+                  Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 2
+                    ..color = theme.colorScheme.primary,
+            ),
           ),
-        ),
+          // Texto blanco
+          Text(
+            buttonText,
+            style: TextStyle(
+              fontFamily: 'LightHouse',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }

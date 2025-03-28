@@ -5,6 +5,14 @@ class OrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(child: Text('Pantalla de Pedidos'));
+    return WillPopScope(
+      onWillPop: () async {
+        // Evita que el botón atrás funcione
+        return false;
+      },
+      child: Scaffold(
+        // ... tu contenido normal
+      ),
+    );
   }
 }

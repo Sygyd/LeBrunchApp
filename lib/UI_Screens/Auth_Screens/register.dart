@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import '/UI_Screens/Auth_Screens/login.dart';
 import '/UI_Screens/Widgets/custom_scaffold.dart';
 import '/Api_services/usuarios/register_service.dart';
 import '/models/user.dart';
-import '/theme/theme.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -33,14 +31,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
         contrasena: contrasenaController.text,
       );
 
-      final success = await ApiService.registerUser(user);
-
-      if (success) {
-        Navigator.pushReplacementNamed(context, '/login');
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Error en el registro")));
+      try {
+        final success = await ApiService.registerUser(user);
+        if (success && mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/home',
+            (Route<dynamic> route) => false,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error en el registro: ${e.toString()}")),
+          );
+        }
       }
     }
   }

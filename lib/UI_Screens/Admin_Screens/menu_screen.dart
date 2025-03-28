@@ -25,8 +25,7 @@ class MenuScreen extends StatefulWidget {
 
 class _MenuScreenState extends State<MenuScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final List<String> _selectedCategories =
-      []; // Lista de categorías seleccionadas
+  final ValueNotifier<List<String>> _selectedCategories = ValueNotifier([]);
   List<Map<String, dynamic>> _dishes = [];
 
   final List<Map<String, String>> _categories = [
@@ -62,13 +61,13 @@ class _MenuScreenState extends State<MenuScreen> {
 
   // Método para manejar la selección de categorías
   void _toggleCategory(String category) {
-    setState(() {
-      if (_selectedCategories.contains(category)) {
-        _selectedCategories.remove(category); // Desactivar la categoría
-      } else {
-        _selectedCategories.add(category); // Activar la categoría
-      }
-    });
+    final newCategories = List<String>.from(_selectedCategories.value);
+    if (newCategories.contains(category)) {
+      newCategories.remove(category);
+    } else {
+      newCategories.add(category);
+    }
+    _selectedCategories.value = newCategories; // Actualiza el ValueNotifier
   }
 
   Future<void> _deleteDish(String id) async {
@@ -120,7 +119,7 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   void _logout() async {
-    // Mostrar un diálogo de confirmación
+    // Diálogo de confirmación
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -129,54 +128,59 @@ class _MenuScreenState extends State<MenuScreen> {
           content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
           actions: [
             TextButton(
-              onPressed:
-                  () => Navigator.pop(context, false), // No cerrar sesión
+              onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancelar'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context, true), // Cerrar sesión
-              child: const Text('Cerrar sesión'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                'Cerrar sesión',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );
       },
     );
 
-    // Si el usuario confirma el cierre de sesión
     if (confirm == true) {
       try {
-        // Llamar al backend para cerrar sesión
+        // 1. Llamar al endpoint de logout en el backend
         final response = await http.post(
           Uri.parse('http://192.168.1.121:3000/logout'),
           headers: {"Content-Type": "application/json"},
         );
 
         if (response.statusCode == 200) {
-          // Limpiar el estado local (por ejemplo, eliminar el token de autenticación)
+          // 2. Limpiar todos los datos locales de forma segura
           final prefs = await SharedPreferences.getInstance();
-          await prefs.remove('auth_token'); // Elimina el token almacenado
+          await prefs.remove('auth_token'); // Token específico
+          await prefs.remove('user_rol'); // Rol del usuario
+          await prefs.remove('user_name'); // Nombre del usuario
 
-          // Redirigir al usuario a la pantalla de bienvenida
+          // 3. Redirección segura a WelcomeScreen
           if (mounted) {
-            Navigator.pushReplacement(
+            Navigator.pushNamedAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+              '/',
+              (Route<dynamic> route) =>
+                  false, // Elimina toda la pila de navegación
             );
           }
         } else {
-          // Mostrar un mensaje de error si el cierre de sesión falla
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Error al cerrar sesión")),
+              const SnackBar(
+                content: Text("Error al cerrar sesión en el servidor"),
+              ),
             );
           }
         }
       } catch (e) {
-        // Manejar errores de conexión
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error de conexión: ${e.toString()}")),
+          );
         }
       }
     }
@@ -184,78 +188,130 @@ class _MenuScreenState extends State<MenuScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<int?>(
-      future: widget.getUserRole(), // Obtener el rol del usuario
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          ); // Muestra un indicador de carga
-        }
+    final theme = Theme.of(context);
 
-        final userRole = snapshot.data;
-
-        return Material(
-          child: Column(
-            children: [
-              AppBar(
-                title: const Text('Menú'),
-                automaticallyImplyLeading: false,
-                actions: [
-                  if (userRole ==
-                      0) // Solo muestra el botón de agregar si es admin
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      onPressed: _openAddDishModal,
-                    ),
-                  if (userRole ==
-                      0) // Solo muestra el botón de cerrar sesión si es admin
-                    IconButton(
-                      icon: const Icon(Icons.logout),
-                      onPressed: _logout,
-                    ),
-                ],
-              ),
-              custom.SearchBar(controller: _searchController),
-              CategoryCarousel(
-                categories: _categories,
-                selectedCategories: _selectedCategories,
-                toggleCategory: _toggleCategory,
-              ),
-              Expanded(child: _buildDishList(userRole)),
-            ],
-          ),
-        );
+    return WillPopScope(
+      onWillPop: () async {
+        // Esto bloquea completamente el botón de retroceso
+        return false;
       },
+      child: FutureBuilder<int?>(
+        future: widget.getUserRole(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: CircularProgressIndicator(
+                color: theme.colorScheme.primary,
+              ),
+            );
+          }
+
+          final userRole = snapshot.data;
+
+          return Scaffold(
+            // Añadimos un AppBar mínimo sin botón de retroceso
+            appBar: AppBar(
+              automaticallyImplyLeading: false, // Oculta el botón "Atrás"
+              title: const Text('Menú'),
+              actions: [
+                if (userRole == 0)
+                  IconButton(
+                    icon: Icon(Icons.add, color: theme.colorScheme.primary),
+                    onPressed: _openAddDishModal,
+                  ),
+              ],
+            ),
+            body: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: custom.SearchBar(controller: _searchController),
+                ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<List<String>>(
+                  valueListenable: _selectedCategories,
+                  builder: (context, categories, _) {
+                    return CategoryCarousel(
+                      categories: _categories,
+                      selectedCategories: categories,
+                      toggleCategory: _toggleCategory,
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: ValueListenableBuilder<List<String>>(
+                    valueListenable: _selectedCategories,
+                    builder: (context, selectedCategories, _) {
+                      return _buildDishList(userRole, selectedCategories);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildDishList(int? userRole) {
+  Widget _buildDishList(int? userRole, List<String> selectedCategories) {
     final filteredDishes =
         _dishes.where((dish) {
           final nameMatch = dish['nombre'].toLowerCase().contains(
             _searchController.text.toLowerCase(),
           );
-
-          // Si no hay categorías seleccionadas o están todas seleccionadas, mostrar todos los platos
           final categoryMatch =
-              _selectedCategories.isEmpty ||
-              _selectedCategories.contains(dish['categoria']);
-
+              selectedCategories.isEmpty ||
+              selectedCategories.contains(dish['categoria']);
           return nameMatch && categoryMatch;
         }).toList();
 
-    return ListView.builder(
-      itemCount: filteredDishes.length,
-      itemBuilder: (context, index) {
-        final dish = filteredDishes[index];
-        return DishCard(
-          dish: dish,
-          userRole: userRole,
-          editDish: _editDish,
-          deleteDish: _deleteDish,
-        );
-      },
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeInOut,
+      switchOutCurve: Curves.easeInOut,
+      child:
+          filteredDishes.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                key: ValueKey(selectedCategories),
+                padding: const EdgeInsets.only(bottom: 80),
+                itemCount: filteredDishes.length,
+                itemBuilder: (context, index) {
+                  final dish = filteredDishes[index];
+                  return DishCard(
+                    dish: dish,
+                    userRole: userRole,
+                    editDish: _editDish,
+                    deleteDish: _deleteDish,
+                  );
+                },
+              ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final theme = Theme.of(context);
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off,
+            size: 64,
+            color: theme.colorScheme.onSurface.withOpacity(0.5),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No se encontraron platos',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

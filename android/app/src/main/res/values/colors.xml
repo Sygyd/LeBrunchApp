@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Color transparente -->
+    <color name="ic_transparent">#00000000</color>
+
+    <!-- Fondo blanco -->
+    <color name="splashBackground">#FFFFFFFF</color>
+
+    <!-- Color verde corporativo -->
+    <color name="ic_foreground_color">#FF3EA69B</color>
+	<color name="ic_launcher_background">#FFFFFF</color>
+</resources>

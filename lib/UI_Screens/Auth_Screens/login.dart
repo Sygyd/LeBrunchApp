@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import '/UI_Screens/Auth_Screens/register.dart';
 import '/UI_Screens/Widgets/custom_scaffold.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -31,45 +30,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          final token = data['token']; // Token de autenticación
-          final rol = int.parse(
-            data['rol'].toString(),
-          ); // Asegurarse de que el rol sea un int
-
-          // Guardar el token y el rol en SharedPreferences
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('auth_token', token);
-          await prefs.setInt('user_rol', rol);
+          await prefs.setString('auth_token', data['token']);
+          await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
+          await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
 
-          // Verificar si el widget está montado antes de navegar
           if (!mounted) return;
 
-          // Redirigir al usuario según su rol
-          if (rol == 0) {
-            // Rol 0: Administrador
-            Navigator.pushReplacementNamed(context, '/menu');
-          } else if (rol == 1) {
-            // Rol 1: Cliente
-            Navigator.pushReplacementNamed(
-              context,
-              '/client',
-              arguments: {'userName': 'Cliente'},
-            );
-          } else {
-            // Rol desconocido
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Rol de usuario no válido")),
-            );
-          }
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/home',
+            (Route<dynamic> route) => false,
+          );
         } else {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Credenciales incorrectas")),
           );
         }
       } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error de conexión: ${e.toString()}")),
+        );
       }
     }
   }

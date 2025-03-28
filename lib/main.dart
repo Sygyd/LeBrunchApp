@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import '/theme/theme.dart';
+import 'package:flutter/services.dart';
 import '/UI_Screens/Widgets/routes.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]).then((
+    _,
+  ) {
+    runApp(const MyApp());
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -16,8 +21,16 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Le Brunch App',
       theme: lightMode,
-      initialRoute: '/',
+      initialRoute: '/splash',
       onGenerateRoute: AppRoutes.generateRoute,
+      builder: (context, child) {
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 500),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child: child,
+        );
+      },
     );
   }
 }

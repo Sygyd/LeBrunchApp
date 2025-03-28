@@ -5,6 +5,14 @@ class ChatScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(child: Text('Pantalla de Chat'));
+    return WillPopScope(
+      onWillPop: () async {
+        // Evita que el botón atrás funcione
+        return false;
+      },
+      child: Scaffold(
+        // ... tu contenido normal
+      ),
+    );
   }
 }

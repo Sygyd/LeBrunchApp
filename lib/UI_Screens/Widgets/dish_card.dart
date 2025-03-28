@@ -17,33 +17,77 @@ class DishCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final price =
+        dish['precio'] != null
+            ? double.tryParse(dish['precio'].toString()) ?? 0.0
+            : 0.0;
+
     return Card(
       margin: const EdgeInsets.all(8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading:
             dish['imagen_url'] != null && dish['imagen_url'].isNotEmpty
-                ? CachedNetworkImage(
-                  imageUrl: dish['imagen_url'],
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.cover,
-                  placeholder:
-                      (context, url) => const CircularProgressIndicator(),
-                  errorWidget: (context, url, error) => const Icon(Icons.error),
+                ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: dish['imagen_url'],
+                    width: 60,
+                    height: 60,
+                    fit: BoxFit.cover,
+                    placeholder:
+                        (context, url) => Container(
+                          color: theme.colorScheme.surfaceVariant,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                    errorWidget:
+                        (context, url, error) => Icon(
+                          Icons.fastfood,
+                          size: 40,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                  ),
                 )
-                : const Icon(
+                : Icon(
                   Icons.image_not_supported,
-                  size: 50,
-                  color: Colors.grey,
+                  size: 40,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-        title: Text(dish['nombre'] ?? 'Sin nombre'),
-        subtitle: Text('Precio: \$${dish['precio']?.toString() ?? '0.00'}'),
+        title: Text(
+          dish['nombre'] ?? 'Sin nombre',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontFamily: 'LightHouse', // Lighthouse para títulos
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ingredientes: ${dish['ingredientes'] ?? 'No especificados'}',
+              style: theme.textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '\$${price.toStringAsFixed(2)}',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontFamily: 'MADE TOMMY', // MADE TOMMY para precios
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
         trailing:
             userRole == 0
                 ? Row(
-                  mainAxisSize:
-                      MainAxisSize
-                          .min, // Asegura que el Row ocupe solo el espacio necesario
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       (dish['disponibilidad'] ?? false)
@@ -54,13 +98,13 @@ class DishCard extends StatelessWidget {
                               ? Colors.green
                               : Colors.red,
                     ),
-                    const SizedBox(width: 8), // Espacio entre los iconos
+                    const SizedBox(width: 8),
                     IconButton(
-                      icon: const Icon(Icons.edit),
+                      icon: Icon(Icons.edit, color: theme.colorScheme.primary),
                       onPressed: () => editDish(dish),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
+                      icon: Icon(Icons.delete, color: theme.colorScheme.error),
                       onPressed: () => deleteDish(dish['idplato'].toString()),
                     ),
                   ],
@@ -73,7 +117,7 @@ class DishCard extends StatelessWidget {
                       (dish['disponibilidad'] ?? false)
                           ? Colors.green
                           : Colors.red,
-                ), // Oculta las opciones si no es admin
+                ),
       ),
     );
   }

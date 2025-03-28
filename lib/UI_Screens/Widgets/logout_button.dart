@@ -19,7 +19,10 @@ class LogoutButton extends StatelessWidget {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Cerrar sesión'),
+              child: const Text(
+                'Cerrar sesión',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );
@@ -33,20 +36,20 @@ class LogoutButton extends StatelessWidget {
           headers: {"Content-Type": "application/json"},
         );
 
-        if (response.statusCode == 200) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.remove('auth_token');
-          if (!context.mounted) return;
-          Navigator.pushReplacementNamed(context, '/');
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Error al cerrar sesión")),
-          );
-        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear(); // Limpia todas las preferencias
+
+        if (!context.mounted) return;
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',
+          (Route<dynamic> route) => false,
+        );
       } catch (e) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
+        ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
       }
     }
   }
