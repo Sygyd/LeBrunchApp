@@ -13,58 +13,36 @@ import '/UI_Screens/Client_Screens/ClientMenuScreen.dart';
 class CustomBottomNavigationBar extends StatefulWidget {
   const CustomBottomNavigationBar({super.key});
 
-  Future<int> _getUserRole() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('user_rol') ?? 1;
-  }
-
-  Future<String> _getUserName() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('user_name') ?? 'Usuario';
-  }
-
   @override
   State<CustomBottomNavigationBar> createState() =>
       _CustomBottomNavigationBarState();
 }
 
 class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
-  late final Future<int> _userRoleFuture;
-  late final Future<String> _userNameFuture;
   int _selectedIndex = 0;
-  late PageController _pageController;
   int? _userRole;
   String _userName = 'Usuario';
+  bool _isLoading = true;
 
-  final List<String> _adminScreenTitles = [
-    'Reportes',
-    'Registros',
-    'Menú Admin',
-    'Pedidos',
-  ];
-  final List<String> _clientScreenTitles = [
-    'Inicio',
-    'Menú',
-    'Chat',
-    'Carrito',
-  ];
+  final _pageController = PageController(initialPage: 0);
+  final _scrollPhysics = const ClampingScrollPhysics();
 
   @override
   void initState() {
     super.initState();
-    _userRoleFuture = widget._getUserRole();
-    _userNameFuture = widget._getUserName();
-    _pageController = PageController();
     _loadUserData();
   }
 
   Future<void> _loadUserData() async {
-    final role = await _userRoleFuture;
-    final name = await _userNameFuture;
+    final prefs = await SharedPreferences.getInstance();
+    final role = prefs.getInt('user_rol') ?? 1;
+    final name = prefs.getString('user_name') ?? 'Usuario';
+
     if (mounted) {
       setState(() {
         _userRole = role;
         _userName = name;
+        _isLoading = false;
       });
     }
   }
@@ -76,150 +54,109 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   }
 
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
     setState(() => _selectedIndex = index);
-    _pageController.jumpToPage(index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
-  List<BottomNavigationBarItem> _buildBottomNavItems(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (_userRole == 0) {
-      return [
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.report),
-          label: 'Reporte',
-          activeIcon: Icon(
-            Icons.report,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.person),
-          label: 'Registros',
-          activeIcon: Icon(
-            Icons.person,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.menu),
-          label: 'Menú',
-          activeIcon: Icon(
-            Icons.menu,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.shopping_bag),
-          label: 'Pedidos',
-          activeIcon: Icon(
-            Icons.shopping_bag,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-      ];
-    } else {
-      return [
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.home),
-          label: 'Inicio',
-          activeIcon: Icon(
-            Icons.home,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.menu),
-          label: 'Menú',
-          activeIcon: Icon(
-            Icons.menu,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.chat),
-          label: 'Chat',
-          activeIcon: Icon(
-            Icons.chat,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.shopping_cart),
-          label: 'Carrito',
-          activeIcon: Icon(
-            Icons.shopping_cart,
-            color: theme.colorScheme.primaryContainer,
-          ),
-        ),
-      ];
+  void _onPageChanged(int index) {
+    if (_selectedIndex != index) {
+      setState(() => _selectedIndex = index);
     }
   }
 
-  List<Widget> _buildPageViewChildren() {
-    if (_userRole == 0) {
-      return [ReportScreen(), RegistersScreen(), MenuScreen(), OrdersScreen()];
-    } else {
-      return [
-        ClientHomeScreen(userName: _userName),
-        ClientMenuScreen(),
-        ChatScreen(),
-        CartScreen(),
-      ];
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
     }
+
+    return PageView(
+      controller: _pageController,
+      physics: _scrollPhysics,
+      onPageChanged: _onPageChanged,
+      children:
+          _userRole == 0
+              ? [
+                const ReportScreen(),
+                const RegistersScreen(),
+                const MenuScreen(),
+                const OrdersScreen(),
+              ]
+              : [
+                ClientHomeScreen(userName: _userName),
+                const ClientMenuScreen(),
+                const ChatScreen(),
+                const CartScreen(),
+              ],
+    );
   }
 
-  String _getAppBarTitle() {
-    return _userRole == 0
-        ? _adminScreenTitles[_selectedIndex]
-        : _clientScreenTitles[_selectedIndex];
+  BottomNavigationBarItem _buildNavItem(
+    IconData icon,
+    String label,
+    int index,
+  ) {
+    final isSelected = _selectedIndex == index;
+    final color =
+        isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+
+    return BottomNavigationBarItem(
+      icon: Icon(icon, color: color),
+      label: label,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    if (_isLoading) {
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
-    return FutureBuilder(
-      future: Future.wait([_userRoleFuture, _userNameFuture]),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return Center(
-            child: CircularProgressIndicator(color: theme.colorScheme.primary),
-          );
-        }
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(_getAppBarTitle()),
-            automaticallyImplyLeading: false,
-            actions: const [LogoutButton()],
-          ),
-          body: PageView(
-            controller: _pageController,
-            physics:
-                const ClampingScrollPhysics(), // Para una sensación más natural
-            onPageChanged: (index) => setState(() => _selectedIndex = index),
-            children: _buildPageViewChildren(),
-          ),
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            items: _buildBottomNavItems(context),
-            currentIndex: _selectedIndex,
-            selectedItemColor: theme.colorScheme.primary,
-            unselectedItemColor: theme.colorScheme.onSurface.withOpacity(0.6),
-            backgroundColor: theme.colorScheme.surface,
-            selectedLabelStyle: const TextStyle(
-              fontFamily: 'LightHouse',
-              fontSize: 12,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontFamily: 'LightHouse',
-              fontSize: 12,
-            ),
-            onTap: _onItemTapped,
-          ),
-        );
-      },
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          _userRole == 0
+              ? [
+                'Reportes',
+                'Registros',
+                'Menú Admin',
+                'Pedidos',
+              ][_selectedIndex]
+              : ['Inicio', 'Menú', 'Chat', 'Carrito'][_selectedIndex],
+        ),
+        actions: const [LogoutButton()],
+      ),
+      body: _buildBody(),
+      bottomNavigationBar: BottomNavigationBar(
+        items:
+            _userRole == 0
+                ? [
+                  _buildNavItem(Icons.report, 'Reporte', 0),
+                  _buildNavItem(Icons.person, 'Registros', 1),
+                  _buildNavItem(Icons.menu, 'Menú', 2),
+                  _buildNavItem(Icons.shopping_bag, 'Pedidos', 3),
+                ]
+                : [
+                  _buildNavItem(Icons.home, 'Inicio', 0),
+                  _buildNavItem(Icons.menu, 'Menú', 1),
+                  _buildNavItem(Icons.chat, 'Chat', 2),
+                  _buildNavItem(Icons.shopping_cart, 'Carrito', 3),
+                ],
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        unselectedItemColor: Theme.of(
+          context,
+        ).colorScheme.onSurface.withOpacity(0.6),
+      ),
     );
   }
 }

@@ -35,7 +35,6 @@ class _MenuScreenState extends State<MenuScreen> {
     {'name': 'Gofres', 'image': 'assets/images/gofres.jpg'},
     {'name': 'Omelettes', 'image': 'assets/images/omelettes.jpg'},
   ];
-
   @override
   void initState() {
     super.initState();

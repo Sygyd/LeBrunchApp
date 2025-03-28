@@ -54,30 +54,20 @@ class CategoryCarousel extends StatelessWidget {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: category['image']!,
+                    child: Image.asset(
+                      category['image']!,
                       width: 60,
                       height: 60,
                       fit: BoxFit.cover,
-                      placeholder:
-                          (_, __) => Container(
-                            color: theme.colorScheme.surfaceVariant,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: theme.colorScheme.primary,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                      errorWidget:
-                          (_, __, ___) => Icon(
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Colors.grey[200],
+                          child: Icon(
                             Icons.fastfood,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
-                      fadeInDuration: const Duration(
-                        milliseconds: 300,
-                      ), // Animación suave
-                      fadeInCurve: Curves.easeInOut,
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(height: 6),
