@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '/models/user.dart';
-import '/Api_services/usuarios/register_service.dart';
 import 'dart:convert';
 
-// Constantes para la configuración
 const String apiBaseUrl = 'http://192.168.1.121:3000';
 const Duration animationDuration = Duration(milliseconds: 300);
 
@@ -15,11 +12,7 @@ class AuthModals {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _LoginModalContent(),
-      transitionAnimationController: AnimationController(
-        duration: animationDuration,
-        vsync: Navigator.of(context),
-      ),
+      builder: (context) => const _LoginModalContent(),
     );
   }
 
@@ -28,92 +21,96 @@ class AuthModals {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _RegisterModalContent(),
-      transitionAnimationController: AnimationController(
-        duration: animationDuration,
-        vsync: Navigator.of(context),
-      ),
+      builder: (context) => const _RegisterModalContent(),
     );
   }
 }
 
-// LOGIN MODAL (versión simplificada)
 class _LoginModalContent extends StatefulWidget {
+  const _LoginModalContent();
+
   @override
   State<_LoginModalContent> createState() => _LoginModalContentState();
 }
 
 class _LoginModalContentState extends State<_LoginModalContent> {
-  final _formSignInKey = GlobalKey<FormState>();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
-  final FocusNode _emailFocus = FocusNode();
-  final FocusNode _passwordFocus = FocusNode();
 
   @override
   void dispose() {
-    _emailFocus.dispose();
-    _passwordFocus.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
-    if (!_formSignInKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
       final response = await http.post(
         Uri.parse('$apiBaseUrl/login'),
-        headers: {"Content-Type": "application/json"},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          "email": _emailController.text.trim(),
-          "contrasena": _passwordController.text,
+          'email': _emailController.text.trim(),
+          'contrasena': _passwordController.text,
         }),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        await _saveAuthData(data);
+      final responseData = jsonDecode(response.body);
 
+      if (response.statusCode == 200) {
+        await _saveUserData(responseData);
         if (!mounted) return;
-        Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.statusCode == 401
-                  ? "Credenciales incorrectas"
-                  : "Error en el servidor (${response.statusCode})",
-            ),
-          ),
-        );
+        _showErrorSnackbar(responseData['error'] ?? 'Error desconocido');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error de conexión: ${e.toString()}")),
-      );
+      _showErrorSnackbar('Error de conexión: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _saveAuthData(Map<String, dynamic> data) async {
+  Future<void> _saveUserData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', data['token']);
-    await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
-    await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
+
+    // Guardamos el token
+    await prefs.setString('auth_token', data['token'] ?? '');
+
+    // Convertimos el ID a int de manera segura
+    final userId =
+        data['id'] is int
+            ? data['id']
+            : int.tryParse(data['id'].toString()) ?? 0;
+    await prefs.setInt('user_id', userId);
+
+    // Convertimos el rol a int de manera segura
+    final userRol =
+        data['rol'] is int
+            ? data['rol']
+            : int.tryParse(data['rol'].toString()) ?? 1;
+    await prefs.setInt('user_rol', userRol);
+
+    // Guardamos el nombre como string
+    await prefs.setString('user_name', data['nombre']?.toString() ?? 'Usuario');
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -121,70 +118,36 @@ class _LoginModalContentState extends State<_LoginModalContent> {
       ),
       child: SingleChildScrollView(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
         ),
         child: Form(
-          key: _formSignInKey,
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Barra de arrastre
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-
-              // Título
+              const _DragHandle(),
               Text(
-                'Ingresa a tu cuenta',
+                'Iniciar Sesión',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 30),
-              // Campo Email (validación simplificada)
               TextFormField(
                 controller: _emailController,
-                focusNode: _emailFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_passwordFocus);
-                },
-                keyboardType: TextInputType.emailAddress,
-                validator:
-                    (value) =>
-                        value?.isEmpty ?? true ? 'Ingresa tu email' : null,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Email',
                   prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: OutlineInputBorder(),
                 ),
+                keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 20),
-              // Campo Contraseña (validación simplificada)
               TextFormField(
                 controller: _passwordController,
-                focusNode: _passwordFocus,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _login(),
-                obscureText: _obscurePassword,
-                validator:
-                    (value) =>
-                        value?.isEmpty ?? true ? 'Ingresa tu contraseña' : null,
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
-                  prefixIcon: Icon(Icons.lock),
+                  prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
@@ -196,64 +159,31 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                           () => _obscurePassword = !_obscurePassword,
                         ),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: const OutlineInputBorder(),
                 ),
-              ),
-              const SizedBox(height: 10),
-              // Olvidé contraseña
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () {
-                    // TODO: Implementar recuperación de contraseña
-                  },
-                  child: Text('¿Olvidaste tu contraseña?'),
-                ),
+                obscureText: _obscurePassword,
               ),
               const SizedBox(height: 20),
-              // Botón
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
                   child:
                       _isLoading
-                          ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
-                          )
-                          : Text('Ingresar'),
+                          ? const CircularProgressIndicator()
+                          : const Text('Ingresar'),
                 ),
               ),
               const SizedBox(height: 20),
-              // Enlace a registro
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('¿No tienes cuenta?'),
-                  TextButton(
-                    onPressed:
-                        _isLoading
-                            ? null
-                            : () {
-                              Navigator.pop(context);
-                              AuthModals.showRegisterModal(context);
-                            },
-                    child: Text('Regístrate'),
-                  ),
-                ],
+              TextButton(
+                onPressed:
+                    _isLoading
+                        ? null
+                        : () {
+                          Navigator.pop(context);
+                          AuthModals.showRegisterModal(context);
+                        },
+                child: const Text('¿No tienes cuenta? Regístrate'),
               ),
             ],
           ),
@@ -263,79 +193,78 @@ class _LoginModalContentState extends State<_LoginModalContent> {
   }
 }
 
-// REGISTER MODAL (se mantiene igual que antes)
 class _RegisterModalContent extends StatefulWidget {
+  const _RegisterModalContent();
+
   @override
   State<_RegisterModalContent> createState() => _RegisterModalContentState();
 }
 
 class _RegisterModalContentState extends State<_RegisterModalContent> {
-  final _formSignupKey = GlobalKey<FormState>();
-  final TextEditingController _nombreController = TextEditingController();
-  final TextEditingController _apellidoController = TextEditingController();
-  final TextEditingController _cedulaController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _contrasenaController = TextEditingController();
-  final TextEditingController _confirmContrasenaController =
-      TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _idController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
-  final FocusNode _nombreFocus = FocusNode();
-  final FocusNode _apellidoFocus = FocusNode();
-  final FocusNode _cedulaFocus = FocusNode();
-  final FocusNode _emailFocus = FocusNode();
-  final FocusNode _contrasenaFocus = FocusNode();
-  final FocusNode _confirmContrasenaFocus = FocusNode();
-
   @override
   void dispose() {
-    _nombreFocus.dispose();
-    _apellidoFocus.dispose();
-    _cedulaFocus.dispose();
-    _emailFocus.dispose();
-    _contrasenaFocus.dispose();
-    _confirmContrasenaFocus.dispose();
+    _nameController.dispose();
+    _lastNameController.dispose();
+    _idController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
-    if (!_formSignupKey.currentState!.validate()) return;
-    if (_contrasenaController.text != _confirmContrasenaController.text) {
+    if (!_formKey.currentState!.validate()) return;
+    if (_passwordController.text != _confirmPasswordController.text) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Las contraseñas no coinciden")),
+        const SnackBar(content: Text('Las contraseñas no coinciden')),
       );
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final user = User(
-      nombre: _nombreController.text.trim(),
-      apellido: _apellidoController.text.trim(),
-      cedula: _cedulaController.text.trim(),
-      email: _emailController.text.trim(),
-      contrasena: _contrasenaController.text,
-    );
-
     try {
-      final success = await ApiService.registerUser(user);
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Registro exitoso! Por favor inicia sesión"),
-          ),
-        );
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'nombre': _nameController.text.trim(),
+          'apellido': _lastNameController.text.trim(),
+          'cedula': _idController.text.trim(),
+          'email': _emailController.text.trim(),
+          'contrasena': _passwordController.text,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Registro exitoso')));
         Navigator.pop(context);
         AuthModals.showLoginModal(context);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: ${response.body}')));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error en el registro: ${e.toString()}")),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de conexión: ${e.toString()}')),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -344,7 +273,6 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -352,141 +280,80 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
       ),
       child: SingleChildScrollView(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
         ),
         child: Form(
-          key: _formSignupKey,
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Barra de arrastre
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              // Título
+              const _DragHandle(),
               Text(
-                'Crea tu cuenta',
+                'Registro',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 30),
-              // Campo Nombre
               TextFormField(
-                controller: _nombreController,
-                focusNode: _nombreFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_apellidoFocus);
-                },
-                decoration: InputDecoration(
+                controller: _nameController,
+                decoration: const InputDecoration(
                   labelText: 'Nombre',
                   prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty)
                     return 'Ingresa tu nombre';
-                  if (value.length < 2) return 'Nombre muy corto';
                   return null;
                 },
               ),
               const SizedBox(height: 15),
-              // Campo Apellido
               TextFormField(
-                controller: _apellidoController,
-                focusNode: _apellidoFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_cedulaFocus);
-                },
-                decoration: InputDecoration(
+                controller: _lastNameController,
+                decoration: const InputDecoration(
                   labelText: 'Apellido',
                   prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null || value.isEmpty)
+                  if (value == null || value.isEmpty) {
                     return 'Ingresa tu apellido';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 15),
-              // Campo Cédula
-              TextFormField(
-                controller: _cedulaController,
-                focusNode: _cedulaFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_emailFocus);
-                },
-                decoration: InputDecoration(
-                  labelText: 'Cédula',
-                  prefixIcon: Icon(Icons.badge),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Ingresa tu cédula';
-                  if (value.length < 6) return 'Cédula inválida';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 15),
-              // Campo Email
-              TextFormField(
-                controller: _emailController,
-                focusNode: _emailFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_contrasenaFocus);
-                },
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingresa tu email';
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value)) {
-                    return 'Email inválido';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 15),
-              // Campo Contraseña
               TextFormField(
-                controller: _contrasenaController,
-                focusNode: _contrasenaFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_confirmContrasenaFocus);
+                controller: _idController,
+                decoration: const InputDecoration(
+                  labelText: 'Cédula',
+                  prefixIcon: Icon(Icons.badge),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty)
+                    return 'Ingresa tu cédula';
+                  return null;
                 },
-                obscureText: _obscurePassword,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _passwordController,
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
-                  prefixIcon: Icon(Icons.lock),
+                  prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
@@ -498,28 +365,16 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                           () => _obscurePassword = !_obscurePassword,
                         ),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: const OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Ingresa tu contraseña';
-                  if (value.length < 6) return 'Mínimo 6 caracteres';
-                  return null;
-                },
+                obscureText: _obscurePassword,
               ),
               const SizedBox(height: 15),
-              // Campo Confirmar Contraseña
               TextFormField(
-                controller: _confirmContrasenaController,
-                focusNode: _confirmContrasenaFocus,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _register(),
-                obscureText: _obscureConfirmPassword,
+                controller: _confirmPasswordController,
                 decoration: InputDecoration(
                   labelText: 'Confirmar Contraseña',
-                  prefixIcon: Icon(Icons.lock_outline),
+                  prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureConfirmPassword
@@ -533,61 +388,59 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                                   !_obscureConfirmPassword,
                         ),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: const OutlineInputBorder(),
                 ),
+                obscureText: _obscureConfirmPassword,
                 validator: (value) {
-                  if (value == null || value.isEmpty)
+                  if (value == null || value.isEmpty) {
                     return 'Confirma tu contraseña';
+                  }
                   return null;
                 },
               ),
               const SizedBox(height: 25),
-              // Botón
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _register,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
                   child:
                       _isLoading
-                          ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
-                          )
-                          : Text('Registrarse'),
+                          ? const CircularProgressIndicator()
+                          : const Text('Registrarse'),
                 ),
               ),
               const SizedBox(height: 20),
-              // Enlace a login
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('¿Ya tienes cuenta?'),
-                  TextButton(
-                    onPressed:
-                        _isLoading
-                            ? null
-                            : () {
-                              Navigator.pop(context);
-                              AuthModals.showLoginModal(context);
-                            },
-                    child: Text('Inicia sesión'),
-                  ),
-                ],
+              TextButton(
+                onPressed:
+                    _isLoading
+                        ? null
+                        : () {
+                          Navigator.pop(context);
+                          AuthModals.showLoginModal(context);
+                        },
+                child: const Text('¿Ya tienes cuenta? Inicia sesión'),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DragHandle extends StatelessWidget {
+  const _DragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 5,
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
     );

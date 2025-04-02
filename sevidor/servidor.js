@@ -5,6 +5,8 @@ const pool = require('./db');  // Conexión a PostgreSQL desde db.js
 const userRoutes = require("./login_register");
 const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
+const chatRoutes = require("./chat");
+
 
 const ip = '192.168.1.121';
 const port = 3000;
@@ -16,6 +18,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(userRoutes);
 app.use(menuRoutes);
+app.use(chatRoutes);
 
 (async () => {
   try {

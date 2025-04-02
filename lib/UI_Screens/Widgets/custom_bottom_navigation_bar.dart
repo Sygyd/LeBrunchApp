@@ -23,6 +23,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   int? _userRole;
   String _userName = 'Usuario';
   bool _isLoading = true;
+  int _userId = 0; // Nuevo campo para almacenar el ID del usuario
 
   final _pageController = PageController(initialPage: 0);
   final _scrollPhysics = const ClampingScrollPhysics();
@@ -37,11 +38,13 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     final prefs = await SharedPreferences.getInstance();
     final role = prefs.getInt('user_rol') ?? 1;
     final name = prefs.getString('user_name') ?? 'Usuario';
+    final id = prefs.getInt('user_id') ?? 0; // Obtener el ID del usuario
 
     if (mounted) {
       setState(() {
         _userRole = role;
         _userName = name;
+        _userId = id; // Asignar el ID del usuario
         _isLoading = false;
       });
     }
@@ -90,7 +93,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
               : [
                 ClientHomeScreen(userName: _userName),
                 const ClientMenuScreen(),
-                const ChatScreen(),
+                ChatScreen(userId: _userId), // Usar el ID almacenado
                 const CartScreen(),
               ],
     );
@@ -116,7 +119,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(

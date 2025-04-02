@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 class SearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final ValueChanged<String> onChanged;
 
-  const SearchBar({Key? key, required this.controller}) : super(key: key);
+  const SearchBar({Key? key, required this.controller, required this.onChanged})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +18,7 @@ class SearchBar extends StatelessWidget {
           prefixIcon: Icon(Icons.search),
           border: OutlineInputBorder(),
         ),
-        onChanged: (value) => {},
+        onChanged: onChanged, // Ahora usa la callback proporcionada
       ),
     );
   }

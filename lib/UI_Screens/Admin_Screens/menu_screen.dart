@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '/Api_services/menu/get_dishes_service.dart';
 import '/Api_services/menu/add_dish_service.dart';
 import 'add_dish_screen.dart';
-import '/UI_Screens/Widgets/welcome.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '/UI_Screens/Widgets/custom_bottom_navigation_bar.dart';
 import '/UI_Screens/Widgets/search_bar.dart' as custom;
 import '/UI_Screens/Widgets/category_carousel.dart';
 import '/UI_Screens/Widgets/dish_card.dart';
@@ -187,44 +184,33 @@ class _MenuScreenState extends State<MenuScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return WillPopScope(
-      onWillPop: () async {
-        // Esto bloquea completamente el botón de retroceso
-        return false;
-      },
+      onWillPop: () async => false,
       child: FutureBuilder<int?>(
         future: widget.getUserRole(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(
-                color: theme.colorScheme.primary,
-              ),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
-          final userRole = snapshot.data;
-
           return Scaffold(
-            // Añadimos un AppBar mínimo sin botón de retroceso
+            extendBodyBehindAppBar: true, // Nueva propiedad clave
             appBar: AppBar(
-              automaticallyImplyLeading: false, // Oculta el botón "Atrás"
-              title: const Text('Menú'),
-              actions: [
-                if (userRole == 0)
-                  IconButton(
-                    icon: Icon(Icons.add, color: theme.colorScheme.primary),
-                    onPressed: _openAddDishModal,
-                  ),
-              ],
+              toolbarHeight: 0, // AppBar invisible pero presente
+              elevation: 0,
+              backgroundColor: Colors.transparent,
             ),
             body: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: custom.SearchBar(controller: _searchController),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: custom.SearchBar(
+                    controller: _searchController,
+                    onChanged: (value) {
+                      // Esto activará el ValueListenableBuilder que contiene la lista
+                      _selectedCategories.notifyListeners();
+                    },
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ValueListenableBuilder<List<String>>(
@@ -242,12 +228,22 @@ class _MenuScreenState extends State<MenuScreen> {
                   child: ValueListenableBuilder<List<String>>(
                     valueListenable: _selectedCategories,
                     builder: (context, selectedCategories, _) {
-                      return _buildDishList(userRole, selectedCategories);
+                      return _buildDishList(snapshot.data, selectedCategories);
                     },
                   ),
                 ),
               ],
             ),
+            floatingActionButton:
+                snapshot.data == 0
+                    ? FloatingActionButton(
+                      backgroundColor: Colors.teal,
+                      child: const Icon(Icons.add, color: Colors.white),
+                      onPressed: _openAddDishModal,
+                    )
+                    : null,
+            floatingActionButtonLocation:
+                FloatingActionButtonLocation.centerFloat,
           );
         },
       ),
@@ -315,9 +311,9 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   void _openAddDishModal() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const AddDishScreen()),
+    showDialog(
+      context: context,
+      builder: (context) => const AddDishScreen(),
     ).then((value) {
       if (value == true) {
         _fetchDishes();
@@ -326,9 +322,9 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   void _editDish(Map<String, dynamic> dish) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AddDishScreen(dish: dish)),
+    showDialog(
+      context: context,
+      builder: (context) => AddDishScreen(dish: dish),
     ).then((value) {
       if (value == true) {
         _fetchDishes();
