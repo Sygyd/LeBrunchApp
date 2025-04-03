@@ -31,36 +31,9 @@ class _LoginScreenState extends State<LoginScreen> {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final prefs = await SharedPreferences.getInstance();
-
-          // Guardamos el token
-          await prefs.setString('auth_token', data['token'] ?? '');
-
-          // Convertimos el rol a int de manera segura
-          int userRol;
-          if (data['rol'] is int) {
-            userRol = data['rol'];
-          } else if (data['rol'] is String) {
-            userRol =
-                int.tryParse(data['rol']) ??
-                1; // Default a rol cliente (1) si hay error
-          } else {
-            userRol = 1; // Default a rol cliente
-          }
-          await prefs.setInt('user_rol', userRol);
-
-          // Guardamos el nombre
-          await prefs.setString(
-            'user_name',
-            data['nombre']?.toString() ?? 'Usuario',
-          );
-
-          // Guardamos el ID del usuario si está disponible
-          if (data['id'] != null) {
-            await prefs.setInt(
-              'user_id',
-              int.tryParse(data['id'].toString()) ?? 0,
-            );
-          }
+          await prefs.setString('auth_token', data['token']);
+          await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
+          await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
 
           if (!mounted) return;
 

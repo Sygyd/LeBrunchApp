@@ -21,10 +21,6 @@ dependencies:
   permission_handler: ^11.4.0
   image_picker: ^1.1.2
   cached_network_image: ^3.2.3
-  audioplayers: ^6.4.0
-  record: ^6.0.0  # Reemplaza audio_recorder y flutter_sound
-  path_provider: ^2.1.5
-  provider: ^6.1.4  # Versión oficial y correcta
 
 dev_dependencies:
   flutter_test:
@@ -48,6 +44,7 @@ flutter:
         - asset: assets/fonts/MADE-TOMMY-Bold.otf
           weight: 700
 
+
 flutter_icons:
   android: true
   ios: true
@@ -55,7 +52,7 @@ flutter_icons:
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/images/logo.png"
   remove_alpha_ios: true
-  image_size_android: 0.22
-  image_size_ios: 0.22
-  padding_android: 20
-  min_sdk_android: 21
+  image_size_android: 0.22  # Tamaño reducido al 25%
+  image_size_ios: 0.22     # Tamaño reducido al 25%
+  padding_android: 20       # Más espacio alrededor del logo
+  min_sdk_android: 21       # Requerido para íconos adaptativos
