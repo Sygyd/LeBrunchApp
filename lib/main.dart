@@ -1,36 +1,24 @@
 import 'package:flutter/material.dart';
-import '/theme/theme.dart';
-import 'package:flutter/services.dart';
-import '/UI_Screens/Widgets/routes.dart';
+import 'UI_Screens/Widgets/routes.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]).then((
-    _,
-  ) {
-    runApp(const MyApp());
-  });
+  runApp(const MainApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Le Brunch',
       debugShowCheckedModeBanner: false,
-      title: 'Le Brunch App',
-      theme: lightMode,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3EA69B)),
+        useMaterial3: true,
+      ),
       initialRoute: '/splash',
       onGenerateRoute: AppRoutes.generateRoute,
-      builder: (context, child) {
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 500),
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          child: child,
-        );
-      },
     );
   }
 }

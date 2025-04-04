@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '/models/user.dart';
@@ -29,6 +30,19 @@ class AuthModals {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _RegisterModalContent(),
+      transitionAnimationController: AnimationController(
+        duration: animationDuration,
+        vsync: Navigator.of(context),
+      ),
+    );
+  }
+
+  static void showForgotPasswordModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ForgotPasswordModalContent(),
       transitionAnimationController: AnimationController(
         duration: animationDuration,
         vsync: Navigator.of(context),
@@ -80,7 +94,7 @@ class _LoginModalContentState extends State<_LoginModalContent> {
 
         if (!mounted) return;
         Navigator.pop(context);
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+        Navigator.of(context).pushReplacementNamed('/home');
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,12 +122,12 @@ class _LoginModalContentState extends State<_LoginModalContent> {
     await prefs.setString('auth_token', data['token']);
     await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
     await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
+    await prefs.setString('user_cedula', data['cedula'] ?? '');
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -207,7 +221,8 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    // TODO: Implementar recuperación de contraseña
+                    Navigator.pop(context);
+                    AuthModals.showForgotPasswordModal(context);
                   },
                   child: Text('¿Olvidaste tu contraseña?'),
                 ),
@@ -263,7 +278,285 @@ class _LoginModalContentState extends State<_LoginModalContent> {
   }
 }
 
-// REGISTER MODAL (se mantiene igual que antes)
+// FORGOT PASSWORD MODAL (actualizado para altura adaptativa)
+class _ForgotPasswordModalContent extends StatefulWidget {
+  @override
+  State<_ForgotPasswordModalContent> createState() =>
+      _ForgotPasswordModalContentState();
+}
+
+class _ForgotPasswordModalContentState
+    extends State<_ForgotPasswordModalContent> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _cedulaController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorMessage;
+  String? _successMessage;
+  final FocusNode _emailFocus = FocusNode();
+  final FocusNode _cedulaFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _cedulaController.dispose();
+    _emailFocus.dispose();
+    _cedulaFocus.dispose();
+    super.dispose();
+  }
+
+  /// Validador de email
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Por favor ingresa tu correo electrónico';
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+      return 'Por favor ingresa un correo electrónico válido';
+    }
+    return null;
+  }
+
+  /// Validador de cédula
+  String? _validateCedula(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Por favor ingresa tu número de cédula';
+    }
+    if (value.length < 5 || value.length > 10) {
+      return 'La cédula debe tener entre 5 y 10 dígitos';
+    }
+    if (!RegExp(r'^\d+$').hasMatch(value)) {
+      return 'La cédula debe contener solo números';
+    }
+    return null;
+  }
+
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/verify-reset-password'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "email": _emailController.text.trim(),
+          "cedula": _cedulaController.text.trim(),
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        setState(() {
+          _successMessage =
+              data['message'] ??
+              'Te hemos enviado un correo con instrucciones para restablecer tu contraseña.';
+        });
+      } else {
+        setState(() {
+          _errorMessage =
+              data['message'] ??
+              'No encontramos una cuenta con esos datos. Por favor verifica la información.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error de conexión: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Barra de arrastre
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+
+              // Título
+              Text(
+                'Recuperar Contraseña',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 8),
+
+              // Subtítulo
+              Text(
+                'Ingresa tu correo electrónico y número de cédula para verificar tu identidad',
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 24),
+
+              // Mensaje de error
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Mensaje de éxito
+              if (_successMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _successMessage!,
+                    style: const TextStyle(color: Colors.green),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Campo de Email
+              TextFormField(
+                controller: _emailController,
+                focusNode: _emailFocus,
+                textInputAction: TextInputAction.next,
+                onFieldSubmitted: (_) {
+                  FocusScope.of(context).requestFocus(_cedulaFocus);
+                },
+                keyboardType: TextInputType.emailAddress,
+                validator: _validateEmail,
+                decoration: InputDecoration(
+                  labelText: 'Correo electrónico',
+                  hintText: 'ejemplo@correo.com',
+                  prefixIcon: Icon(Icons.email),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Campo de Cédula
+              TextFormField(
+                controller: _cedulaController,
+                focusNode: _cedulaFocus,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _submitForm(),
+                keyboardType: TextInputType.number,
+                validator: _validateCedula,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Número de cédula',
+                  hintText: 'Ej: 12345678',
+                  prefixIcon: Icon(Icons.credit_card),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Botón de Recuperar contraseña
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submitForm,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child:
+                      _isLoading
+                          ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.onPrimary,
+                            ),
+                          )
+                          : Text('Recuperar contraseña'),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Link para volver a login
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('¿Recordaste tu contraseña?'),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      AuthModals.showLoginModal(context);
+                    },
+                    child: Text('Iniciar sesión'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// REGISTER MODAL (actualizado para altura adaptativa)
 class _RegisterModalContent extends StatefulWidget {
   @override
   State<_RegisterModalContent> createState() => _RegisterModalContentState();
@@ -344,7 +637,6 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,

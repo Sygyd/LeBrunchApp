@@ -7,17 +7,31 @@ class SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: TextField(
-        controller: controller,
-        decoration: const InputDecoration(
-          hintText: 'Buscar plato...',
-          prefixIcon: Icon(Icons.search),
-          border: OutlineInputBorder(),
+    final theme = Theme.of(context);
+
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        hintText: 'Buscar plato...',
+        hintStyle: TextStyle(color: Colors.grey.shade500),
+        prefixIcon: Icon(Icons.search, color: theme.colorScheme.primary),
+        filled: true,
+        fillColor: Colors.grey.shade100,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
-        onChanged: (value) => {},
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+        ),
       ),
+      onChanged: (value) => {},
     );
   }
 }
