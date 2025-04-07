@@ -6,7 +6,7 @@ enum MessageType {
   // Puedes expandir con más tipos si es necesario
 }
 
-enum MessageSender { user, support }
+enum MessageSender { user, support, system }
 
 class ChatMessage {
   final String id;
@@ -49,8 +49,28 @@ class ChatMessage {
     );
   }
 
+  // Método para crear un mensaje de texto del sistema
+  factory ChatMessage.fromSystem({required String message, String? id}) {
+    return ChatMessage(
+      id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      message: message,
+      type: MessageType.text,
+      sender: MessageSender.system,
+      timestamp: DateTime.now(),
+    );
+  }
+
+  // Verificar si el mensaje es del sistema
+  bool get isFromSystem => sender == MessageSender.system;
+
+  // Verificar si el mensaje es de soporte
+  bool get isFromSupport => sender == MessageSender.support;
+
   // Color de burbuja según el remitente
   Color getBubbleColor(ThemeData theme) {
+    if (sender == MessageSender.system) {
+      return theme.colorScheme.tertiary.withOpacity(0.2);
+    }
     return sender == MessageSender.user
         ? theme.colorScheme.primary
         : theme.colorScheme.surfaceVariant;
@@ -58,6 +78,9 @@ class ChatMessage {
 
   // Color de texto según el remitente
   Color getTextColor(ThemeData theme) {
+    if (sender == MessageSender.system) {
+      return theme.colorScheme.tertiary;
+    }
     return sender == MessageSender.user
         ? theme.colorScheme.onPrimary
         : theme.colorScheme.onSurfaceVariant;
@@ -65,6 +88,9 @@ class ChatMessage {
 
   // Alineación según el remitente
   Alignment getAlignment() {
+    if (sender == MessageSender.system) {
+      return Alignment.center;
+    }
     return sender == MessageSender.user
         ? Alignment.centerRight
         : Alignment.centerLeft;

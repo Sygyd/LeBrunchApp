@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '/models/user.dart';
 import '/Api_services/usuarios/register_service.dart';
+import '/UI_Screens/Widgets/custom_modal.dart';
 import 'dart:convert';
 
 // Constantes para la configuración
@@ -97,20 +98,20 @@ class _LoginModalContentState extends State<_LoginModalContent> {
         Navigator.of(context).pushReplacementNamed('/home');
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.statusCode == 401
-                  ? "Credenciales incorrectas"
-                  : "Error en el servidor (${response.statusCode})",
-            ),
-          ),
-        );
+
+        String errorMessage =
+            response.statusCode == 401
+                ? "Credenciales incorrectas"
+                : "Error en el servidor (${response.statusCode})";
+
+        await CustomModal.showError(context: context, message: errorMessage);
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error de conexión: ${e.toString()}")),
+
+      await CustomModal.showError(
+        context: context,
+        message: "Error de conexión: ${e.toString()}",
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -596,8 +597,9 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
   Future<void> _register() async {
     if (!_formSignupKey.currentState!.validate()) return;
     if (_contrasenaController.text != _confirmContrasenaController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Las contraseñas no coinciden")),
+      await CustomModal.showError(
+        context: context,
+        message: "Las contraseñas no coinciden",
       );
       return;
     }
@@ -615,18 +617,20 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
     try {
       final success = await ApiService.registerUser(user);
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Registro exitoso! Por favor inicia sesión"),
-          ),
+        await CustomModal.showSuccess(
+          context: context,
+          message: "Registro exitoso! Por favor inicia sesión",
+          onPressed: () {
+            Navigator.pop(context);
+            AuthModals.showLoginModal(context);
+          },
         );
-        Navigator.pop(context);
-        AuthModals.showLoginModal(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error en el registro: ${e.toString()}")),
+        await CustomModal.showError(
+          context: context,
+          message: "Error en el registro: ${e.toString()}",
         );
       }
     } finally {

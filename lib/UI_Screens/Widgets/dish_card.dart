@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../Api_services/cart_service.dart';
+import '../Widgets/custom_modal.dart';
 
 class DishCard extends StatefulWidget {
   final Map<String, dynamic> dish;
   final int? userRole;
-  final Function(Map<String, dynamic>) editDish;
-  final Function(String) deleteDish;
+  final Function(Map<String, dynamic>)? editDish;
+  final Function(String)? deleteDish;
   final double? parentWidth;
   final bool initialExpanded;
   final Function(bool) onToggleExpanded;
@@ -14,8 +16,8 @@ class DishCard extends StatefulWidget {
     Key? key,
     required this.dish,
     required this.userRole,
-    required this.editDish,
-    required this.deleteDish,
+    this.editDish,
+    this.deleteDish,
     this.parentWidth,
     this.initialExpanded = false,
     required this.onToggleExpanded,
@@ -31,6 +33,10 @@ class _DishCardState extends State<DishCard>
   late Animation<double> _scaleAnimation;
   bool _isHovered = false;
 
+  // Para almacenar referencias a widgets ancestros de forma segura
+  ScaffoldMessengerState? _scaffoldMessenger;
+  NavigatorState? _navigator;
+
   @override
   void initState() {
     super.initState();
@@ -45,9 +51,51 @@ class _DishCardState extends State<DishCard>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Almacenar referencias a widgets ancestros mientras el widget está activo
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
+    _navigator = Navigator.of(context);
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  // Método para mostrar un snackbar de forma segura
+  void _showSnackBar(String message, {SnackBarAction? action}) {
+    if (_scaffoldMessenger != null) {
+      // Crear una acción segura si se proporciona una
+      SnackBarAction? safeAction;
+
+      if (action != null) {
+        safeAction = SnackBarAction(
+          label: action.label,
+          onPressed: () {
+            // Llamar primero al callback original
+            action.onPressed();
+          },
+        );
+      }
+
+      _scaffoldMessenger!.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          action: safeAction,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Método para navegar de forma segura
+  void _navigateTo(String route) {
+    if (_navigator != null && _navigator!.mounted) {
+      _navigator!.pushNamed(route);
+    }
   }
 
   @override
@@ -351,8 +399,9 @@ class _DishCardState extends State<DishCard>
                       ],
                     ),
 
-                    // Botones de acción para administradores
+                    // Botones de acción según el rol
                     if (widget.userRole == 0) ...[
+                      // Botones de administrador
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -360,7 +409,7 @@ class _DishCardState extends State<DishCard>
                           OutlinedButton.icon(
                             onPressed: () {
                               Navigator.of(context).pop();
-                              widget.editDish(widget.dish);
+                              widget.editDish?.call(widget.dish);
                             },
                             icon: const Icon(Icons.edit),
                             label: const Text('Editar'),
@@ -379,7 +428,7 @@ class _DishCardState extends State<DishCard>
                           ElevatedButton.icon(
                             onPressed: () {
                               Navigator.of(context).pop();
-                              widget.deleteDish(
+                              widget.deleteDish?.call(
                                 widget.dish['idplato'].toString(),
                               );
                             },
@@ -397,6 +446,34 @@ class _DishCardState extends State<DishCard>
                           ),
                         ],
                       ),
+                    ] else if (widget.userRole == 1 &&
+                        (widget.dish['disponibilidad'] ?? false)) ...[
+                      // Botón de agregar al carrito para cliente
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            // Agregar al carrito
+                            _addToCart(context);
+                          },
+                          icon: const Icon(Icons.add_shopping_cart),
+                          label: const Text('Agregar al Pedido'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                            elevation: 2,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -406,6 +483,43 @@ class _DishCardState extends State<DishCard>
         );
       },
     ).then((_) => widget.onToggleExpanded(false));
+  }
+
+  // Método para añadir al carrito
+  void _addToCart(BuildContext context) {
+    // Datos del plato
+    final id = widget.dish['idplato'].toString();
+    final name = widget.dish['nombre'] ?? 'Producto sin nombre';
+    final price =
+        widget.dish['precio'] != null
+            ? double.tryParse(widget.dish['precio'].toString()) ?? 0.0
+            : 0.0;
+    final imageUrl = widget.dish['imagen_url'] ?? '';
+
+    // Agregar al carrito usando el servicio de carrito
+    final cartService = CartService();
+    cartService.addItem(
+      id: id,
+      name: name,
+      price: price,
+      imageUrl: imageUrl,
+      originalData: widget.dish,
+    );
+
+    // Cerrar el diálogo
+    Navigator.of(context).pop();
+
+    // Mostrar modal de confirmación
+    CustomModal.showSuccess(
+      context: context,
+      title: '¡Añadido al Carrito!',
+      message: '$name ha sido añadido a tu pedido',
+      buttonText: 'Ver Carrito',
+      onPressed: () {
+        // Navegar a la pantalla del carrito
+        _navigateTo('/cart');
+      },
+    );
   }
 
   // Nuevo método para construir secciones de información

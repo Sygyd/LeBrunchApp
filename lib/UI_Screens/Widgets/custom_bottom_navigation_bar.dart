@@ -5,6 +5,7 @@ import '/UI_Screens/Admin_Screens/ReportScreen.dart';
 import '/UI_Screens/Admin_Screens/RegistersScreen.dart';
 import '../Admin_Screens/menu_screen.dart';
 import '/UI_Screens/Admin_Screens/OrdersScreen.dart';
+import '/UI_Screens/Admin_Screens/AdminChatScreen.dart';
 import '/UI_Screens/Client_Screens/ClientHomeScreen.dart';
 import '/UI_Screens/Client_Screens/ChatScreen.dart';
 import '/UI_Screens/Client_Screens/CartScreen.dart';
@@ -108,6 +109,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           const RegistersScreen(),
           const MenuScreen(),
           const OrdersScreen(),
+          const AdminChatScreen(),
         ];
       case 2: // Cocinero
         return [
@@ -125,7 +127,11 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         ];
       default: // Cliente (rol 1)
         return [
-          ClientHomeScreen(userName: _userName, userCedula: _userCedula),
+          ClientHomeScreen(
+            userName: _userName,
+            userCedula: _userCedula,
+            onNavigate: _onItemTapped,
+          ),
           const ClientMenuScreen(),
           const ChatScreen(),
           const CartScreen(),
@@ -144,6 +150,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           _buildNavItem(Icons.person, 'Registros', 1, primaryColor),
           _buildNavItem(Icons.menu, 'Menú', 2, primaryColor),
           _buildNavItem(Icons.shopping_bag, 'Pedidos', 3, primaryColor),
+          _buildNavItem(Icons.chat, 'Chat', 4, primaryColor),
         ];
       case 2: // Cocinero
         return [
@@ -292,6 +299,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           'Registros',
           'Menú Admin',
           'Pedidos',
+          'Chat Admin',
         ][_selectedIndex];
       case 2: // Cocinero
         return [
@@ -496,27 +504,64 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
     if (confirm == true) {
       try {
-        // Llamar al endpoint de logout
-        final response = await http.post(
-          Uri.parse('http://192.168.1.121:3000/logout'),
-          headers: {"Content-Type": "application/json"},
-        );
-
-        // Limpiar datos locales independientemente de la respuesta
+        // Limpiar datos locales
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('auth_token');
         await prefs.remove('user_rol');
         await prefs.remove('user_name');
         await prefs.remove('user_cedula');
+        await prefs.remove('gemini_connected');
+        await prefs.remove('debug_mode');
+        await prefs.remove('echo_mode');
+        await prefs.remove('persistent_chat_user_id');
+        await prefs.remove('temporary_chat_id');
 
-        // Redirección a la pantalla de bienvenida
+        // Limpia cualquier dato del carrito
+        await prefs.remove('cart');
+
+        // Limpiar otros datos importantes
+        try {
+          http
+              .post(
+                Uri.parse('http://192.168.1.121:3000/logout'),
+                headers: {"Content-Type": "application/json"},
+              )
+              .timeout(const Duration(seconds: 2))
+              .catchError((_) {});
+        } catch (_) {}
+
+        // Esperar brevemente para que se completen operaciones pendientes
+        await Future.delayed(Duration(milliseconds: 100));
+
+        // Método de solución para error de Hero:
+        // Usar Navigator.pushNamedAndRemoveUntil con reemplazo directo a la ruta inicial
+        // sin intentar hacer pop o realizar animaciones de transición
         if (mounted) {
-          Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+          // Usar este método evita problemas con animaciones Hero
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            Navigator.of(context).pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder:
+                    (context, animation, secondaryAnimation) => Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    ),
+                transitionDuration: Duration.zero,
+                opaque: false,
+              ),
+              (_) => false,
+            );
+
+            // Después de un breve retraso, ir a la página principal
+            Future.delayed(const Duration(milliseconds: 50), () {
+              Navigator.of(context).pushReplacementNamed('/');
+            });
+          });
         }
       } catch (e) {
+        print("Error durante logout: $e");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error de conexión: ${e.toString()}")),
+            SnackBar(content: Text("Error al cerrar sesión: ${e.toString()}")),
           );
         }
       }

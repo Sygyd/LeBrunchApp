@@ -4,11 +4,13 @@ import 'ChatScreen.dart';
 class ClientHomeScreen extends StatelessWidget {
   final String userName;
   final String userCedula;
+  final Function(int)? onNavigate;
 
   const ClientHomeScreen({
     super.key,
     required this.userName,
     this.userCedula = '',
+    this.onNavigate,
   });
 
   @override
@@ -55,15 +57,13 @@ class ClientHomeScreen extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                // Botón de chat
-                _buildChatButton(context, theme),
               ],
             ),
 
             const SizedBox(height: 24),
 
-            // Añadir tarjeta de soporte
-            _buildSupportCard(context, theme),
+            // Añadir tarjeta de Brunchy
+            _buildBrunchyCard(context, theme),
 
             const SizedBox(height: 24),
 
@@ -74,37 +74,25 @@ class ClientHomeScreen extends StatelessWidget {
     );
   }
 
-  // Botón flotante de chat
-  Widget _buildChatButton(BuildContext context, ThemeData theme) {
-    return IconButton.filled(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ChatScreen()),
-        );
-      },
-      icon: const Icon(Icons.chat),
-      style: IconButton.styleFrom(
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-        elevation: 2,
-      ),
-      tooltip: 'Chat con soporte',
-    );
-  }
-
-  // Tarjeta para soporte
-  Widget _buildSupportCard(BuildContext context, ThemeData theme) {
+  // Tarjeta para Brunchy
+  Widget _buildBrunchyCard(BuildContext context, ThemeData theme) {
     return Card(
       elevation: 2,
       shadowColor: theme.colorScheme.shadow.withOpacity(0.3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ChatScreen()),
-          );
+          // Navegar usando BottomNavigationBar en lugar de push
+          if (onNavigate != null) {
+            // El índice 2 es la pestaña de chat (Home, Menú, Chat, Carrito)
+            onNavigate!(2);
+          } else {
+            // Fallback al comportamiento anterior si onNavigate no está disponible
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ChatScreen()),
+            );
+          }
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(
@@ -115,7 +103,7 @@ class ClientHomeScreen extends StatelessWidget {
                 backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
                 radius: 24,
                 child: Icon(
-                  Icons.support_agent,
+                  Icons.chat_bubble_outline,
                   color: theme.colorScheme.primary,
                 ),
               ),
@@ -125,7 +113,7 @@ class ClientHomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '¿Necesitas ayuda?',
+                      '¡Hola! Soy Brunchy',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontFamily: 'LightHouse',
@@ -133,7 +121,7 @@ class ClientHomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Chatea con nuestro equipo de soporte',
+                      'Tu mesero virtual para atenderte',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurface.withOpacity(0.7),
                         fontFamily: 'MADE TOMMY',
@@ -152,7 +140,7 @@ class ClientHomeScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  'Chat',
+                  'Chatear',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onPrimary,
                     fontWeight: FontWeight.bold,
