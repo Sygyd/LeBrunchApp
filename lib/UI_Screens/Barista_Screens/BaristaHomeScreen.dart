@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BaristaHomeScreen extends StatefulWidget {
-  const BaristaHomeScreen({super.key});
+  final String userName;
+
+  const BaristaHomeScreen({super.key, required this.userName});
 
   @override
   State<BaristaHomeScreen> createState() => _BaristaHomeScreenState();
 }
 
 class _BaristaHomeScreenState extends State<BaristaHomeScreen> {
-  String _userName = 'Barista';
   bool _isLoading = true;
   int _activeOrders = 0;
   int _completedOrders = 0;
@@ -25,12 +26,10 @@ class _BaristaHomeScreenState extends State<BaristaHomeScreen> {
   Future<void> _loadUserData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final name = prefs.getString('user_name') ?? 'Barista';
       final cedula = prefs.getString('user_cedula') ?? '';
 
       if (mounted) {
         setState(() {
-          _userName = name;
           _userCedula = cedula;
           _isLoading = false;
         });
@@ -93,7 +92,7 @@ class _BaristaHomeScreenState extends State<BaristaHomeScreen> {
                   children: [
                     Text('¡Bienvenido!', style: theme.textTheme.titleLarge),
                     Text(
-                      _userName,
+                      widget.userName,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         color: theme.colorScheme.primary,
                         fontWeight: FontWeight.bold,

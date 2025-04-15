@@ -7,18 +7,21 @@ class ApiService {
       "http://192.168.1.121:3000"; // Cambia la IP según tu servidor
 
   // Registrar usuario
-  static Future<bool> registerUser(User user) async {
+  static Future<bool> registerUser(
+    User user, {
+    required String contrasena,
+  }) async {
     final response = await http.post(
       Uri.parse("$apiUrl/register"),
       headers: {"Content-Type": "application/json"},
-      body: jsonEncode(user.toJson()),
+      body: jsonEncode({...user.toJson(), 'contrasena': contrasena}),
     );
     print("Código de respuesta: ${response.statusCode}");
     print("Respuesta del servidor: ${response.body}");
     if (response.statusCode == 201) {
       return true; // Registro exitoso
     } else {
-      return false; // Error en el registro
+      throw Exception("Error en el registro: ${response.body}");
     }
   }
 }

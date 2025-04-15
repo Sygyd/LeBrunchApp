@@ -92,6 +92,36 @@ router.delete("/menu/:id", async (req, res) => {
   }
 });
 
+// Verificar si un plato existe en la base de datos
+router.get('/menu/exists/:nombrePlato', async (req, res) => {
+  try {
+    const { nombrePlato } = req.params;
+    
+    if (!nombrePlato) {
+      return res.status(400).json({ 
+        error: 'Se requiere el nombre del plato' 
+      });
+    }
+    
+    // Buscar platos con nombre similar (insensible a mayúsculas/minúsculas)
+    const query = `
+      SELECT * FROM menu 
+      WHERE LOWER(nombre) LIKE LOWER($1)
+    `;
+    
+    const result = await pool.query(query, [`%${nombrePlato}%`]);
+    
+    return res.status(200).json({
+      exists: result.rows.length > 0,
+      count: result.rows.length,
+      matches: result.rows,
+    });
+  } catch (err) {
+    console.error('Error al verificar existencia de plato:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Servir archivos de imagen
 router.use("/uploads", express.static("uploads"));
 

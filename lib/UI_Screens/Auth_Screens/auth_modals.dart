@@ -6,6 +6,7 @@ import '/models/user.dart';
 import '/Api_services/usuarios/register_service.dart';
 import '/UI_Screens/Widgets/custom_modal.dart';
 import 'dart:convert';
+import '/Api_services/cart_service.dart';
 
 // Constantes para la configuración
 const String apiBaseUrl = 'http://192.168.1.121:3000';
@@ -18,10 +19,6 @@ class AuthModals {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _LoginModalContent(),
-      transitionAnimationController: AnimationController(
-        duration: animationDuration,
-        vsync: Navigator.of(context),
-      ),
     );
   }
 
@@ -31,10 +28,6 @@ class AuthModals {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _RegisterModalContent(),
-      transitionAnimationController: AnimationController(
-        duration: animationDuration,
-        vsync: Navigator.of(context),
-      ),
     );
   }
 
@@ -44,10 +37,6 @@ class AuthModals {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _ForgotPasswordModalContent(),
-      transitionAnimationController: AnimationController(
-        duration: animationDuration,
-        vsync: Navigator.of(context),
-      ),
     );
   }
 }
@@ -124,6 +113,25 @@ class _LoginModalContentState extends State<_LoginModalContent> {
     await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
     await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
     await prefs.setString('user_cedula', data['cedula'] ?? '');
+
+    // Guardar el ID del usuario para poder identificarlo en la pantalla de administración
+    if (data['id'] != null) {
+      final userId = int.parse(data['id'].toString());
+      await prefs.setInt('user_id', userId);
+      print('✅ ID de usuario guardado: ${data['id']}');
+
+      // Primero reiniciar completamente el servicio de carrito para limpiar cualquier caché anterior
+      final cartService = CartService();
+      await cartService.resetService();
+
+      // Luego asignar el nuevo ID de usuario para cargar su carrito específico
+      await cartService.setUserId(userId.toString());
+      print(
+        '✅ CartService completamente reiniciado e inicializado con ID: $userId',
+      );
+    } else {
+      print('⚠️ No se recibió el ID de usuario en la respuesta');
+    }
   }
 
   @override
@@ -606,17 +614,32 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
 
     setState(() => _isLoading = true);
 
+    // Crear un usuario temporal con ID ficticio y rol cliente (1)
     final user = User(
+      id: 0, // ID temporal que será asignado por el servidor
       nombre: _nombreController.text.trim(),
       apellido: _apellidoController.text.trim(),
       cedula: _cedulaController.text.trim(),
       email: _emailController.text.trim(),
-      contrasena: _contrasenaController.text,
+      rol: 1, // Por defecto es cliente (rol 1)
     );
 
     try {
-      final success = await ApiService.registerUser(user);
-      if (success && mounted) {
+      // Utilizar el servicio de API para registrar al usuario, enviando los datos adicionales
+      final response = await http.post(
+        Uri.parse("$apiBaseUrl/register"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          ...user.toJson(),
+          'contrasena':
+              _contrasenaController.text, // Enviamos la contraseña por separado
+        }),
+      );
+
+      print("Código de respuesta: ${response.statusCode}");
+      print("Respuesta del servidor: ${response.body}");
+
+      if (response.statusCode == 201 && mounted) {
         await CustomModal.showSuccess(
           context: context,
           message: "Registro exitoso! Por favor inicia sesión",
@@ -625,6 +648,12 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
             AuthModals.showLoginModal(context);
           },
         );
+      } else {
+        if (mounted) {
+          final responseData = jsonDecode(response.body);
+          final errorMessage = responseData['error'] ?? 'Error en el registro';
+          await CustomModal.showError(context: context, message: errorMessage);
+        }
       }
     } catch (e) {
       if (mounted) {

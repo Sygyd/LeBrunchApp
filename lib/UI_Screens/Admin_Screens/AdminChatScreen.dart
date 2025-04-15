@@ -657,6 +657,7 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
               ),
             ],
           ),
+          automaticallyImplyLeading: false,
           actions: [
             IconButton(
               onPressed: _showAdminOptions,
@@ -737,7 +738,11 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
 
             // Área de input
             Container(
-              padding: const EdgeInsets.all(8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 12.0,
+              ),
+              margin: const EdgeInsets.only(bottom: 8.0),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surface,
                 boxShadow: [
@@ -752,55 +757,86 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
                 child: Row(
                   children: [
                     // Botón de opciones adicionales
-                    IconButton(
-                      icon: Icon(Icons.refresh),
-                      onPressed: _checkGeminiConnection,
-                      tooltip: 'Verificar conexión',
-                    ),
-                    // Campo de texto
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        maxLines: null,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: InputDecoration(
-                          hintText: 'Escribe un mensaje...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor:
-                              Theme.of(context).colorScheme.surfaceVariant,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          suffixIcon:
-                              _debugMode
-                                  ? IconButton(
-                                    icon: Icon(
-                                      Icons.bug_report,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                    onPressed: _showAdminOptions,
-                                    tooltip: 'Opciones de depuración',
-                                  )
-                                  : null,
-                        ),
-                        onSubmitted: (_) => _handleSendMessage(),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.refresh),
+                        onPressed: _checkGeminiConnection,
+                        tooltip: 'Verificar conexión',
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
+                    // Campo de texto
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 2,
+                              spreadRadius: 1,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _messageController,
+                          maxLines: null,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: 'Escribe un mensaje...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor:
+                                Theme.of(context).colorScheme.surfaceVariant,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            suffixIcon:
+                                _debugMode
+                                    ? IconButton(
+                                      icon: Icon(
+                                        Icons.bug_report,
+                                        color:
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                      ),
+                                      onPressed: _showAdminOptions,
+                                      tooltip: 'Opciones de depuración',
+                                    )
+                                    : null,
+                          ),
+                          onSubmitted: (_) => _handleSendMessage(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     // Botón de enviar
-                    FloatingActionButton(
-                      onPressed: _handleSendMessage,
-                      mini: true,
-                      tooltip: 'Enviar mensaje',
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      child: const Icon(Icons.send),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: FloatingActionButton(
+                        onPressed: _handleSendMessage,
+                        mini: true,
+                        tooltip: 'Enviar mensaje',
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onPrimary,
+                        child: const Icon(Icons.send),
+                      ),
                     ),
                   ],
                 ),

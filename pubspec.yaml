@@ -37,7 +37,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
-    - assets/icons/
+    - assets/images/fondo-flores-2.png
+    - assets/logos/
     - assets/fonts/
     - .env
   fonts:
@@ -53,11 +54,11 @@ flutter:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo.png"
+  image_path: "assets/logos/logo.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/logos/logo.png"
   remove_alpha_ios: true
-  image_size_android: 0.22 # Tamaño reducido al 25%
-  image_size_ios: 0.22 # Tamaño reducido al 25%
-  padding_android: 20 # Más espacio alrededor del logo
-  min_sdk_android: 21 # Requerido para íconos adaptativos
+  image_size_android: 0.22
+  image_size_ios: 0.22
+  padding_android: 20
+  min_sdk_android: 21

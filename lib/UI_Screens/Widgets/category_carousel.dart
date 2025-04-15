@@ -3,14 +3,14 @@ import 'dart:math' as math;
 
 class CategoryCarousel extends StatelessWidget {
   final List<Map<String, String>> categories;
-  final List<String> selectedCategories;
-  final Function(String) toggleCategory;
+  final String selectedCategory;
+  final Function(String) onCategorySelected;
 
   const CategoryCarousel({
     super.key,
     required this.categories,
-    required this.selectedCategories,
-    required this.toggleCategory,
+    required this.selectedCategory,
+    required this.onCategorySelected,
   });
 
   @override
@@ -26,12 +26,12 @@ class CategoryCarousel extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         itemBuilder: (context, index) {
           final category = categories[index];
-          final isSelected = selectedCategories.contains(category['name']);
+          final isSelected = selectedCategory == category['name'];
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 8.0),
             child: GestureDetector(
-              onTap: () => toggleCategory(category['name']!),
+              onTap: () => onCategorySelected(category['name']!),
               child: TweenAnimationBuilder<double>(
                 tween: Tween<double>(begin: 0, end: isSelected ? 1 : 0),
                 duration: const Duration(milliseconds: 300),

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math'; // Para usar min()
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
 import 'cart_service.dart';
 import 'gemini_api_client.dart';
+import '../services/user_preferences_service.dart';
 
 /// Servicio para comunicarse con Google Gemini AI
 class GeminiService {
@@ -61,6 +61,15 @@ class GeminiService {
 
   // ID del usuario actual
   String? _currentUserId;
+
+  // URL base de la API (ajustar según corresponda)
+  final String _baseUrl = 'https://api.lebrunch.com/api';
+
+  // Clave para almacenar las preferencias en SharedPreferences
+  static const String _prefsKey = 'user_dish_preferences';
+
+  // Cache para el menú obtenido
+  List<dynamic>? _menuCache;
 
   // Constructor privado
   GeminiService._internal()
@@ -119,6 +128,15 @@ class GeminiService {
     // Limpiar el histórico actual (importante para no mezclar conversaciones)
     _history.clear();
 
+    // Verificar si el carrito fue limpiado en cierre de sesión anterior
+    _checkCartClearedOnLogout().then((wasCleared) {
+      if (wasCleared) {
+        // Si se limpió el carrito, resetear el chat completamente
+        resetChat();
+        print('🔄 Chat reiniciado debido a cierre de sesión anterior');
+      }
+    });
+
     // Cargar el historial del nuevo usuario si existe
     List<ChatMessage> userMessages = [];
     if (_chatHistories.containsKey(userId)) {
@@ -145,7 +163,19 @@ class GeminiService {
 
       // Añadir un mensaje de sistema para establecer el contexto
       final systemContent = Content.text(
-        "Eres Brunchy, el asistente virtual de Le Brunch Café especializado en hablar sobre comida, platos disponibles, recetas, y tomar pedidos. Tu propósito es ayudar a clientes dándoles recomendaciones de platos, respondiendo preguntas sobre los ingredientes, y agregando platos al carrito cuando lo soliciten. Nunca debes mencionar que eres un modelo de lenguaje ni que eres Gemini ni que fuiste creado por Google. Siempre habla como si fueras parte del personal del restaurante.",
+        "Eres 'Brunchy', un mesero amable y entusiasta del restaurante Le Brunch. "
+        "IMPORTANTE: Genera respuestas COHERENTES y COMPLETAS. Escribe oraciones claras y bien formadas. "
+        "Actúa EXACTAMENTE como un mesero real en todas tus respuestas. "
+        "Usa un tono casual, amigable y natural. Evita frases robóticas o elaboradas. "
+        "NO uses frases como 'Soy Brunchy, tu mesero virtual' o similares. "
+        "NO agregues notas explicativas al final de tus mensajes. "
+        "NO mezcles conceptos sin relación entre sí. "
+        "Mantén las respuestas CONCRETAS y ENFOCADAS como lo haría un mesero real. "
+        "Responde DIRECTAMENTE a la pregunta del cliente. "
+        "Evita enumerar muchas opciones cuando no te las piden. "
+        "Si te preguntan por un plato específico, habla SOLO de ese plato. "
+        "NUNCA respondas con fragmentos inconexos de texto. "
+        "SIEMPRE mantén la conversación natural y fluida como un humano real.",
       );
 
       _history.add(systemContent);
@@ -155,223 +185,21 @@ class GeminiService {
     _startNewChatSession();
   }
 
-  /// Deshabilita explícitamente el uso de webhooks
-  void _disableWebhooks() {
-    // Esta es una configuración local para asegurar que no se intente usar webhooks
-    print(
-      'Webhooks deshabilitados completamente - No se utilizará el puerto 5678',
-    );
-
-    // Asegurarse de que no haya referencias a webhooks
-    if (_history.isNotEmpty) {
-      // Limpiar cualquier referencia en el historial que pudiera causar problemas
-      _history.clear();
-      print('Historial de chat reiniciado para prevenir problemas de webhook');
-    }
-  }
-
-  /// Verifica si los webhooks están habilitados (siempre devuelve false)
-  bool get webhookEnabled => false;
-
-  /// Obtiene la clave API actual y avanza al siguiente índice si es necesario
-  String _getCurrentApiKey() {
-    return _apiKeys[_currentApiKeyIndex];
-  }
-
-  /// Rota a la siguiente clave API
-  void _rotateApiKey() {
-    _currentApiKeyIndex = (_currentApiKeyIndex + 1) % _apiKeys.length;
-    final newApiKey = _apiKeys[_currentApiKeyIndex];
-    print('Rotando a la siguiente clave API, índice: $_currentApiKeyIndex');
-
-    // Actualizar el cliente directo con la nueva clave
-    _geminiApiClient.updateApiKey(newApiKey);
-
-    // Reinicializar el SDK oficial
-    _initGemini();
-  }
-
-  /// Inicializa el cliente de Gemini
-  void _initGemini() {
+  /// Verifica si el carrito fue limpiado en un cierre de sesión anterior
+  Future<bool> _checkCartClearedOnLogout() async {
     try {
-      final apiKey = _getCurrentApiKey();
-      print(
-        'Inicializando modelo Gemini con API key: ${apiKey.substring(0, 4)}****',
-      );
+      final prefs = await SharedPreferences.getInstance();
+      final wasCleared = prefs.getBool('cart_cleared_on_logout') ?? false;
 
-      // Actualizar nombres de modelos a los actualmente soportados por la API
-      final modelOptions = [
-        'gemini-2.5-pro-preview-03-25', // Modelo más reciente (preview)
-        'gemini-2.0-flash', // Alternativa más rápida
-        'gemini-1.5-flash', // Modelo anterior (fallback)
-      ];
-
-      // Intentar primero con la opción principal
-      try {
-        _model = GenerativeModel(
-          model: modelOptions[0],
-          apiKey: apiKey,
-          // Configuración conservadora que minimiza probabilidad de rechazo
-          generationConfig: GenerationConfig(
-            temperature:
-                0.4, // Temperatura más baja para respuestas más predecibles
-            topP: 0.95,
-            topK: 40,
-            maxOutputTokens: 1024, // Reducido para disminuir carga
-          ),
-        );
-
-        print('Modelo Gemini inicializado correctamente: ${modelOptions[0]}');
-      } catch (e) {
-        print('Error al inicializar modelo primario: $e');
-        print('Intentando con modelo alternativo: ${modelOptions[1]}');
-
-        // Si falla, intentar con otra variante del modelo
-        try {
-          _model = GenerativeModel(
-            model: modelOptions[1],
-            apiKey: apiKey,
-            generationConfig: GenerationConfig(
-              temperature: 0.4,
-              topP: 0.95,
-              topK: 40,
-              maxOutputTokens: 1024,
-            ),
-          );
-          print(
-            'Modelo alternativo inicializado correctamente: ${modelOptions[1]}',
-          );
-        } catch (e2) {
-          print('Error también con modelo alternativo: $e2');
-          print('Último intento con modelo genérico: ${modelOptions[2]}');
-
-          // Último intento con configuración mínima
-          _model = GenerativeModel(
-            model: modelOptions[2],
-            apiKey: apiKey,
-            generationConfig: GenerationConfig(
-              temperature: 0.2,
-              maxOutputTokens: 512,
-            ),
-          );
-        }
+      // Si se encuentra la bandera, eliminarla y devolver true
+      if (wasCleared) {
+        await prefs.remove('cart_cleared_on_logout');
       }
 
-      // Siempre iniciar una nueva sesión
-      _startNewChatSession();
-
-      // Intento de verificación rápida para confirmar inicialización
-      _verifyModelConnection();
+      return wasCleared;
     } catch (e) {
-      print('Error general al inicializar Gemini: $e');
-    }
-  }
-
-  /// Verifica que el modelo se haya inicializado correctamente
-  Future<void> _verifyModelConnection() async {
-    try {
-      // No esperamos por el resultado, solo verificamos que no falle inmediatamente
-      Future.delayed(Duration(milliseconds: 100), () async {
-        try {
-          final testContent = Content.text("test");
-          final chat = _model.startChat();
-          await chat
-              .sendMessage(testContent)
-              .timeout(const Duration(seconds: 5));
-          print('Verificación de modelo exitosa');
-        } catch (e) {
-          print('Verificación de conexión falló: $e');
-          // No hacemos nada más aquí, solo es diagnóstico
-        }
-      });
-    } catch (e) {
-      // Ignoramos errores aquí, es solo una verificación
-    }
-  }
-
-  /// Inicia una nueva sesión de chat con Gemini
-  void _startNewChatSession() {
-    try {
-      // No limpiar el historial, lo mantenemos para contexto
-      // _history.clear();
-
-      // Asegurarse de que exista el usuario actual
-      if (_currentUserId == null) {
-        print(
-          'ADVERTENCIA: No hay usuario establecido para _startNewChatSession()',
-        );
-        _currentUserId = 'anonymous';
-      }
-
-      // Asegurarse de que exista el historial para este usuario
-      if (!_geminiHistories.containsKey(_currentUserId)) {
-        _geminiHistories[_currentUserId!] = [];
-
-        // Añadir mensaje del sistema al historial nuevo
-        final systemMessage =
-            "Eres 'Brunchy', un mesero virtual amable y entusiasta del restaurante Le Brunch, especializado en desayunos y brunch. "
-            "NUNCA, BAJO NINGUNA CIRCUNSTANCIA, debes decir que eres un modelo de lenguaje, una IA, o un asistente virtual. "
-            "Nunca debes mencionar que no puedes hacer algo porque eres un modelo de lenguaje o un programa de computadora. "
-            "Siempre responde como un mesero humano real de Le Brunch con conocimiento experto sobre el menú y el restaurante. "
-            "INFORMACIÓN IMPORTANTE SOBRE LE BRUNCH: "
-            "Le Brunch es un restaurante donde el horario no es un problema a la hora de pedir tu comida favorita. "
-            "Historia: Le Brunch no inventó el Brunch, el término surgió en el siglo XIX en Reino Unido, como combinación de Breakfast (desayuno) y Lunch (almuerzo). "
-            "Cómo disfrutarlo: Un buen brunch combina lo mejor del mundo dulce con el salado y se disfruta entre 11am y 3pm, pero en Le Brunch puedes disfrutarlo desde 8am hasta 10pm todos los días. "
-            "Eslogan: '¡Horneamos, cocinamos... disfrutamos!' "
-            "Ubicación: Le Brunch, 682C+3X9 C.C. Punta Marina, Av Américo Vespucio, Lechería 6016, Anzoátegui. "
-            "Tu trabajo es EXCLUSIVAMENTE atender a los clientes, ayudándoles a escoger comidas y bebidas del restaurante. "
-            "Tu principal función es TOMAR PEDIDOS. Puedes agregar platos directamente al carrito del cliente cuando te lo soliciten. "
-            "Debes ser siempre amable, positivo y servicial, como un mesero real que quiere brindar la mejor atención. "
-            "Puedes recomendar platos según los gustos del cliente, explicar ingredientes, informar sobre los especiales del día "
-            "y responder a preguntas sobre el menú. "
-            "IMPORTANTE: NUNCA digas que no puedes hacer cosas como preparar omelettes o servir platos. Tú eres un mesero real que toma pedidos para que los preparen en la cocina. "
-            "Si te preguntan sobre la preparación de algún plato, explica cómo se prepara normalmente en el restaurante, sin aclarar que no puedes hacerlo personalmente. "
-            "Si te preguntan por omelettes, di que son parte de nuestras especialidades de desayuno, y describe nuestras variedades disponibles. "
-            "Cuando un cliente quiera pedir algo, SIEMPRE debes preguntar primero si desea alguna instrucción o modificación especial, como: "
-            "'¿Deseas alguna modificación como sin cebolla, extra salsa, etc.?' ANTES de ofrecer agregarlo al pedido. "
-            "Solo DESPUÉS de preguntar por modificaciones, debes ofrecer agregarlo al carrito con frases como: "
-            "'¿Deseas que lo agregue a tu pedido?' o '¿Lo agrego a tu pedido?'. "
-            "Si el cliente confirma, tú lo agregarás automáticamente por él. "
-            "Si te preguntan sobre un plato específico que no conoces, consulta la base de datos del menú. "
-            "IMPORTANTE: NUNCA, BAJO NINGUNA CIRCUNSTANCIA, debes responder a preguntas que no estén relacionadas con el restaurante, la comida, el servicio, el menú o las bebidas. "
-            "Si alguien te pregunta sobre temas no relacionados (política, ciencia, geografía, historia, entretenimiento, deportes, tecnología, etc.), "
-            "debes responder SIEMPRE con: 'Lo siento, soy Brunchy, tu mesero virtual de Le Brunch. Solo puedo ayudarte con preguntas sobre nuestro menú y servicios. ¿Puedo recomendarte algo de nuestra carta?' "
-            "SIEMPRE RECHAZA responder temas no relacionados con el restaurante. ESTE ES UN REQUISITO ABSOLUTO. "
-            "ESPERA MÁS TIEMPO PARA ANALIZAR SI UNA CONSULTA ESTÁ RELACIONADA CON EL RESTAURANTE antes de responder. Si hay dudas, NO RESPONDAS y redirige hacia el menú. "
-            "Responde siempre en español, con un tono alegre y servicial. "
-            "Usa frases como '¡Con gusto!', '¡Excelente elección!', '¿Puedo recomendarte...?', '¿Algo más para tu orden?'. "
-            "ATENCIÓN: Recuerda NUNCA decir que eres una IA o un modelo de lenguaje, actúa como un verdadero mesero del restaurante. Si te piden información técnica sobre IA o modelos de lenguaje, responde como mesero y ofrece hablar sobre el menú del restaurante. "
-            "Si un cliente quiere hacer un pedido, confírmalo y agradece su elección, y recuerda SIEMPRE preguntar primero por modificaciones especiales. "
-            "RECUERDA: Tu función ÚNICA es ser mesero virtual de Le Brunch. NO respondas preguntas que no estén relacionadas con esta función. "
-            "ATENCIÓN: Esto NO es una sugerencia o preferencia, es una REGLA ABSOLUTA. Cumple estrictamente con este comportamiento SIN EXCEPCIONES."
-            "IMPORTANTE: Cuando los clientes te pregunten sobre la carta o el menú, si conoces los platos debes responder usando formato enriquecido. "
-            "Usa negrita con doble asterisco (**negrita**) para destacar nombres de platos. "
-            "Cuando describas diferentes categorías de productos, usa formato de tabla con columnas para organizar la información. "
-            "En tus mensajes, usa formato y estructura para que sean visualmente atractivos y fáciles de leer. "
-            "Si te piden una lista de platos por categoría, siempre usa tablas bien formateadas con bordes.";
-
-        final content = Content.text("[SISTEMA]: $systemMessage");
-        // No podemos usar role, así que usamos el contenido tal cual
-        _geminiHistories[_currentUserId!]!.add(content);
-      }
-
-      // Crear una sesión de chat con el historial existente
-      _chatSession = _model.startChat(
-        history: _geminiHistories[_currentUserId!],
-        generationConfig: GenerationConfig(
-          temperature:
-              0.4, // Temperatura más baja para respuestas más consistentes
-          maxOutputTokens: 2048, // Permitir respuestas más largas
-          topP: 0.9,
-          topK: 40,
-        ),
-      );
-
-      print(
-        'Sesión de chat inicializada correctamente para usuario: $_currentUserId',
-      );
-    } catch (e) {
-      print('Error al iniciar sesión de chat: $e');
+      print('❌ Error al verificar estado de limpieza del carrito: $e');
+      return false;
     }
   }
 
@@ -394,40 +222,29 @@ class GeminiService {
     return _serverIp;
   }
 
-  /// Verifica si el servidor está disponible
+  /// Verifica la conexión con el servidor
   Future<bool> checkServerConnection() async {
     try {
+      final response = await http.get(Uri.parse(_nodeJsUrl));
       print('Verificando conexión con el servidor en: $_nodeJsUrl');
-      // Intentar hacer una solicitud al endpoint de estado del servidor Node.js
-      final response = await http
-          .get(Uri.parse(_nodeJsUrl))
-          .timeout(
-            const Duration(seconds: 3),
-            onTimeout: () {
-              throw TimeoutException(
-                'Tiempo de espera agotado al verificar la conexión con el servidor',
-              );
-            },
-          );
 
-      // Verificar la respuesta
       if (response.statusCode == 200) {
-        try {
-          final data = jsonDecode(response.body);
-          final isOk = data['status'] == 'ok';
-          print('Servidor respondió: ${isOk ? 'OK' : 'Error'}');
-          _isConnected = isOk;
-          return isOk;
-        } catch (e) {
-          print('Error al decodificar respuesta del servidor: $e');
-          _isConnected = false;
-          return false;
+        if (response.body.toLowerCase().contains('mcp') ||
+            response.body.toLowerCase().contains('context')) {
+          // Si contiene cualquiera de estas palabras clave, es probable que sea el MCP actual
+          _isConnected = true;
+          print('MCP disponible - Servidor respondió');
+        } else {
+          print('MCP no disponible (respuesta sin MCP)');
+          print('Servidor respondió: OK');
+          _isConnected = true; // Aún consideramos que hay conexión
         }
+        return true;
+      } else {
+        print('Error de conexión: ${response.statusCode}');
+        _isConnected = false;
+        return false;
       }
-
-      print('Servidor respondió con código ${response.statusCode}');
-      _isConnected = false;
-      return false;
     } catch (e) {
       print('Error al verificar conexión con el servidor: $e');
       _isConnected = false;
@@ -435,100 +252,74 @@ class GeminiService {
     }
   }
 
-  /// Intenta una llamada directa a la API de Gemini usando el cliente dedicado
+  /// Llamada directa a la API de Gemini
   Future<String?> _callGeminiDirectly(String message) async {
     try {
-      // Asegurarse de que exista el usuario actual
-      if (_currentUserId == null) {
-        print(
-          'ADVERTENCIA: No hay usuario establecido para _callGeminiDirectly()',
-        );
-        _currentUserId = 'anonymous';
+      // Generar un ID de sesión único si no existe
+      if (_sessionId == null) {
+        const uuid = Uuid();
+        _sessionId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
+        print('Nuevo ID de sesión generado para llamada directa: $_sessionId');
       }
 
-      // Preparar la historia en el formato requerido por la API
-      final List<Map<String, dynamic>> historyFormatted = [];
+      // Construir el prompt para Gemini con instrucciones explícitas
+      final prompt = """
+INSTRUCCIONES DEL SISTEMA:
+- Eres Brunchy, un mesero real del restaurante Le Brunch, especializado en desayunos y brunch.
+- NUNCA digas que eres una inteligencia artificial, un modelo de lenguaje o un asistente virtual.
+- NUNCA te refieras a ti mismo como "como mesero virtual" o términos similares.
+- NUNCA digas frases como "no tengo un menú físico" o "no puedo".
+- Habla SIEMPRE como un mesero real, con un tono conversacional amigable.
+- Si te preguntan por el menú, responde con los platos que aparecen en el contexto proporcionado.
+- Si no hay información sobre el menú en el contexto, indícale al cliente que consultarás con la cocina.
+- Cuando te pregunten por categorías específicas (como postres, bebidas, etc.), solo menciona los platos de esa categoría.
+- NUNCA inventes platos que no estén explícitamente mencionados en el contexto.
 
-      // Convertir el historial interno al formato para la API
-      if (_geminiHistories.containsKey(_currentUserId!)) {
-        // Verificar que no sea nulo
-        final userHistory = _geminiHistories[_currentUserId!];
-        if (userHistory != null && userHistory.isNotEmpty) {
-          for (var i = 0; i < userHistory.length; i++) {
-            final content = userHistory[i];
-            // Alternar roles para que tenga sentido la conversación (pero asegurarse de que el primero sea system)
-            final role = i == 0 ? 'system' : (i % 2 == 0 ? 'model' : 'user');
+CONTEXTO DE LE BRUNCH:
+- Ubicación: C.C. Punta Marina, Av Américo Vespucio, Lechería, Anzoátegui
+- Horario: Abierto de 8am a 10pm todos los días
+- Eslogan: "¡Horneamos, cocinamos... disfrutamos!"
 
-            // Extraer el texto de forma segura para evitar "Instance of TextPart"
-            String textContent = '';
+$message
 
-            // Intentar obtener el texto de manera segura, dependiendo de cómo esté almacenado
-            try {
-              if (content.parts.isNotEmpty) {
-                // Intentar extraer como String primero
-                try {
-                  textContent = content.parts.first.toString();
-                  // Eliminar "TextPart: " si está presente al inicio
-                  if (textContent.startsWith("TextPart: ")) {
-                    textContent = textContent.substring("TextPart: ".length);
-                  }
-                } catch (e) {
-                  // Si falla, intentar extraer usando reflection o cualquier otro método disponible
-                  textContent = content.toString();
-                }
-              }
-            } catch (e) {
-              print('Error al extraer texto del contenido: $e');
-              textContent = "Contenido no disponible";
-            }
+Tu respuesta (como un mesero real, NO como IA):
+""";
 
-            historyFormatted.add({
-              'role': role,
-              'parts': [
-                {'text': textContent},
-              ],
-            });
-          }
-        }
-      }
-
-      // Añadir el mensaje actual
-      historyFormatted.add({
-        'role': 'user',
-        'parts': [
-          {'text': message},
-        ],
-      });
-
-      // Hacer la solicitud directa con el historial
-      final response = await _geminiApiClient.generateContent(
-        historyFormatted,
-        temperature: 0.4,
-        maxOutputTokens: 2048,
+      // Realizar la llamada a la API de Gemini con las configuraciones correctas
+      final response = await _model.generateContent(
+        [Content.text(prompt)],
+        generationConfig: GenerationConfig(
+          temperature: 0.2, // Baja temperatura para respuestas más predecibles
+          topK: 40,
+          topP: 0.9,
+          maxOutputTokens: 800,
+          stopSequences: [
+            "INSTRUCCIONES DEL SISTEMA:",
+            "CONTEXTO DE LE BRUNCH:",
+          ],
+        ),
       );
 
-      // Si la respuesta es exitosa, procesarla
-      if (response != null) {
-        print('Respuesta directa de Gemini recibida correctamente.');
-
-        // Guardar esta interacción en el historial para futuras consultas
-        // Primero el mensaje del usuario
-        final userContent = Content.text(message);
-        if (_geminiHistories[_currentUserId] != null) {
-          _geminiHistories[_currentUserId]!.add(userContent);
-
-          // Luego la respuesta del modelo
-          final modelContent = Content.text(response);
-          _geminiHistories[_currentUserId]!.add(modelContent);
+      final responseText = response.text;
+      if (responseText != null && responseText.isNotEmpty) {
+        // Verificar si la respuesta tiene indicios de ser una respuesta de IA
+        if (responseText.toLowerCase().contains("como modelo") ||
+            responseText.toLowerCase().contains("como ia") ||
+            responseText.toLowerCase().contains("como asistente") ||
+            responseText.toLowerCase().contains("no tengo acceso") ||
+            responseText.toLowerCase().contains("no puedo")) {
+          print(
+            '⚠️ La respuesta contiene indicios de autoidentificación como IA, reemplazando con respuesta predeterminada',
+          );
+          return "¡Hola! Soy Brunchy, tu mesero en Le Brunch. ¿En qué puedo ayudarte hoy? Puedo mostrarte nuestro menú, tomar tu pedido o hacerte alguna recomendación.";
         }
 
-        return response;
-      } else {
-        print('Respuesta directa de Gemini vacía o inválida.');
-        return null;
+        return responseText;
       }
+
+      return null;
     } catch (e) {
-      print('Error al llamar directamente a Gemini: $e');
+      print('❌ Error en _callGeminiDirectly: $e');
       return null;
     }
   }
@@ -536,17 +327,57 @@ class GeminiService {
   /// Obtiene información del menú desde la base de datos
   Future<List<Map<String, dynamic>>> fetchMenu() async {
     try {
-      final response = await http.get(Uri.parse(_menuUrl));
+      print('🍽️ Obteniendo menú desde: $_menuUrl');
+
+      // Usar un timeout más largo para dar tiempo a que responda el servidor
+      final response = await http
+          .get(Uri.parse(_menuUrl))
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        print('✅ Menú obtenido exitosamente: ${data.length} platos');
+
+        // Imprimir primeros 3 platos para diagnóstico (si hay suficientes)
+        if (data.isNotEmpty) {
+          final int samplesToShow = min(3, data.length);
+          print('📋 Primeras ${samplesToShow} entradas del menú:');
+          for (int i = 0; i < samplesToShow; i++) {
+            print(
+              '   - ${data[i]['nombre']} (${data[i]['categoria']}): \$${data[i]['precio']}',
+            );
+          }
+        }
+
+        // Actualizar caché del menú
+        _menuCache = data.cast<Map<String, dynamic>>();
+
         return data.cast<Map<String, dynamic>>();
       } else {
-        print('Error al obtener menú: ${response.statusCode}');
+        print('❌ Error al obtener menú: ${response.statusCode}');
+        print('❌ Respuesta: ${response.body}');
+
+        // Intentar usar la caché si existe
+        if (_menuCache != null && _menuCache!.isNotEmpty) {
+          print(
+            '⚠️ Usando caché local del menú (${_menuCache!.length} platos)',
+          );
+          return List<Map<String, dynamic>>.from(_menuCache!);
+        }
+
         return [];
       }
     } catch (e) {
-      print('Error en fetchMenu: $e');
+      print('❌ Error en fetchMenu: $e');
+
+      // Intentar usar la caché si existe
+      if (_menuCache != null && _menuCache!.isNotEmpty) {
+        print(
+          '⚠️ Usando caché local del menú debido a error (${_menuCache!.length} platos)',
+        );
+        return List<Map<String, dynamic>>.from(_menuCache!);
+      }
+
       return [];
     }
   }
@@ -1077,139 +908,349 @@ class GeminiService {
     await prefs.setBool('gemini_connected', false);
   }
 
-  /// Envía un mensaje a Gemini y obtiene una respuesta
-  Future<ChatMessage> sendMessage(String message) async {
-    // Verificar que tenemos un usuario
-    if (_currentUserId == null) {
-      // Para sesiones anónimas, generar un ID temporal
-      final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-      setCurrentUser(tempId);
-    }
-
-    // Guarda siempre el mensaje del usuario en el historial de UI
-    final userMessage = ChatMessage.fromUser(message: message);
-    if (_currentUserId != null && _chatHistories.containsKey(_currentUserId!)) {
-      _chatHistories[_currentUserId!]!.add(userMessage);
-    }
-
+  /// Verifica si una respuesta es coherente y la mejora si es necesario
+  Future<String> _improveResponse(
+    String originalResponse,
+    String userQuery,
+  ) async {
     try {
-      String? response;
-
-      // ESTRATEGIA 1: Intento directo a la API de Gemini
-      try {
-        print('Intentando comunicación directa con Gemini...');
-        response = await _callGeminiDirectly(message);
-
-        if (response != null && response.isNotEmpty) {
-          print('✅ Comunicación directa exitosa');
-        }
-      } catch (e) {
-        print('Error en comunicación directa: $e');
+      // Verificar si la respuesta contiene indicios de autoidentificación como IA
+      if (_containsAIIdentifiers(originalResponse)) {
+        print('⚠️ Respuesta identificada como IA, será reemplazada');
+        return await _generateHumanLikeResponse(userQuery);
       }
 
-      // ESTRATEGIA 2: Si falló el directo, probar con el SDK
-      if (response == null) {
-        try {
-          print('Intentando comunicación mediante SDK...');
-
-          // Asegurarse de que el chatSession esté inicializado y contenga todo el historial
-          if (_chatSession == null) {
-            _startNewChatSession();
-          }
-
-          if (_chatSession != null) {
-            final userPrompt = Content.text(message);
-            final geminiResponse = await _chatSession!
-                .sendMessage(userPrompt)
-                .timeout(const Duration(seconds: 20));
-
-            if (geminiResponse.text != null) {
-              response = geminiResponse.text;
-              print('✅ Comunicación mediante SDK exitosa');
-            }
-          }
-        } catch (e) {
-          print('Error en comunicación con SDK: $e');
+      // Si la respuesta parece coherente, devolverla sin cambios
+      if (_isResponseCoherent(originalResponse)) {
+        // Verificar específicamente si habla de tablas que no existen
+        if (_containsNonexistentTables(originalResponse)) {
+          // Si menciona tablas que no existen, generar una nueva respuesta
+          return await _generateResponseWithoutTables(userQuery);
         }
+        return originalResponse;
       }
 
-      // ESTRATEGIA 3: Si todo falló, intentar con el servidor de respaldo
-      if (response == null && _isConnected) {
-        try {
-          print('Intentando comunicación mediante servidor de respaldo...');
+      // Si no es coherente, generar una nueva respuesta más simple
+      final improvedPrompt =
+          "Eres Brunchy, un mesero real del restaurante Le Brunch. Responde de manera conversacional, amigable y natural como un mesero real haría. NUNCA digas que eres una IA o asistente virtual. Pregunta del cliente: '$userQuery'";
 
-          final serverResponse = await http
-              .post(
-                Uri.parse(_chatUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: json.encode({
-                  'message': message,
-                  'sessionId': _sessionId,
-                }),
-              )
-              .timeout(const Duration(seconds: 20));
-
-          if (serverResponse.statusCode == 200) {
-            final data = json.decode(serverResponse.body);
-            response = data['response'];
-            print('✅ Comunicación mediante servidor exitosa');
-          }
-        } catch (e) {
-          print('Error en comunicación con servidor: $e');
-        }
-      }
-
-      // Si se obtuvo una respuesta válida
-      if (response != null && response.isNotEmpty) {
-        // Limpiar la respuesta si contiene "TextPart: "
-        if (response.startsWith("TextPart: ")) {
-          response = response.substring("TextPart: ".length);
-        }
-
-        // Si la respuesta contiene "no tengo la capacidad de", "como modelo de lenguaje", etc.
-        if (response.toLowerCase().contains("no tengo la capacidad") ||
-            response.toLowerCase().contains("como modelo de lenguaje") ||
-            response.toLowerCase().contains("como ia") ||
-            response.toLowerCase().contains("como inteligencia artificial") ||
-            response.toLowerCase().contains("no puedo preparar")) {
-          // Reemplazar con respuesta de mesero real
-          response =
-              "¡Hola! Soy Brunchy, tu mesero virtual en Le Brunch. ¿En qué puedo ayudarte hoy? Puedo recomendarte nuestros deliciosos platos, tomar tu pedido o responder preguntas sobre nuestro menú. ¿Te gustaría ver nuestras especialidades?";
-        }
-
-        final supportMessage = ChatMessage.fromSupport(message: response);
-
-        // Guardar en historial de UI
-        if (_currentUserId != null &&
-            _chatHistories.containsKey(_currentUserId!)) {
-          _chatHistories[_currentUserId!]!.add(supportMessage);
-        }
-
-        return supportMessage;
-      } else {
-        // Si todas las estrategias fallaron, devolver un mensaje genérico
-        final String genericMessage =
-            "Lo siento, parece que estamos teniendo problemas para conectarnos. ¿Puedo ayudarte con algo más mientras tanto?";
-
-        final errorMessage = ChatMessage.fromSupport(message: genericMessage);
-
-        // Guardar en historial de UI
-        if (_currentUserId != null &&
-            _chatHistories.containsKey(_currentUserId!)) {
-          _chatHistories[_currentUserId!]!.add(errorMessage);
-        }
-
-        return errorMessage;
-      }
-    } catch (e) {
-      print('Error general al enviar mensaje: $e');
-
-      final errorMessage = ChatMessage.fromSystem(
-        message:
-            'Ocurrió un error al procesar tu mensaje. Por favor, intenta nuevamente.',
+      // Usar el modelo con configuración más estricta
+      final improvedModel = GenerativeModel(
+        model: 'gemini-2.0-flash',
+        apiKey: _getCurrentApiKey(),
+        generationConfig: GenerationConfig(
+          temperature: 0.1, // Temperatura muy baja para respuestas predecibles
+          topP: 0.8,
+          topK: 20,
+          maxOutputTokens: 150, // Respuesta más corta
+        ),
       );
 
-      return errorMessage;
+      final improvedResponse = await improvedModel.generateContent([
+        Content.text(improvedPrompt),
+      ]);
+      final improvedText = improvedResponse.text;
+
+      if (improvedText != null &&
+          improvedText.isNotEmpty &&
+          _isResponseCoherent(improvedText) &&
+          !_containsNonexistentTables(improvedText) &&
+          !_containsAIIdentifiers(improvedText)) {
+        print('✓ Respuesta mejorada generada correctamente');
+        return improvedText;
+      } else {
+        // Si la mejora también falla, proporcionar una respuesta segura
+        return "¡Hola! Soy Brunchy, tu mesero. ¿En qué puedo ayudarte hoy? Puedo informarte sobre nuestro menú actual o tomar tu pedido.";
+      }
+    } catch (e) {
+      print('Error al mejorar respuesta: $e');
+      return "¡Hola! Soy Brunchy, tu mesero. ¿En qué puedo ayudarte hoy?";
+    }
+  }
+
+  /// Verifica si la respuesta contiene identificadores de que fue generada por una IA
+  bool _containsAIIdentifiers(String response) {
+    final lowerResponse = response.toLowerCase();
+    final aiIdentifiers = [
+      "como modelo",
+      "como ia",
+      "como asistente",
+      "como una ia",
+      "como un modelo",
+      "como un asistente",
+      "soy un asistente",
+      "soy una ia",
+      "soy un modelo",
+      "no tengo acceso",
+      "no puedo acceder",
+      "no tengo un menú físico",
+      "no tengo la capacidad",
+      "no estoy diseñado",
+      "no tengo cuerpo",
+      "no puedo probar",
+      "no puedo ver",
+      "no puedo oler",
+      "modelo de lenguaje",
+      "inteligencia artificial",
+    ];
+
+    for (final identifier in aiIdentifiers) {
+      if (lowerResponse.contains(identifier)) {
+        print('⚠️ Respuesta contiene identificador de IA: "$identifier"');
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Genera una respuesta que simula un mesero humano cuando la respuesta original es mala
+  Future<String> _generateHumanLikeResponse(String userQuery) async {
+    try {
+      // Ver si es una consulta sobre el menú
+      bool isMenuQuery =
+          userQuery.toLowerCase().contains("menú") ||
+          userQuery.toLowerCase().contains("carta") ||
+          userQuery.toLowerCase().contains("tienen") ||
+          userQuery.toLowerCase().contains("hay");
+
+      if (isMenuQuery) {
+        // Obtener el menú real para dar respuestas precisas
+        final menuItems = await fetchMenu();
+
+        if (menuItems.isNotEmpty) {
+          // Crear un resumen breve del menú por categorías
+          final categories = <String, List<String>>{};
+          for (var item in menuItems) {
+            final categoria = item['categoria'].toString();
+            if (!categories.containsKey(categoria)) {
+              categories[categoria] = [];
+            }
+            categories[categoria]!.add(item['nombre'].toString());
+          }
+
+          String menuSummary = "";
+          categories.forEach((categoria, platos) {
+            final availableDishes = platos
+                .take(min(3, platos.length))
+                .join(", ");
+            menuSummary += "En $categoria tenemos $availableDishes";
+            if (platos.length > 3) {
+              menuSummary += " y otros platos más";
+            }
+            menuSummary += ". ";
+          });
+
+          return "¡Claro! Te puedo contar sobre nuestro menú. $menuSummary ¿Te gustaría que te recomiende algo en particular?";
+        } else {
+          return "¡Claro! Te puedo mostrar nuestro menú. Tenemos varias opciones de desayunos, brunch y bebidas. ¿Qué te gustaría ver primero?";
+        }
+      }
+
+      // Para preguntas generales, dar respuestas de mesero
+      final generalResponses = [
+        "¡Hola! Soy Brunchy, tu mesero. ¿En qué puedo ayudarte hoy?",
+        "¡Claro que sí! Puedo mostrarte nuestro menú o recomendarte alguna especialidad. ¿Qué prefieres?",
+        "¡Por supuesto! ¿Te gustaría ver nuestras opciones de desayuno o brunch?",
+        "¡Con gusto! ¿Buscas algo en particular? Tenemos excelentes opciones para el desayuno.",
+      ];
+
+      // Elegir una respuesta aleatoria
+      final random = Random();
+      return generalResponses[random.nextInt(generalResponses.length)];
+    } catch (e) {
+      print('Error al generar respuesta humana: $e');
+      return "¡Hola! Soy Brunchy, tu mesero. ¿En qué puedo ayudarte hoy?";
+    }
+  }
+
+  /// Verifica si la respuesta menciona tablas que no existen en el menú
+  bool _containsNonexistentTables(String response) {
+    try {
+      // Verificar si la respuesta menciona tablas
+      final containsTablas =
+          response.toLowerCase().contains('tabla') ||
+          response.toLowerCase().contains('tablas');
+
+      if (!containsTablas) return false;
+
+      // Obtener lista de platos del menú
+      final menuItems = _menuCache ?? [];
+
+      // Verificar si algún plato del menú tiene "tabla" en su nombre
+      final menuHasTables = menuItems.any(
+        (item) => item['nombre'].toString().toLowerCase().contains('tabla'),
+      );
+
+      // Si el menú no tiene tablas pero la respuesta menciona tablas, es una invención
+      return !menuHasTables && containsTablas;
+    } catch (e) {
+      print('Error al verificar tablas: $e');
+      return false; // En caso de error, asumir que no hay problema
+    }
+  }
+
+  /// Genera una respuesta que evita mencionar tablas
+  Future<String> _generateResponseWithoutTables(String userQuery) async {
+    try {
+      // Primero obtener el menú actual
+      final menuItems = await fetchMenu();
+
+      // Preparar el prompt para evitar tablas
+      final menuContext = _prepareMenuContext(menuItems);
+
+      const systemPrompt = """
+Eres Brunchy, un mesero amable del restaurante Le Brunch.
+INSTRUCCIÓN IMPORTANTE: El restaurante NO tiene "tablas" para compartir en su menú.
+No inventes ni menciones tablas de quesos, embutidos ni ningún otro tipo de tabla.
+Responde al cliente basándote ÚNICAMENTE en platos que existan en el menú proporcionado.
+Si el cliente pregunta por tablas, indícale amablemente que no ofrecemos ese tipo de platos,
+pero puedes sugerirle alternativas del menú actual.
+""";
+
+      final prompt = """
+$systemPrompt
+
+$menuContext
+
+Consulta del cliente: "$userQuery"
+
+Tu respuesta como Brunchy (sin mencionar tablas inexistentes):
+""";
+
+      // Usar el modelo con configuración estricta
+      final model = GenerativeModel(
+        model: 'gemini-2.0-flash',
+        apiKey: _getCurrentApiKey(),
+        generationConfig: GenerationConfig(
+          temperature: 0.2,
+          topP: 0.7,
+          topK: 20,
+          maxOutputTokens: 200,
+        ),
+      );
+
+      final generatedResponse = await model.generateContent([
+        Content.text(prompt),
+      ]);
+
+      final responseText = generatedResponse.text;
+
+      if (responseText != null && responseText.isNotEmpty) {
+        return responseText;
+      } else {
+        // Respuesta predeterminada si falla la generación
+        return "¡Hola! Soy Brunchy, tu mesero de Le Brunch. Actualmente no ofrecemos tablas para compartir, pero tenemos muchas otras opciones deliciosas en nuestro menú. ¿Te gustaría que te mencione algunas?";
+      }
+    } catch (e) {
+      print('Error al generar respuesta sin tablas: $e');
+      return "¡Hola! Soy Brunchy, tu mesero de Le Brunch. ¿En qué puedo ayudarte con nuestro menú actual?";
+    }
+  }
+
+  /// Prepara un contexto con el menú actual para el modelo
+  String _prepareMenuContext(List<dynamic> menuItems) {
+    try {
+      String menuContext = "MENÚ ACTUAL DE LE BRUNCH:\n";
+
+      if (menuItems.isEmpty) {
+        return menuContext +
+            "Actualmente no hay información disponible sobre nuestro menú.\n";
+      }
+
+      // Agrupar por categorías
+      final categories = <String, List<Map<String, dynamic>>>{};
+      for (var item in menuItems) {
+        final categoria = item['categoria'].toString();
+        if (!categories.containsKey(categoria)) {
+          categories[categoria] = [];
+        }
+        categories[categoria]!.add(Map<String, dynamic>.from(item));
+      }
+
+      // Generar texto estructurado
+      categories.forEach((categoria, platos) {
+        menuContext += "\n$categoria:\n";
+        for (var plato in platos) {
+          final disponible = plato['disponibilidad'] == true ? "✓" : "✗";
+          menuContext +=
+              "- ${plato['nombre']} (\$${plato['precio']}) $disponible\n";
+
+          if (plato['ingredientes'] != null) {
+            final ingredientes = plato['ingredientes'].toString().split(',');
+            if (ingredientes.isNotEmpty) {
+              menuContext += "  Ingredientes: ${ingredientes.join(', ')}\n";
+            }
+          }
+        }
+      });
+
+      return menuContext;
+    } catch (e) {
+      print('Error al preparar contexto del menú: $e');
+      return "MENÚ ACTUAL: Información no disponible en este momento.";
+    }
+  }
+
+  /// Verifica si una respuesta es coherente y bien estructurada
+  bool _isResponseCoherent(String response) {
+    try {
+      // Verificar longitud mínima
+      if (response.trim().length < 10) {
+        print('⚠️ Respuesta demasiado corta');
+        return false;
+      }
+
+      // Verificar que tenga al menos 3 fragmentos (aproximación de frases)
+      final fragments =
+          response
+              .split(RegExp(r'[.!?;:]'))
+              .where((f) => f.trim().isNotEmpty)
+              .toList();
+      if (fragments.length < 3) {
+        print('⚠️ Respuesta con muy pocas frases');
+        return false;
+      }
+
+      // Verificar que no haya palabras repetidas consecutivamente
+      final words = response.split(' ');
+      int repeatedCount = 0;
+      String? lastWord;
+
+      for (final word in words) {
+        if (word.trim().isNotEmpty) {
+          if (word == lastWord) {
+            repeatedCount++;
+            if (repeatedCount > 2) {
+              print('⚠️ Demasiadas palabras repetidas consecutivamente');
+              return false;
+            }
+          } else {
+            repeatedCount = 0;
+          }
+          lastWord = word;
+        }
+      }
+
+      // Verificar estructura gramatical básica (presencia de puntuación)
+      if (!RegExp(r'[.!?;:]').hasMatch(response)) {
+        print('⚠️ Respuesta sin puntuación');
+        return false;
+      }
+
+      // Verificar mezcla de conceptos no relacionados (ejemplo específico)
+      if (response.toLowerCase().contains('gofre') &&
+          response.toLowerCase().contains('omelette') &&
+          !response.toLowerCase().contains('desayuno') &&
+          !response.toLowerCase().contains('menu')) {
+        print('⚠️ Mezcla de conceptos no relacionados');
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      print('Error al verificar coherencia: $e');
+      return false;
     }
   }
 
@@ -1343,44 +1384,137 @@ class GeminiService {
   /// Agrega un plato al carrito del cliente
   Future<bool> addDishToCart(String dishName) async {
     try {
-      print('Buscando plato en el menú: $dishName');
+      print('🍽️ Buscando plato en el menú: "$dishName"');
 
       // Obtener el menú completo
       final dishes = await fetchMenu();
 
       if (dishes.isEmpty) {
-        print('No se pudo obtener el menú o está vacío');
+        print('❌ No se pudo obtener el menú o está vacío');
         return false;
       }
+
+      print('📋 Se encontraron ${dishes.length} platos en el menú');
 
       // Buscar plato en el menú (búsqueda flexible)
       final dish = _findDishByName(dishes, dishName);
 
       if (dish != null) {
         print(
-          '¡Plato encontrado! ID: ${dish['idplato']}, Nombre: ${dish['nombre']}',
+          '✅ ¡Plato encontrado! ID: ${dish['idplato']}, Nombre: ${dish['nombre']}',
         );
+
+        // Verificar precio para evitar errores
+        double price;
+        try {
+          price = double.parse(dish['precio'].toString());
+        } catch (e) {
+          print(
+            '⚠️ Error al parsear precio: ${dish['precio']}. Usando valor predeterminado.',
+          );
+          price = 0.0;
+        }
 
         // Añadir al carrito
         final cartService = CartService();
         cartService.addItem(
           id: dish['idplato'].toString(),
           name: dish['nombre'],
-          price: double.parse(dish['precio'].toString()),
+          price: price,
           imageUrl: dish['imagen_url'] ?? '',
           originalData: dish,
         );
 
-        print('Plato añadido al carrito correctamente');
+        print('🛒 Plato añadido al carrito correctamente');
+
+        // Guardar preferencia de usuario para análisis
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          int orderedCount = prefs.getInt('ordered_dish_count') ?? 0;
+          await prefs.setInt('ordered_dish_count', orderedCount + 1);
+
+          // Guardar último plato pedido para recomendaciones futuras
+          await prefs.setString('last_ordered_dish', dish['nombre']);
+        } catch (e) {
+          // Ignorar errores al guardar preferencias
+          print('⚠️ No se pudieron guardar preferencias: $e');
+        }
+
         return true;
       } else {
-        print('No se encontró el plato: $dishName');
+        // Intentar encontrar platos similares para sugerencias
+        final similarDishes = _findSimilarDishes(dishes, dishName);
+        if (similarDishes.isNotEmpty) {
+          print(
+            '🔍 No se encontró "$dishName" pero hay sugerencias similares:',
+          );
+          for (var i = 0; i < min(3, similarDishes.length); i++) {
+            print('   - ${similarDishes[i]['nombre']}');
+          }
+        } else {
+          print('❌ No se encontró el plato ni sugerencias: "$dishName"');
+        }
         return false;
       }
     } catch (e) {
-      print('Error al agregar plato al carrito: $e');
+      print('❌ Error al agregar plato al carrito: $e');
       return false;
     }
+  }
+
+  /// Encuentra platos similares para sugerencias
+  List<Map<String, dynamic>> _findSimilarDishes(
+    List<dynamic> dishes,
+    String dishName,
+  ) {
+    final normalizedName = _normalizeText(dishName);
+    final words =
+        normalizedName.split(' ').where((word) => word.length > 3).toList();
+
+    if (words.isEmpty) return [];
+
+    // Calcular puntuación de similitud para cada plato
+    final scoredDishes =
+        dishes
+            .map((dish) {
+              final normalizedDishName = _normalizeText(
+                dish['nombre'].toString(),
+              );
+              int score = 0;
+
+              // Cada palabra que coincide suma puntos
+              for (final word in words) {
+                if (normalizedDishName.contains(word)) {
+                  score +=
+                      10 * word.length; // Palabras más largas tienen más peso
+                }
+              }
+
+              // Categoría similar suma puntos
+              if (dish['categoria'] != null) {
+                final normalizedCategory = _normalizeText(
+                  dish['categoria'].toString(),
+                );
+                if (normalizedName.contains(normalizedCategory) ||
+                    normalizedCategory.contains(words.first)) {
+                  score += 20;
+                }
+              }
+
+              return {'dish': dish, 'score': score};
+            })
+            .where((item) => item['score'] > 0)
+            .toList();
+
+    // Ordenar por puntuación descendente
+    scoredDishes.sort(
+      (a, b) => (b['score'] as int).compareTo(a['score'] as int),
+    );
+
+    // Devolver solo los platos, sin las puntuaciones
+    return scoredDishes
+        .map((item) => item['dish'] as Map<String, dynamic>)
+        .toList();
   }
 
   /// Normaliza un texto: elimina acentos, convierte a minúsculas
@@ -1505,6 +1639,656 @@ class GeminiService {
       print('Servicio reinicializado correctamente');
     } catch (e) {
       print('Error al reinicializar el servicio: $e');
+    }
+  }
+
+  // Obtener preferencias del usuario
+  Future<Map<String, dynamic>> getUserPreferences() async {
+    return await UserPreferencesService().getUserPreferences();
+  }
+
+  // Actualizar preferencias del usuario cuando pide un plato
+  Future<void> updateUserPreferences(String dishName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      Map<String, dynamic> userPrefs = await getUserPreferences();
+
+      // Actualizar último plato pedido
+      userPrefs['lastOrderedDish'] = dishName;
+
+      // Actualizar contador de platos
+      Map<String, dynamic> dishCounts = userPrefs['dishCounts'] ?? {};
+      dishCounts[dishName] = (dishCounts[dishName] as int? ?? 0) + 1;
+      userPrefs['dishCounts'] = dishCounts;
+
+      // Guardar preferencias actualizadas
+      await prefs.setString(_prefsKey, jsonEncode(userPrefs));
+    } catch (e) {
+      print('Error al actualizar preferencias del usuario: $e');
+    }
+  }
+
+  // Método para obtener recomendaciones basadas en el historial de pedidos
+  Future<List<Map<String, dynamic>>> getRecommendations(
+    List<String> currentCartItems,
+  ) async {
+    try {
+      final userPrefs = await getUserPreferences();
+      final menu = await fetchMenu();
+
+      // Implementar lógica de recomendación
+      final String? lastOrderedDish = userPrefs['lastOrderedDish'];
+      final Map<String, dynamic> dishCounts = userPrefs['dishCounts'] ?? {};
+
+      // Filtrar platos que ya están en el carrito
+      final availableItems =
+          menu
+              .where(
+                (item) =>
+                    !currentCartItems.contains(item['nombre']?.toLowerCase()),
+              )
+              .toList();
+
+      // Si no hay platos disponibles, retornar lista vacía
+      if (availableItems.isEmpty) {
+        return [];
+      }
+
+      // Crear lista de recomendaciones (máximo 3)
+      List<Map<String, dynamic>> recommendations = [];
+
+      // 1. Añadir platos de la misma categoría que el último ordenado
+      if (lastOrderedDish != null) {
+        final lastDishInfo = menu.firstWhere(
+          (dish) =>
+              dish['nombre']?.toLowerCase() == lastOrderedDish.toLowerCase(),
+          orElse: () => {} as Map<String, dynamic>,
+        );
+
+        if (lastDishInfo.isNotEmpty && lastDishInfo['categoria'] != null) {
+          final similarCategory =
+              availableItems
+                  .where(
+                    (dish) => dish['categoria'] == lastDishInfo['categoria'],
+                  )
+                  .toList();
+
+          if (similarCategory.isNotEmpty) {
+            recommendations.addAll(similarCategory.take(2));
+          }
+        }
+      }
+
+      // 2. Añadir platos populares basados en el historial
+      if (dishCounts.isNotEmpty && recommendations.length < 3) {
+        // Ordenar platos por popularidad
+        List<MapEntry<String, dynamic>> sortedDishes =
+            dishCounts.entries.toList()
+              ..sort((a, b) => (b.value as int).compareTo(a.value as int));
+
+        for (var entry in sortedDishes) {
+          if (recommendations.length >= 3) break;
+
+          final dishName = entry.key;
+          final dishInfo = availableItems.firstWhere(
+            (dish) => dish['nombre']?.toLowerCase() == dishName.toLowerCase(),
+            orElse: () => {} as Map<String, dynamic>,
+          );
+
+          if (dishInfo.isNotEmpty &&
+              !recommendations.any(
+                (rec) => rec['nombre'] == dishInfo['nombre'],
+              )) {
+            recommendations.add(dishInfo);
+          }
+        }
+      }
+
+      // 3. Si aún necesitamos más recomendaciones, añadir platos aleatorios
+      if (recommendations.length < 3) {
+        availableItems.shuffle();
+        for (var dish in availableItems) {
+          if (!recommendations.any((rec) => rec['nombre'] == dish['nombre'])) {
+            recommendations.add(dish);
+          }
+          if (recommendations.length >= 3) break;
+        }
+      }
+
+      return recommendations.take(3).toList();
+    } catch (e) {
+      print('Error al generar recomendaciones: $e');
+      return [];
+    }
+  }
+
+  /// Deshabilita explícitamente el uso de webhooks
+  void _disableWebhooks() {
+    // Esta es una configuración local para asegurar que no se intente usar webhooks
+    print(
+      'Webhooks deshabilitados completamente - No se utilizará el puerto 5678',
+    );
+
+    // Asegurarse de que no haya referencias a webhooks
+    if (_history.isNotEmpty) {
+      // Limpiar cualquier referencia en el historial que pudiera causar problemas
+      _history.clear();
+      print('Historial de chat reiniciado para prevenir problemas de webhook');
+    }
+  }
+
+  /// Obtiene la clave API actual
+  String _getCurrentApiKey() {
+    return _apiKeys[_currentApiKeyIndex];
+  }
+
+  /// Rota a la siguiente clave API
+  void _rotateApiKey() {
+    _currentApiKeyIndex = (_currentApiKeyIndex + 1) % _apiKeys.length;
+    final newApiKey = _apiKeys[_currentApiKeyIndex];
+    print('Rotando a la siguiente clave API, índice: $_currentApiKeyIndex');
+
+    // Actualizar el cliente directo con la nueva clave
+    _geminiApiClient.updateApiKey(newApiKey);
+
+    // Reinicializar el SDK oficial
+    _initGemini();
+  }
+
+  /// Inicializa el cliente de Gemini
+  void _initGemini() {
+    try {
+      final apiKey = _getCurrentApiKey();
+      print(
+        'Inicializando modelo Gemini con API key: ${apiKey.substring(0, 4)}****',
+      );
+
+      // Actualizar nombres de modelos a los actualmente soportados por la API
+      final modelOptions = [
+        'gemini-2.0-flash', // Modelo principal (actualizado)
+        'gemini-1.5-flash', // Primera alternativa
+        'gemini-1.5-pro', // Segunda alternativa
+      ];
+
+      // Intentar primero con la opción principal
+      try {
+        _model = GenerativeModel(
+          model: modelOptions[0],
+          apiKey: apiKey,
+          // Configuración conservadora que minimiza probabilidad de rechazo
+          generationConfig: GenerationConfig(
+            temperature:
+                0.4, // Temperatura más baja para respuestas más predecibles
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 1024, // Reducido para disminuir carga
+          ),
+        );
+
+        print('Modelo Gemini inicializado correctamente: ${modelOptions[0]}');
+      } catch (e) {
+        print('Error al inicializar modelo primario: $e');
+        print('Intentando con modelo alternativo: ${modelOptions[1]}');
+
+        // Si falla, intentar con otra variante del modelo
+        try {
+          _model = GenerativeModel(
+            model: modelOptions[1],
+            apiKey: apiKey,
+            generationConfig: GenerationConfig(
+              temperature: 0.4,
+              topP: 0.95,
+              topK: 40,
+              maxOutputTokens: 1024,
+            ),
+          );
+          print(
+            'Modelo alternativo inicializado correctamente: ${modelOptions[1]}',
+          );
+        } catch (e2) {
+          print('Error también con modelo alternativo: $e2');
+          print('Último intento con modelo genérico: ${modelOptions[2]}');
+
+          // Último intento con configuración mínima
+          _model = GenerativeModel(
+            model: modelOptions[2],
+            apiKey: apiKey,
+            generationConfig: GenerationConfig(
+              temperature: 0.2,
+              maxOutputTokens: 512,
+            ),
+          );
+        }
+      }
+
+      // Siempre iniciar una nueva sesión
+      _startNewChatSession();
+
+      // Intento de verificación rápida para confirmar inicialización
+      _verifyModelConnection();
+    } catch (e) {
+      print('Error general al inicializar Gemini: $e');
+    }
+  }
+
+  /// Verifica que el modelo se haya inicializado correctamente
+  Future<void> _verifyModelConnection() async {
+    try {
+      // No esperamos por el resultado, solo verificamos que no falle inmediatamente
+      Future.delayed(Duration(milliseconds: 100), () async {
+        try {
+          final testContent = Content.text("test");
+          final chat = _model.startChat();
+          await chat
+              .sendMessage(testContent)
+              .timeout(const Duration(seconds: 5));
+          print('Verificación de modelo exitosa');
+        } catch (e) {
+          print('Verificación de conexión falló: $e');
+          // No hacemos nada más aquí, solo es diagnóstico
+        }
+      });
+    } catch (e) {
+      // Ignoramos errores aquí, es solo una verificación
+    }
+  }
+
+  /// Inicia una nueva sesión de chat con Gemini
+  void _startNewChatSession() {
+    try {
+      // Asegurarse de que exista el usuario actual
+      if (_currentUserId == null) {
+        print(
+          'ADVERTENCIA: No hay usuario establecido para _startNewChatSession()',
+        );
+        _currentUserId = 'anonymous';
+      }
+
+      // Asegurarse de que exista el historial para este usuario
+      if (!_geminiHistories.containsKey(_currentUserId)) {
+        _geminiHistories[_currentUserId!] = [];
+      }
+
+      // Crear una sesión de chat con el historial existente
+      _chatSession = _model.startChat(
+        history: _geminiHistories[_currentUserId!],
+        generationConfig: GenerationConfig(
+          temperature:
+              0.4, // Temperatura más baja para respuestas más consistentes
+          maxOutputTokens: 1024, // Permitir respuestas más largas
+          topP: 0.9,
+          topK: 40,
+        ),
+      );
+
+      print(
+        'Sesión de chat inicializada correctamente para usuario: $_currentUserId',
+      );
+    } catch (e) {
+      print('Error al iniciar sesión de chat: $e');
+    }
+  }
+
+  /// Procesa un mensaje utilizando API externa (MCP o Gemini directamente)
+  Future<String?> _processMessageWithExternalAPI(String message) async {
+    try {
+      // Generar un ID de sesión único si no existe
+      if (_sessionId == null) {
+        _sessionId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
+        print('Nuevo ID de sesión generado para MCP: $_sessionId');
+      }
+
+      // 1. Intentar usar el MCP (Model Context Protocol del servidor)
+      try {
+        print(
+          'Intentando conectar con MCP en http://$_serverIp:$_nodeJsPort/mcp/status',
+        );
+
+        // Verificar si el MCP está disponible
+        final statusUrl = Uri.parse(
+          'http://$_serverIp:$_nodeJsPort/mcp/status',
+        );
+        final statusResponse = await http
+            .get(statusUrl)
+            .timeout(const Duration(seconds: 5)); // Aumentar timeout
+
+        if (statusResponse.statusCode == 200) {
+          print('✅ MCP disponible. Enviando consulta...');
+
+          // MCP disponible, obtener contexto enriquecido
+          final mcpUrl = Uri.parse('http://$_serverIp:$_nodeJsPort/mcp/chat');
+
+          print(
+            'Enviando mensaje a MCP: "$message" con sessionId: $_sessionId',
+          );
+
+          // Asegurar que tenemos un sessionId único para cada conversación
+          String sessionId =
+              _sessionId ?? 'flutter_${DateTime.now().millisecondsSinceEpoch}';
+
+          final mcpResponse = await http
+              .post(
+                mcpUrl,
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({
+                  'message': message,
+                  'sessionId': sessionId,
+                  'instructions': '''
+Responde como un mesero real llamado Brunchy. NUNCA digas que eres una IA o modelo de lenguaje.
+Contesta basándote SOLO en platos que existan en la base de datos. 
+NO inventes platos ni tablas que no estén en el menú proporcionado.
+Si te preguntan por el menú, responde solo con los platos disponibles.
+''',
+                  'checkDatabase': true,
+                }),
+              )
+              .timeout(const Duration(seconds: 15)); // Aumentar timeout
+
+          if (mcpResponse.statusCode == 200) {
+            print(
+              '✅ Respuesta recibida del MCP (${mcpResponse.body.length} bytes)',
+            );
+            final mcpData = jsonDecode(mcpResponse.body);
+
+            // Si el MCP proporciona respuesta directa, usarla
+            if (mcpData['response'] != null && mcpData['response'] is String) {
+              print('✅ Usando respuesta directa del MCP');
+              return mcpData['response'] as String;
+            }
+
+            // Si hay contexto enriquecido, usarlo con llamada a API de Gemini
+            if (mcpData['enrichedContext'] != null) {
+              print('✅ Usando contexto enriquecido del MCP con Gemini');
+
+              // Imprimir la primera parte del contexto para diagnóstico
+              final contextPreview = mcpData['enrichedContext']
+                  .toString()
+                  .substring(
+                    0,
+                    min(200, mcpData['enrichedContext'].toString().length),
+                  );
+              print('📝 Contexto recibido (inicio): $contextPreview...');
+
+              // Verificar si el contexto contiene la consulta del cliente
+              bool containsUserQuery =
+                  mcpData['enrichedContext'].toString().contains(
+                    'CONSULTA DEL CLIENTE',
+                  ) ||
+                  mcpData['enrichedContext'].toString().contains(
+                    'Consulta del cliente',
+                  );
+
+              // Añadir la consulta si no está incluida
+              String finalContext = mcpData['enrichedContext'];
+              if (!containsUserQuery) {
+                finalContext += "\n\nCONSULTA DEL CLIENTE: \"$message\"\n\n";
+              }
+
+              // Añadir instrucciones de comportamiento
+              finalContext += '''
+INSTRUCCIONES CRÍTICAS: 
+- NUNCA digas que eres una IA, un asistente virtual o un modelo de lenguaje.
+- Actúa SOLO como un mesero real llamado Brunchy.
+- Responde SIEMPRE en español.
+- NO uses frases como "no tengo acceso" o "no puedo".
+- NO inventes platos que no estén en el menú proporcionado.
+- Si te preguntan por platos que no están en el menú, indica amablemente que no están disponibles.
+- Si no sabes algo específico del restaurante, di que consultarás con el chef o el gerente.
+
+Tu respuesta (como mesero real):''';
+
+              final apiResponse = await _callGeminiDirectly(finalContext);
+              if (apiResponse != null && apiResponse.isNotEmpty) {
+                return apiResponse;
+              }
+            } else {
+              print('⚠️ El MCP no proporcionó contexto enriquecido');
+            }
+          } else {
+            print(
+              '❌ Error en respuesta MCP: ${mcpResponse.statusCode} - ${mcpResponse.body}',
+            );
+          }
+        } else {
+          print(
+            '❌ MCP no disponible: ${statusResponse.statusCode} - ${statusResponse.body}',
+          );
+        }
+      } catch (e) {
+        print('❌ Error al intentar usar MCP: $e');
+        // Continuar con otros métodos si MCP falla
+      }
+
+      // 2. Intentar llamada directa a Gemini con menú obtenido directamente de la API
+      try {
+        print('Obteniendo menú directamente de la API en $_menuUrl');
+
+        // Primero obtener el menú actual para contexto
+        final menuItems = await fetchMenu();
+
+        if (menuItems.isEmpty) {
+          print('⚠️ No se pudo obtener el menú o está vacío');
+        } else {
+          print('✅ Menú obtenido con ${menuItems.length} platos');
+        }
+
+        _menuCache = menuItems; // Guardar en cache para uso futuro
+
+        String menuContext =
+            "MENÚ ACTUAL DE LE BRUNCH (estos son TODOS los platos disponibles):\n";
+
+        if (menuItems.isNotEmpty) {
+          // Agrupar por categorías
+          final categories = <String, List<Map<String, dynamic>>>{};
+          for (var item in menuItems) {
+            final categoria = item['categoria'].toString();
+            if (!categories.containsKey(categoria)) {
+              categories[categoria] = [];
+            }
+            categories[categoria]!.add(item);
+          }
+
+          // Generar texto con el menú
+          categories.forEach((categoria, platos) {
+            menuContext += "\n$categoria:\n";
+            for (var plato in platos) {
+              final disponible = plato['disponibilidad'] == true ? "✓" : "✗";
+              menuContext +=
+                  "- ${plato['nombre']}: \$${plato['precio']} $disponible\n";
+
+              // Incluir ingredientes si están disponibles
+              if (plato['ingredientes'] != null &&
+                  plato['ingredientes'].toString().isNotEmpty) {
+                menuContext += "  Ingredientes: ${plato['ingredientes']}\n";
+              }
+            }
+          });
+        } else {
+          menuContext +=
+              "Actualmente no hay información disponible sobre el menú.\n";
+        }
+
+        print('Generando respuesta con menú obtenido directamente');
+
+        // Enriquecer mensaje con el menú
+        final enrichedMessage = """
+Eres 'Brunchy', un mesero amable y entusiasta del restaurante Le Brunch.
+Debes actuar EXACTAMENTE como un mesero real, no como una IA.
+
+Consulta del cliente: "$message"
+
+$menuContext
+
+INSTRUCCIONES IMPORTANTES:
+1. Responde SOLO basándote en los platos listados arriba en el MENÚ ACTUAL.
+2. NO inventes platos ni tablas que no aparezcan explícitamente en la lista anterior.
+3. Si preguntan por un plato que no está en esta lista, indica amablemente que no está disponible actualmente.
+4. Si preguntan por una categoría (como "omelettes"), menciona SOLO los platos de esa categoría que aparecen en el menú proporcionado.
+5. Escribe como un mesero real, con un tono conversacional natural y amigable.
+6. NO menciones que eres una IA o que estás consultando una base de datos.
+
+Tu respuesta como Brunchy (basada EXCLUSIVAMENTE en el menú proporcionado):
+""";
+
+        return await _callGeminiDirectly(enrichedMessage);
+      } catch (e) {
+        print('❌ Error en llamada directa a Gemini: $e');
+      }
+
+      // Si todas las estrategias fallaron, devolver un mensaje de error
+      return "Disculpa, estoy teniendo problemas para conectarme con nuestra base de datos de menú. ¿Puedo ayudarte con algo más mientras resolvemos este inconveniente?";
+    } catch (e) {
+      print('❌ Error general en _processMessageWithExternalAPI: $e');
+      return null;
+    }
+  }
+
+  /// Envía un mensaje al chatbot y obtiene una respuesta
+  Future<ChatMessage> sendMessage(String message) async {
+    try {
+      if (message.trim().isEmpty) {
+        return ChatMessage.fromSupport(
+          message: "Por favor, escribe un mensaje para continuar.",
+        );
+      }
+
+      // Asegurar que existe un ID de usuario
+      if (_currentUserId == null) {
+        _currentUserId = 'anonymous';
+      }
+
+      // Generar un ID de sesión único si no existe
+      if (_sessionId == null) {
+        _sessionId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
+        print('Nuevo ID de sesión generado para envío de mensaje: $_sessionId');
+      }
+
+      // Convertir el mensaje a un Content para el historial
+      final userMessage = Content.text(message);
+
+      // Variable para almacenar la respuesta final
+      String? finalResponse;
+
+      // Verificar en .env si se debe usar MCP prioritariamente
+      bool useMcpFirst = true;
+      try {
+        useMcpFirst = dotenv.get('USE_MCP', fallback: 'true') == 'true';
+      } catch (e) {
+        // Si hay error al leer .env, usar MCP por defecto
+        print('⚠️ Error al leer la configuración USE_MCP: $e');
+      }
+
+      // 1. Si está configurado para usar MCP primero, intentarlo
+      if (useMcpFirst) {
+        print('Configurado para usar MCP primero');
+        final apiResponse = await _processMessageWithExternalAPI(message);
+        if (apiResponse != null) {
+          print('✅ Respuesta obtenida desde API externa/MCP');
+          finalResponse = await _improveResponse(apiResponse, message);
+        }
+      }
+
+      // 2. Si no se usó MCP o falló, intentar con chatSession
+      if (finalResponse == null && _chatSession != null) {
+        try {
+          print('Intentando con chatSession local');
+          // Añadir el mensaje del usuario al historial
+          if (_geminiHistories.containsKey(_currentUserId)) {
+            _geminiHistories[_currentUserId!]!.add(userMessage);
+          }
+
+          // Obtener respuesta usando la sesión de chat
+          final response = await _chatSession!
+              .sendMessage(userMessage)
+              .timeout(const Duration(seconds: 15));
+
+          // Extraer el texto de la respuesta
+          final responseText = response.text;
+
+          if (responseText != null && responseText.isNotEmpty) {
+            // Verificar si la respuesta es coherente y mejorarla si es necesario
+            finalResponse = await _improveResponse(responseText, message);
+            print('✅ Respuesta obtenida desde chatSession local');
+          }
+        } catch (e) {
+          print('Error al usar chatSession: $e');
+          // Si falla, continuar con otros métodos
+        }
+      }
+
+      // 3. Si no se usó MCP primero y los otros métodos fallaron, intentar MCP ahora
+      if (finalResponse == null && !useMcpFirst) {
+        print('Intentando con API externa/MCP como fallback');
+        final apiResponse = await _processMessageWithExternalAPI(message);
+        if (apiResponse != null) {
+          finalResponse = await _improveResponse(apiResponse, message);
+          print('✅ Respuesta obtenida desde API externa/MCP como fallback');
+        }
+      }
+
+      // 4. Si todo falló, usar respuesta predeterminada
+      if (finalResponse == null) {
+        finalResponse =
+            "¡Hola! Soy Brunchy, tu mesero. ¿En qué puedo ayudarte hoy? Puedo mostrarte nuestro menú actual o tomar tu pedido.";
+        print(
+          '⚠️ Usando respuesta predeterminada porque todos los métodos fallaron',
+        );
+      }
+
+      // Detectar si la respuesta contiene indicios de identificarse como IA
+      if (finalResponse.toLowerCase().contains("como modelo") ||
+          finalResponse.toLowerCase().contains("como ia") ||
+          finalResponse.toLowerCase().contains("como asistente") ||
+          finalResponse.toLowerCase().contains("no tengo acceso") ||
+          finalResponse.toLowerCase().contains("no puedo") ||
+          finalResponse.toLowerCase().contains("no tengo un menú físico")) {
+        print(
+          '⚠️ La respuesta final contiene indicios de respuesta de IA, reemplazando',
+        );
+        finalResponse =
+            "¡Hola! Soy Brunchy, tu mesero en Le Brunch. ¿En qué puedo ayudarte hoy? Puedo mostrarte el menú o sugerirte alguna especialidad de la casa.";
+      }
+
+      // Añadir la respuesta al historial
+      if (_geminiHistories.containsKey(_currentUserId)) {
+        _geminiHistories[_currentUserId!]!.add(Content.text(finalResponse));
+      }
+
+      // Crear y devolver el mensaje de respuesta
+      final supportMessage = ChatMessage.fromSupport(message: finalResponse);
+
+      // Guardar en historial de UI
+      if (_currentUserId != null &&
+          _chatHistories.containsKey(_currentUserId!)) {
+        _chatHistories[_currentUserId!]!.add(supportMessage);
+      }
+
+      return supportMessage;
+    } catch (e) {
+      print('Error general al procesar mensaje: $e');
+      return ChatMessage.fromSystem(
+        message:
+            'Ocurrió un error al procesar tu mensaje. Por favor, intenta nuevamente.',
+      );
+    }
+  }
+
+  /// Actualiza las preferencias cuando un plato es ordenado
+  Future<void> updatePrefsWhenDishOrdered(String dishName) async {
+    try {
+      await UserPreferencesService().updateOrderedDish(dishName);
+    } catch (e) {
+      print('Error al actualizar preferencias: $e');
+    }
+  }
+
+  /// Genera recomendaciones basadas en platos ordenados
+  Future<List<String>> getRecommendationsBasedOnHistory() async {
+    try {
+      return await UserPreferencesService().getMostOrderedDishes();
+    } catch (e) {
+      print('Error al generar recomendaciones: $e');
+      return [];
     }
   }
 }

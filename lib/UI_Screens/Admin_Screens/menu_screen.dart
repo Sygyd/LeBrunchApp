@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '/Api_services/menu/get_dishes_service.dart';
 import '/Api_services/menu/add_dish_service.dart';
-import 'add_dish_modal.dart';
+import './add_dish_modal.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '/UI_Screens/Widgets/search_bar.dart' as custom;
 import '/UI_Screens/Widgets/category_carousel.dart';
 import '/UI_Screens/Widgets/dish_card.dart';
+import 'dart:async';
+import '/UI_Screens/Widgets/background_scaffold.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -30,6 +32,13 @@ class _MenuScreenState extends State<MenuScreen>
   int _selectedIndex = 0;
   // Guarda el ID del plato expandido actualmente (si existe)
   String? _expandedDishId;
+  bool _isSearching = false;
+  String _searchQuery = '';
+  String _selectedCategory = '';
+  List<Map<String, dynamic>> _filteredDishes = [];
+  bool _isLoading = false;
+  // Crear el FocusNode al declararlo para evitar problemas de inicialización
+  final FocusNode _searchFocusNode = FocusNode();
 
   final List<Map<String, String>> _categories = [
     {'name': 'Tablas', 'image': 'assets/images/tablas.jpg'},
@@ -45,12 +54,20 @@ class _MenuScreenState extends State<MenuScreen>
     _fetchDishes();
   }
 
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchDishes() async {
     try {
       final data = await GetDishesService().getDishes();
       if (mounted) {
         setState(() {
           _dishes = data;
+          _filteredDishes = data;
         });
       }
     } catch (e) {
@@ -191,93 +208,134 @@ class _MenuScreenState extends State<MenuScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    super.build(context);
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Esto bloquea completamente el botón de retroceso
-        return false;
-      },
-      child: FutureBuilder<int?>(
-        future: widget.getUserRole(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(
-                color: theme.colorScheme.primary,
-              ),
-            );
-          }
-
-          final userRole = snapshot.data;
-
-          return Scaffold(
-            body: SafeArea(
-              minimum: const EdgeInsets.only(top: 0),
+    return BackgroundScaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            RefreshIndicator(
+              onRefresh: _fetchDishes,
               child: Column(
                 children: [
-                  const SizedBox(height: 4),
-
-                  // Barra de búsqueda
                   Padding(
-                    padding: const EdgeInsets.only(
-                      left: 16.0,
-                      right: 16.0,
-                      top: 0.0,
-                      bottom: 12.0,
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: custom.SearchBar(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                                _applyFilters();
+                              });
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    child: custom.SearchBar(controller: _searchController),
                   ),
-
                   // Carrusel de categorías
                   ValueListenableBuilder<List<String>>(
                     valueListenable: _selectedCategories,
                     builder: (context, selectedCategories, child) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10.0),
-                        child: CategoryCarousel(
-                          categories: _categories,
-                          selectedCategories: selectedCategories,
-                          toggleCategory: _toggleCategory,
-                        ),
+                      return CategoryCarousel(
+                        categories: _categories,
+                        selectedCategory: _selectedCategory,
+                        onCategorySelected: (category) {
+                          setState(() {
+                            if (_selectedCategory == category) {
+                              _selectedCategory = '';
+                            } else {
+                              _selectedCategory = category;
+                            }
+                            _applyFilters();
+                          });
+                        },
                       );
                     },
                   ),
-
                   // Lista de platos
                   Expanded(
-                    child: ValueListenableBuilder<List<String>>(
-                      valueListenable: _selectedCategories,
-                      builder: (context, selectedCategories, _) {
-                        return _buildDishList(userRole, selectedCategories);
-                      },
-                    ),
+                    child:
+                        _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _buildDishList(),
                   ),
+                  // Espacio de 0 para pegarse a la barra
+                  SizedBox(height: 0),
                 ],
               ),
             ),
-            floatingActionButton:
-                userRole == 0
-                    ? FloatingActionButton(
-                      onPressed: _openAddDishModal,
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const Icon(Icons.add, size: 28),
-                    )
-                    : null,
-            floatingActionButtonLocation:
-                FloatingActionButtonLocation.centerFloat,
-          );
-        },
+            // Botón de agregar plato optimizado
+            Positioned(
+              right: 20,
+              bottom:
+                  20, // Reducido para acercarse más a la barra de navegación
+              child: Container(
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).primaryColor.withOpacity(0.4),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                  shape: BoxShape.circle,
+                ),
+                child: FloatingActionButton(
+                  onPressed: () async {
+                    // Mostrar el modal para agregar plato
+                    final result = await showModalBottomSheet<bool>(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder:
+                          (context) => AddDishModal(
+                            onSuccess: () {
+                              _fetchDishes();
+                            },
+                          ),
+                    );
+
+                    // Si se agregó un plato exitosamente, actualizar la lista
+                    if (result == true) {
+                      _fetchDishes();
+                    }
+                  },
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  shape: const CircleBorder(),
+                  elevation: 4.0,
+                  child: const Icon(Icons.add, color: Colors.white, size: 28),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildDishList(int? userRole, List<String> selectedCategories) {
+  void _applyFilters() {
+    final query = _searchQuery.toLowerCase();
+    setState(() {
+      _filteredDishes =
+          _dishes.where((dish) {
+            final nameMatch = dish['nombre'].toString().toLowerCase().contains(
+              query,
+            );
+            final categoryMatch =
+                _selectedCategory.isEmpty ||
+                dish['categoria'] == _selectedCategory;
+            return nameMatch && categoryMatch;
+          }).toList();
+    });
+  }
+
+  Widget _buildDishList() {
     // Filtrar los platos según la búsqueda y las categorías seleccionadas
     final filteredDishes =
         _dishes.where((dish) {
@@ -285,8 +343,8 @@ class _MenuScreenState extends State<MenuScreen>
             _searchController.text.toLowerCase(),
           );
           final categoryMatch =
-              selectedCategories.isEmpty ||
-              selectedCategories.contains(dish['categoria']);
+              _selectedCategory.isEmpty ||
+              dish['categoria'] == _selectedCategory;
           return nameMatch && categoryMatch;
         }).toList();
 
@@ -325,10 +383,7 @@ class _MenuScreenState extends State<MenuScreen>
 
     // Usamos un widget que no obligue a reconstruir toda la vista
     return ListView.builder(
-      key: ValueKey('dish-list-${selectedCategories.join('-')}'),
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
+      physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 120),
       // Construir secciones para cada categoría
       itemCount: dishesByCategory.length,
@@ -351,7 +406,7 @@ class _MenuScreenState extends State<MenuScreen>
                   Text(
                     categoryName,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontFamily: 'LightHouse',
+                      fontFamily: 'MADE TOMMY',
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.primary,
                     ),
@@ -372,7 +427,7 @@ class _MenuScreenState extends State<MenuScreen>
             // Grid para platos de esta categoría
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: _buildCategoryDishGrid(categoryDishes, userRole),
+              child: _buildCategoryDishGrid(categoryDishes),
             ),
           ],
         );
@@ -380,26 +435,23 @@ class _MenuScreenState extends State<MenuScreen>
     );
   }
 
-  Widget _buildCategoryDishGrid(
-    List<Map<String, dynamic>> dishes,
-    int? userRole,
-  ) {
+  Widget _buildCategoryDishGrid(List<Map<String, dynamic>> dishes) {
     // Definiendo tamaños apropiados para la cuadrícula
     final screenSize = MediaQuery.of(context).size;
 
     // Determinamos cuántas tarjetas por fila según el ancho de pantalla
     int crossAxisCount;
     if (screenSize.width < 600) {
-      crossAxisCount = 2; // Móviles
+      crossAxisCount = 3; // Móviles - 3 tarjetas por fila
     } else if (screenSize.width < 1024) {
-      crossAxisCount = 3; // Tablets y pantallas medianas
+      crossAxisCount = 4; // Tablets y pantallas medianas
     } else {
-      crossAxisCount = 4; // Pantallas grandes
+      crossAxisCount = 5; // Pantallas grandes
     }
 
     // Ajustamos el aspect ratio para que las tarjetas encajen perfectamente
-    // basado en la altura de la imagen (140px) y el contenido
-    final childAspectRatio = 0.65; // Valor ajustado para evitar overflow
+    final childAspectRatio =
+        0.66; // Valor ajustado para tarjetas más proporcionales
 
     return GridView.builder(
       shrinkWrap: true,
@@ -407,22 +459,44 @@ class _MenuScreenState extends State<MenuScreen>
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: childAspectRatio,
-        crossAxisSpacing: 10, // Un poco más de espacio horizontal
-        mainAxisSpacing: 16,
+        crossAxisSpacing: 6, // Menos espacio horizontal
+        mainAxisSpacing: 10, // Menos espacio vertical
       ),
       itemCount: dishes.length,
       itemBuilder: (context, index) {
-        return DishCard(
-          dish: dishes[index],
-          userRole: userRole,
-          editDish: _editDish,
-          deleteDish: _deleteDish,
-          initialExpanded: false,
-          onToggleExpanded: (isExpanded) {
-            setState(() {
-              _expandedDishId =
-                  isExpanded ? dishes[index]['idplato'].toString() : null;
-            });
+        return FutureBuilder<int?>(
+          future: widget.getUserRole(),
+          builder: (context, snapshot) {
+            // Mientras se carga, usamos 0 por defecto
+            final userRole = snapshot.data ?? 0;
+            return DishCard(
+              dish: dishes[index],
+              userRole: userRole,
+              initialExpanded:
+                  _expandedDishId == dishes[index]['idplato'].toString(),
+              onToggleExpanded: (isExpanded) {
+                setState(() {
+                  _expandedDishId =
+                      isExpanded ? dishes[index]['idplato'].toString() : null;
+                });
+              },
+              editDish: (dish) {
+                // Mostrar el modal para editar el plato
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder:
+                      (context) => AddDishModal(
+                        onSuccess: () {
+                          _fetchDishes();
+                        },
+                        dish: dish,
+                      ),
+                );
+              },
+              deleteDish: (id) => _deleteDish(id),
+            );
           },
         );
       },
@@ -449,66 +523,58 @@ class _MenuScreenState extends State<MenuScreen>
             offset: const Offset(0, 2),
           ),
         ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Image.asset(
-          categoryData['image']!,
+        image: DecorationImage(
+          image: AssetImage(categoryData['image']!),
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Icon(
-                Icons.restaurant,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-            );
-          },
         ),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    final theme = Theme.of(context);
-
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.search_off,
-            size: 64,
-            color: theme.colorScheme.onSurface.withOpacity(0.5),
+            Icons.restaurant_menu,
+            size: 80,
+            color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
           ),
           const SizedBox(height: 16),
           Text(
             'No se encontraron platos',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withOpacity(0.7),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontFamily: 'MADE TOMMY',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Intenta con otra búsqueda o categoría',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'MADE TOMMY',
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              _searchController.clear();
+              setState(() {
+                _selectedCategory = '';
+                _searchQuery = '';
+                _filteredDishes = _dishes;
+              });
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text(
+              'Mostrar todo el menú',
+              style: TextStyle(fontFamily: 'MADE TOMMY'),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  void _openAddDishModal() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AddDishModal(onSuccess: _fetchDishes);
-      },
-    );
-  }
-
-  void _editDish(Map<String, dynamic> dish) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AddDishModal(dish: dish, onSuccess: _fetchDishes);
-      },
     );
   }
 }

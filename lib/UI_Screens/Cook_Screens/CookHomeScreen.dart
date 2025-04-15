@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class CookHomeScreen extends StatefulWidget {
-  const CookHomeScreen({super.key});
+  final String userName;
+
+  const CookHomeScreen({super.key, required this.userName});
 
   @override
   State<CookHomeScreen> createState() => _CookHomeScreenState();
 }
 
 class _CookHomeScreenState extends State<CookHomeScreen> {
-  String _userName = 'Cocinero';
   bool _isLoading = true;
   int _activeOrders = 0;
   int _completedOrders = 0;
@@ -25,12 +26,10 @@ class _CookHomeScreenState extends State<CookHomeScreen> {
   Future<void> _loadUserData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final name = prefs.getString('user_name') ?? 'Cocinero';
       final cedula = prefs.getString('user_cedula') ?? '';
 
       if (mounted) {
         setState(() {
-          _userName = name;
           _userCedula = cedula;
           _isLoading = false;
         });
@@ -75,43 +74,31 @@ class _CookHomeScreenState extends State<CookHomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bienvenida y avatar
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Icon(
-                    Icons.person,
-                    size: 30,
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            // Información del cocinero - mostramos solo la cédula
+            if (_userCedula.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Row(
                   children: [
-                    Text('¡Bienvenido!', style: theme.textTheme.titleLarge),
-                    Text(
-                      _userName,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: theme.colorScheme.primary,
+                      child: Icon(
+                        Icons.person,
+                        size: 24,
+                        color: theme.colorScheme.onPrimary,
                       ),
                     ),
-                    if (_userCedula.isNotEmpty)
-                      Text(
-                        'CI: $_userCedula',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
-                        ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'CI: $_userCedula',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
+                    ),
                   ],
                 ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
+              ),
 
             // Tarjetas de resumen
             Row(

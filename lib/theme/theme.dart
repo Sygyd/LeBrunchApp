@@ -30,138 +30,234 @@ const darkColorScheme = ColorScheme(
   shadow: Color(0x80FFFFFF), // Sombra clara semi-transparente
 );
 
-// TextTheme personalizado
+// TextTheme personalizado para modo claro
 final _lightTextTheme = TextTheme(
-  // Lighthouse para títulos y subtítulos
   displayLarge: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 57,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   displayMedium: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 45,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   displaySmall: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 36,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   headlineLarge: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 32,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   headlineMedium: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 28,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   headlineSmall: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 24,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   titleLarge: TextStyle(
-    fontFamily: 'LightHouse',
+    fontFamily: 'MADE TOMMY',
     fontSize: 22,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
-
-  // MADE TOMMY para todo lo demás
   titleMedium: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 16,
     fontWeight: FontWeight.w500,
+    color: lightColorScheme.onSurface,
   ),
   titleSmall: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 14,
     fontWeight: FontWeight.w500,
+    color: lightColorScheme.onSurface,
   ),
   bodyLarge: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 16,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   bodyMedium: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 14,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   bodySmall: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 12,
     fontWeight: FontWeight.normal,
+    color: lightColorScheme.onSurface,
   ),
   labelLarge: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 14,
     fontWeight: FontWeight.w500,
+    color: lightColorScheme.onSurface,
   ),
   labelMedium: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 12,
     fontWeight: FontWeight.w500,
+    color: lightColorScheme.onSurface,
   ),
   labelSmall: TextStyle(
     fontFamily: 'MADE TOMMY',
     fontSize: 11,
     fontWeight: FontWeight.w500,
+    color: lightColorScheme.onSurface,
   ),
 );
 
-ThemeData lightMode = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.light,
+// TextTheme personalizado para modo oscuro
+final _darkTextTheme = TextTheme(
+  displayLarge: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 57,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  displayMedium: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 45,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  displaySmall: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 36,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  headlineLarge: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 32,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  headlineMedium: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 28,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  headlineSmall: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 24,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  titleLarge: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 22,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  titleMedium: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: darkColorScheme.onSurface,
+  ),
+  titleSmall: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    color: darkColorScheme.onSurface,
+  ),
+  bodyLarge: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 16,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  bodyMedium: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 14,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  bodySmall: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 12,
+    fontWeight: FontWeight.normal,
+    color: darkColorScheme.onSurface,
+  ),
+  labelLarge: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    color: darkColorScheme.onSurface,
+  ),
+  labelMedium: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    color: darkColorScheme.onSurface,
+  ),
+  labelSmall: TextStyle(
+    fontFamily: 'MADE TOMMY',
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    color: darkColorScheme.onSurface,
+  ),
+);
+
+final lightMode = ThemeData(
   colorScheme: lightColorScheme,
-  fontFamily: 'LightHouse', // Fuente principal
+  fontFamily: 'MADE TOMMY',
   textTheme: _lightTextTheme,
+  brightness: Brightness.light,
+  useMaterial3: true,
+  scaffoldBackgroundColor: Colors.white,
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ButtonStyle(
-      backgroundColor: WidgetStateProperty.all<Color>(
+      backgroundColor: MaterialStateProperty.all<Color>(
         lightColorScheme.primary,
-      ), // Verde
-      foregroundColor: WidgetStateProperty.all<Color>(
-        lightColorScheme.onPrimary,
-      ), // Blanco
-      textStyle: WidgetStateProperty.all<TextStyle>(
-        const TextStyle(
-          fontFamily: 'LightHouse', // Fuente aplicada aquí
-          fontSize: 18,
-        ),
       ),
-      // ... (otros parámetros como padding, shape, etc.)
+      foregroundColor: MaterialStateProperty.all<Color>(
+        lightColorScheme.onPrimary,
+      ),
+      textStyle: MaterialStateProperty.all<TextStyle>(
+        const TextStyle(fontFamily: 'MADE TOMMY', fontSize: 18),
+      ),
     ),
   ),
-  // Añade estilos adicionales para otros componentes si es necesario
 );
 
-ThemeData darkMode = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.dark,
+final darkMode = ThemeData(
   colorScheme: darkColorScheme,
-  fontFamily: 'LightHouse', // Fuente principal
-  textTheme: _lightTextTheme.apply(
-    displayColor: darkColorScheme.onSurface,
-    bodyColor: darkColorScheme.onSurface,
-  ),
+  fontFamily: 'MADE TOMMY',
+  textTheme: _darkTextTheme,
+  brightness: Brightness.dark,
+  useMaterial3: true,
+  scaffoldBackgroundColor: darkColorScheme.surface,
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ButtonStyle(
-      backgroundColor: WidgetStateProperty.all<Color>(
-        lightColorScheme.primary,
-      ), // Verde
-      foregroundColor: WidgetStateProperty.all<Color>(
-        lightColorScheme.onPrimary,
-      ), // White
-      textStyle: WidgetStateProperty.all<TextStyle>(
-        const TextStyle(
-          fontFamily: 'LightHouse', // Fuente aplicada aquí
-          fontSize: 18,
-        ),
+      backgroundColor: MaterialStateProperty.all<Color>(
+        darkColorScheme.primary,
       ),
-      // ... (otros parámetros como padding, shape, etc.)
+      foregroundColor: MaterialStateProperty.all<Color>(
+        darkColorScheme.onPrimary,
+      ),
+      textStyle: MaterialStateProperty.all<TextStyle>(
+        const TextStyle(fontFamily: 'MADE TOMMY', fontSize: 18),
+      ),
     ),
   ),
 );

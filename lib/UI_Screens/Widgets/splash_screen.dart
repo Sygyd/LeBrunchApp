@@ -87,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen>
                         BlendMode.srcIn,
                       ),
                       child: Image.asset(
-                        'assets/images/logo.png',
+                        'assets/logos/logo.png',
                         width: MediaQuery.of(context).size.width * 0.4,
                       ),
                     ),

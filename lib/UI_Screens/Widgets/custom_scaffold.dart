@@ -6,7 +6,7 @@ class CustomScaffold extends StatelessWidget {
     super.key,
     required this.child, // Hacemos child obligatorio
     this.showAppBar = false, // Cambiamos default a false
-    this.backgroundImage = 'assets/images/bg1.png',
+    this.backgroundImage = 'assets/images/scaffold1.png',
     this.showTitle = false, // Nuevo parámetro para controlar el título
   });
 
@@ -32,7 +32,7 @@ class CustomScaffold extends StatelessWidget {
                           'Le Brunch',
                           style: TextStyle(
                             color: theme.colorScheme.onPrimary,
-                            fontFamily: 'LightHouse Regular',
+                            fontFamily: 'LightHouse',
                           ),
                         )
                         : null,

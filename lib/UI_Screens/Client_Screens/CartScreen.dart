@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import '../../Api_services/cart_service.dart';
+import '../../Api_services/gemini_service.dart';
 import '../../models/cart_item.dart';
 import '../Widgets/cart_item_card.dart';
 import '../Widgets/custom_modal.dart';
+import '../../Api_services/pedidos/create_order_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CartScreen extends StatefulWidget {
-  const CartScreen({super.key});
+  final bool isEmbedded;
+  final Function(int)? onTabChange;
+
+  const CartScreen({super.key, this.isEmbedded = false, this.onTabChange});
 
   @override
   State<CartScreen> createState() => _CartScreenState();
@@ -13,52 +19,328 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   final CartService _cartService = CartService();
+  final GeminiService _geminiService = GeminiService();
+  List<CartItem> _cartItems = [];
+  List<Map<String, dynamic>> _recommendedDishes = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    // Asegurarse de que el carrito se ha inicializado
     _refreshCart();
   }
 
-  // Actualizar la vista cuando cambie el carrito
-  void _refreshCart() {
-    setState(() {});
+  Future<void> _refreshCart() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Obtener los items del carrito
+    final items = _cartService.items;
+
+    // Obtener recomendaciones si el carrito no está vacío
+    List<Map<String, dynamic>> recommendations = [];
+    if (items.isNotEmpty) {
+      try {
+        final prefs = await _geminiService.getUserPreferences();
+        final menuItems = await _geminiService.fetchMenu();
+        // Obtener el último plato pedido y los platos más frecuentes
+        final lastOrderedDish = prefs['lastOrderedDish'];
+        final dishCounts = prefs['dishCounts'] ?? {};
+
+        if (lastOrderedDish != null || dishCounts.isNotEmpty) {
+          recommendations = await _getRecommendedDishes(
+            menuItems,
+            lastOrderedDish,
+            dishCounts,
+          );
+        }
+      } catch (e) {
+        print('Error al obtener recomendaciones: $e');
+      }
+    }
+
+    setState(() {
+      _cartItems = List.from(items);
+      _recommendedDishes = recommendations;
+      _isLoading = false;
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _getRecommendedDishes(
+    List<dynamic> menuItems,
+    String? lastOrderedDish,
+    Map<String, dynamic> dishCounts,
+  ) async {
+    // Filtrar platos que ya están en el carrito
+    final cartItemNames =
+        _cartItems.map((item) => item.name.toLowerCase()).toSet();
+
+    // Convertir dishCounts a una lista ordenada
+    List<MapEntry<String, dynamic>> popularDishes = [];
+    if (dishCounts.isNotEmpty) {
+      popularDishes =
+          dishCounts.entries.toList()
+            ..sort((a, b) => (b.value as int).compareTo(a.value as int));
+    }
+
+    // Lista de posibles recomendaciones
+    List<Map<String, dynamic>> recommendations = [];
+
+    // Añadir platos de la misma categoría que el último ordenado
+    if (lastOrderedDish != null) {
+      // Buscar la categoría del último plato
+      final lastDishInfo = menuItems.firstWhere(
+        (dish) =>
+            dish['nombre']?.toLowerCase() == lastOrderedDish.toLowerCase(),
+        orElse: () => null,
+      );
+
+      if (lastDishInfo != null && lastDishInfo['categoria'] != null) {
+        final similarCategory =
+            menuItems
+                .where(
+                  (dish) =>
+                      dish['categoria'] == lastDishInfo['categoria'] &&
+                      !cartItemNames.contains(dish['nombre']?.toLowerCase()),
+                )
+                .toList();
+
+        // Añadir hasta 2 recomendaciones de la misma categoría
+        if (similarCategory.isNotEmpty) {
+          recommendations.addAll(
+            similarCategory.take(2).map((dish) => dish as Map<String, dynamic>),
+          );
+        }
+      }
+    }
+
+    // Añadir platos populares basados en el historial
+    if (popularDishes.isNotEmpty) {
+      for (var entry in popularDishes.take(3)) {
+        final dishName = entry.key;
+        final dishInfo = menuItems.firstWhere(
+          (dish) => dish['nombre']?.toLowerCase() == dishName.toLowerCase(),
+          orElse: () => null,
+        );
+
+        if (dishInfo != null &&
+            !cartItemNames.contains(dishInfo['nombre']?.toLowerCase()) &&
+            !recommendations.any(
+              (rec) => rec['nombre'] == dishInfo['nombre'],
+            )) {
+          recommendations.add(dishInfo);
+          if (recommendations.length >= 3) break;
+        }
+      }
+    }
+
+    // Si necesitamos más recomendaciones, añadir platos aleatorios
+    if (recommendations.length < 3) {
+      menuItems.shuffle();
+      for (var dish in menuItems) {
+        if (!cartItemNames.contains(dish['nombre']?.toLowerCase()) &&
+            !recommendations.any((rec) => rec['nombre'] == dish['nombre'])) {
+          recommendations.add(dish);
+          if (recommendations.length >= 3) break;
+        }
+      }
+    }
+
+    return recommendations.take(3).toList();
+  }
+
+  void _addRecommendedDishToCart(Map<String, dynamic> dish) async {
+    try {
+      final name = dish['nombre'] as String;
+      final price = double.parse(dish['precio'].toString());
+      final imageUrl = dish['imagen_url'] as String?;
+      final id =
+          dish['idplato']?.toString() ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+
+      // Usar los parámetros nombrados correctamente según el método en CartService
+      _cartService.addItem(
+        id: id,
+        name: name,
+        price: price,
+        imageUrl: imageUrl ?? '',
+        quantity: 1,
+        originalData: dish,
+      );
+
+      // Actualizar preferencias del usuario
+      await _geminiService.updateUserPreferences(name);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('¡$name añadido al carrito!')));
+
+      _refreshCart();
+    } catch (e) {
+      print('Error al añadir plato recomendado: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo añadir el plato al carrito.')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cartItems = _cartService.items;
-    final theme = Theme.of(context);
+    if (_isLoading) {
+      return _buildLoadingScreen();
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Mi Pedido',
-          style: TextStyle(
-            fontFamily: 'LightHouse',
-            fontWeight: FontWeight.bold,
+      drawerEdgeDragWidth: MediaQuery.of(context).size.width,
+      drawerEnableOpenDragGesture: true,
+      body: WillPopScope(
+        onWillPop: () async {
+          if (widget.isEmbedded && widget.onTabChange != null) {
+            widget.onTabChange!(0);
+            return false;
+          }
+          return true;
+        },
+        child: GestureDetector(
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity != null &&
+                details.primaryVelocity! > 300) {
+              if (widget.isEmbedded && widget.onTabChange != null) {
+                widget.onTabChange!(0);
+              } else {
+                Navigator.of(context).pop();
+              }
+            }
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage("assets/images/fondolb.jpg"),
+                fit: BoxFit.cover,
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child:
+                        _cartItems.isEmpty
+                            ? _buildEmptyCart()
+                            : _buildCartList(),
+                  ),
+                  if (_recommendedDishes.isNotEmpty && _cartItems.isNotEmpty)
+                    _buildRecommendations(),
+                  if (_cartItems.isNotEmpty) _buildCheckoutSection(),
+                ],
+              ),
+            ),
           ),
         ),
-        actions: [
-          if (cartItems.isNotEmpty)
-            IconButton(
-              icon: Icon(Icons.delete_sweep),
-              tooltip: 'Vaciar carrito',
-              onPressed: _showClearCartConfirmation,
-            ),
-        ],
       ),
-      body:
-          cartItems.isEmpty
-              ? _buildEmptyCart(theme)
-              : _buildCartItemsList(cartItems, theme),
-      bottomNavigationBar: cartItems.isEmpty ? null : _buildBottomBar(theme),
     );
   }
 
-  // Mostrar carrito vacío
-  Widget _buildEmptyCart(ThemeData theme) {
+  Widget _buildRecommendations() {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      color: Colors.grey[50],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              'Recomendaciones para ti',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+          SizedBox(
+            height: 120,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _recommendedDishes.length,
+              itemBuilder: (context, index) {
+                final dish = _recommendedDishes[index];
+                return GestureDetector(
+                  onTap: () => _addRecommendedDishToCart(dish),
+                  child: Container(
+                    width: 120,
+                    margin: EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(8),
+                          ),
+                          child: Image.network(
+                            dish['imagen_url'] ??
+                                'https://via.placeholder.com/120',
+                            height: 70,
+                            width: 120,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (context, error, stackTrace) => Container(
+                                  height: 70,
+                                  color: Colors.grey[300],
+                                  child: Icon(
+                                    Icons.restaurant,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(4.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                dish['nombre'] ?? 'Plato',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                '\$${dish['precio'] ?? '0.00'}',
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCart() {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -87,8 +369,11 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              // Navegar al menú
-              Navigator.of(context).pop();
+              if (widget.isEmbedded && widget.onTabChange != null) {
+                widget.onTabChange!(1);
+              } else {
+                Navigator.of(context).pop();
+              }
             },
             icon: const Icon(Icons.restaurant_menu),
             label: const Text('Ver menú'),
@@ -103,14 +388,13 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  // Construir lista de items en el carrito
-  Widget _buildCartItemsList(List<CartItem> cartItems, ThemeData theme) {
+  Widget _buildCartList() {
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      itemCount: cartItems.length,
+      itemCount: _cartItems.length,
       itemBuilder: (context, index) {
-        final item = cartItems[index];
+        final item = _cartItems[index];
         return CartItemCard(
           key: ValueKey(item.id),
           item: item,
@@ -136,8 +420,8 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  // Construir barra inferior con total y botón de confirmar
-  Widget _buildBottomBar(ThemeData theme) {
+  Widget _buildCheckoutSection() {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -154,7 +438,6 @@ class _CartScreenState extends State<CartScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Resumen del pedido
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -175,7 +458,6 @@ class _CartScreenState extends State<CartScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            // Botón de confirmar
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -200,7 +482,6 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  // Diálogo de confirmación para eliminar un item
   Future<void> _showRemoveItemConfirmation(CartItem item) async {
     final confirm = await CustomModal.showConfirmation(
       context: context,
@@ -218,38 +499,104 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  // Diálogo de confirmación para vaciar carrito
-  Future<void> _showClearCartConfirmation() async {
-    final confirm = await CustomModal.showConfirmation(
-      context: context,
-      title: 'Vaciar carrito',
-      message:
-          '¿Estás seguro de que quieres eliminar todos los productos de tu pedido?',
-      confirmText: 'Vaciar',
-      cancelText: 'Cancelar',
-      confirmColor: Theme.of(context).colorScheme.error,
-    );
+  Future<void> _confirmOrder() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (BuildContext dialogContext) =>
+                const Center(child: CircularProgressIndicator()),
+      );
 
-    if (confirm) {
-      _cartService.clear();
-      _refreshCart();
+      final cartItems = _cartService.items;
+
+      if (cartItems.isEmpty) {
+        if (context.mounted) {
+          Navigator.of(context).pop();
+          await CustomModal.showError(
+            context: context,
+            title: 'Carrito Vacío',
+            message: 'No hay productos en el carrito para confirmar el pedido.',
+            buttonText: 'Entendido',
+          );
+        }
+        return;
+      }
+
+      final createOrderService = CreateOrderService();
+      final result = await createOrderService.createOrder(cartItems);
+
+      if (!context.mounted) return;
+
+      Navigator.of(context).pop();
+
+      if (result['success']) {
+        final orderId = result['orderData']?['idpedido'];
+        if (orderId != null) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('current_order_id', orderId);
+          } catch (e) {
+            print('Error al guardar el ID del pedido: $e');
+          }
+        }
+
+        // Actualizar las preferencias del usuario con los platos ordenados
+        try {
+          final geminiService = GeminiService();
+          for (var item in cartItems) {
+            await geminiService.updateUserPreferences(item.name);
+          }
+          print('✅ Preferencias de usuario actualizadas correctamente');
+        } catch (e) {
+          print('❌ Error al actualizar preferencias de usuario: $e');
+        }
+
+        _cartService.clear();
+        _refreshCart();
+
+        if (context.mounted) {
+          await CustomModal.showSuccess(
+            context: context,
+            title: '¡Pedido Confirmado!',
+            message:
+                'Tu pedido ${orderId != null ? "#$orderId" : ""} ha sido confirmado con éxito.',
+            buttonText: 'Aceptar',
+            onPressed: () {},
+          );
+
+          if (widget.isEmbedded && widget.onTabChange != null) {
+            widget.onTabChange!(0);
+          } else if (context.mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      } else {
+        if (context.mounted) {
+          await CustomModal.showError(
+            context: context,
+            title: 'Error al Confirmar Pedido',
+            message: result['message'] ?? 'No se pudo crear el pedido',
+            buttonText: 'Entendido',
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        await CustomModal.showError(
+          context: context,
+          title: 'Error Inesperado',
+          message: 'Ocurrió un error al procesar tu pedido: $e',
+          buttonText: 'Entendido',
+        );
+      }
     }
   }
 
-  // Confirmar pedido
-  Future<void> _confirmOrder() async {
-    // Aquí iría la lógica para confirmar el pedido
-    // Por ahora solo mostramos un mensaje de éxito
-    await CustomModal.showSuccess(
-      context: context,
-      title: '¡Pedido Confirmado!',
-      message:
-          'Tu pedido ha sido confirmado con éxito. Puedes seguir su estado en la sección de pedidos activos.',
-      buttonText: 'Aceptar',
-    );
-
-    // Después de confirmar, limpiamos el carrito
-    _cartService.clear();
-    _refreshCart();
+  Widget _buildLoadingScreen() {
+    return const Center(child: CircularProgressIndicator());
   }
 }

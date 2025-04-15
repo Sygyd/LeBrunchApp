@@ -5,8 +5,11 @@ import '../Client_Screens/ClientHomeScreen.dart';
 import '../Client_Screens/ClientMenuScreen.dart';
 import '../Client_Screens/CartScreen.dart';
 import '../Admin_Screens/AdminChatScreen.dart';
-import '../Auth_Screens/login.dart';
-import '../Auth_Screens/register.dart';
+import '../Admin_Screens/ReportsScreen.dart';
+import '../Admin_Screens/OrderHistoryScreen.dart';
+import '../Admin_Screens/AdminHomeScreen.dart';
+import '../Admin_Screens/menu_screen.dart';
+import '../Admin_Screens/Users/AdminUsersScreen.dart';
 import 'splash_screen.dart';
 import 'welcome.dart';
 import 'custom_bottom_navigation_bar.dart';
@@ -14,6 +17,9 @@ import 'custom_bottom_navigation_bar.dart';
 /// Clase para manejar las rutas de la aplicación
 class AppRoutes {
   static Route<dynamic> generateRoute(RouteSettings settings) {
+    // Extraer argumentos si existen
+    final args = settings.arguments as Map<String, dynamic>? ?? {};
+
     switch (settings.name) {
       case '/splash':
         return MaterialPageRoute(builder: (_) => const SplashScreen());
@@ -24,12 +30,17 @@ class AppRoutes {
 
       case '/home':
         return MaterialPageRoute(
-          builder: (_) => const CustomBottomNavigationBar(),
+          builder:
+              (_) => CustomBottomNavigationBar(
+                initialIndex:
+                    args.containsKey('initialIndex') ? args['initialIndex'] : 0,
+              ),
         );
 
       case '/client/home':
         return MaterialPageRoute(
-          builder: (_) => ClientHomeScreen(userName: '', userCedula: ''),
+          builder:
+              (_) => ClientHomeScreen(userName: 'Cliente', onNavigate: (_) {}),
         );
 
       case '/menu':
@@ -45,13 +56,80 @@ class AppRoutes {
         return MaterialPageRoute(builder: (_) => const ChatScreen());
 
       case '/login':
-        return MaterialPageRoute(builder: (_) => const LoginScreen());
+        // Usar el modal de login en lugar de la pantalla
+        return MaterialPageRoute(
+          builder:
+              (_) => Scaffold(
+                body: Builder(
+                  builder: (context) {
+                    // Mostrar el modal de login automáticamente cuando se carga la página
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      AuthModals.showLoginModal(context);
+                    });
+                    // Mostrar un fondo mientras tanto
+                    return const WelcomeScreen();
+                  },
+                ),
+              ),
+        );
 
       case '/register':
-        return MaterialPageRoute(builder: (_) => const RegisterScreen());
+        // Usar el modal de registro en lugar de la pantalla
+        return MaterialPageRoute(
+          builder:
+              (_) => Scaffold(
+                body: Builder(
+                  builder: (context) {
+                    // Mostrar el modal de registro automáticamente cuando se carga la página
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      AuthModals.showRegisterModal(context);
+                    });
+                    // Mostrar un fondo mientras tanto
+                    return const WelcomeScreen();
+                  },
+                ),
+              ),
+        );
 
+      // Rutas de Administrador
       case '/admin/chat':
-        return MaterialPageRoute(builder: (_) => AdminChatScreen());
+      case '/admin-chat':
+        return MaterialPageRoute(builder: (_) => const AdminChatScreen());
+
+      case '/admin/home':
+      case '/admin-home':
+        return MaterialPageRoute(
+          builder:
+              (_) => AdminHomeScreen(
+                userName: args['userName'] ?? 'Administrador',
+                onNavigate: args['onNavigate'],
+              ),
+        );
+
+      case '/admin/menu':
+      case '/admin-menu':
+        return MaterialPageRoute(builder: (_) => const MenuScreen());
+
+      case '/admin/reports':
+      case '/admin-reports':
+        return MaterialPageRoute(builder: (_) => const ReportsScreen());
+
+      case '/admin/orders':
+      case '/admin-orders':
+        return MaterialPageRoute(
+          builder:
+              (_) => OrderHistoryScreen(
+                title: args['title'] ?? 'Historial de Pedidos',
+                startDate: args['startDate'],
+                endDate: args['endDate'],
+                estado: args['estado'],
+              ),
+        );
+
+      // Ruta para la administración de usuarios
+      case '/admin/users':
+      case '/admin-users':
+        return MaterialPageRoute(builder: (_) => const AdminUsersScreen());
 
       default:
         // Si la ruta no existe, redirigir a la pantalla de inicio

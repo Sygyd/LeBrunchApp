@@ -1,28 +1,68 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
-import '/UI_Screens/Admin_Screens/ReportScreen.dart';
-import '/UI_Screens/Admin_Screens/RegistersScreen.dart';
-import '../Admin_Screens/menu_screen.dart';
-import '/UI_Screens/Admin_Screens/OrdersScreen.dart';
-import '/UI_Screens/Admin_Screens/AdminChatScreen.dart';
+import 'package:flutter/material.dart';
+import '/UI_Screens/Admin_Screens/menu_screen.dart';
 import '/UI_Screens/Client_Screens/ClientHomeScreen.dart';
-import '/UI_Screens/Client_Screens/ChatScreen.dart';
 import '/UI_Screens/Client_Screens/CartScreen.dart';
-import '/UI_Screens/Client_Screens/ClientMenuScreen.dart';
-import '/UI_Screens/Cook_Screens/CookHomeScreen.dart';
+import '/UI_Screens/Client_Screens/ChatScreen.dart';
 import '/UI_Screens/Cook_Screens/ActiveOrdersScreen.dart';
-import '/UI_Screens/Cook_Screens/OrderHistoryScreen.dart';
-import '/UI_Screens/Cook_Screens/CookProfileScreen.dart';
-import '/UI_Screens/Barista_Screens/BaristaHomeScreen.dart';
 import '/UI_Screens/Barista_Screens/BaristaActiveOrdersScreen.dart';
-import '/UI_Screens/Barista_Screens/BaristaOrderHistoryScreen.dart';
-import '/UI_Screens/Barista_Screens/BaristaProfileScreen.dart';
-import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:async';
+import '../Admin_Screens/AdminHomeScreen.dart';
+import '../Client_Screens/ClientMenuScreen.dart';
+import '../Admin_Screens/AdminChatScreen.dart';
+import '../Cook_Screens/CookHomeScreen.dart';
+import '../Cook_Screens/OrderHistoryScreen.dart';
+import '../Cook_Screens/CookProfileScreen.dart';
+import '../Barista_Screens/BaristaHomeScreen.dart';
+import '../Barista_Screens/BaristaOrderHistoryScreen.dart';
+import '../Barista_Screens/BaristaProfileScreen.dart';
+import '../Admin_Screens/Users/AdminUsersScreen.dart';
+import 'text_with_border.dart';
+import 'package:http/http.dart' as http;
+import '../../Api_services/cart_service.dart';
+
+// PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
+class PlaceholderScreen extends StatelessWidget {
+  final String title;
+
+  const PlaceholderScreen({Key? key, required this.title}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async => false,
+      child: Scaffold(
+        appBar: AppBar(title: Text(title), automaticallyImplyLeading: false),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.construction, size: 80, color: Colors.amber),
+              SizedBox(height: 20),
+              Text(
+                'Pantalla en construcción',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              SizedBox(height: 10),
+              Text(
+                'Esta funcionalidad estará disponible próximamente',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class CustomBottomNavigationBar extends StatefulWidget {
-  const CustomBottomNavigationBar({super.key});
+  final int initialIndex;
+
+  const CustomBottomNavigationBar({super.key, this.initialIndex = 0});
 
   @override
   State<CustomBottomNavigationBar> createState() =>
@@ -30,540 +70,931 @@ class CustomBottomNavigationBar extends StatefulWidget {
 }
 
 class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
-  int _selectedIndex = 0;
-  int? _userRole;
-  String _userName = 'Usuario';
-  String _userCedula = '';
+  late int _currentIndex;
+  int _userRole = 0;
+  String? _userName;
   bool _isLoading = true;
   final GlobalKey<CurvedNavigationBarState> _navBarKey = GlobalKey();
+  final storage = const FlutterSecureStorage();
+  bool showAdminSettings = false;
+  bool _isShowingDialog =
+      false; // Variable para rastrear si hay un diálogo activo
 
-  final _pageController = PageController(initialPage: 0);
-  final _scrollPhysics = const ClampingScrollPhysics();
+  late PageController _pageController;
+  late Stream<int> _pageStream;
+  late StreamController<int> _pageStreamController;
+
+  // CartService para obtener la cantidad de elementos
+  final CartService _cartService = CartService();
+  int _cartItemCount = 0;
 
   @override
   void initState() {
     super.initState();
+    // Inicializar el índice con el valor proporcionado en el constructor
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+    _pageStreamController = StreamController<int>.broadcast();
+    _pageStream = _pageStreamController.stream;
     _loadUserData();
+    _checkDebugMode();
+
+    // Forzar la actualización del carrito
+    _resetCartService();
+
+    // Escuchar cambios en el carrito
+    _cartService.addListener(_updateCartItemCount);
   }
 
-  Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final role = prefs.getInt('user_rol') ?? 1;
-    final name = prefs.getString('user_name') ?? 'Usuario';
-    final cedula = prefs.getString('user_cedula') ?? '';
+  @override
+  void dispose() {
+    _pageStreamController.close();
+    _pageController.dispose();
+    _cartService.removeListener(_updateCartItemCount);
+    super.dispose();
+  }
 
+  // Método para reiniciar el servicio de carrito
+  Future<void> _resetCartService() async {
+    await _cartService.resetService();
+    _updateCartItemCount();
+  }
+
+  // Actualizar el contador de elementos del carrito
+  void _updateCartItemCount() {
     if (mounted) {
       setState(() {
-        _userRole = role;
+        _cartItemCount = _cartService.itemCount;
+        print('🔢 Contador del carrito actualizado: $_cartItemCount');
+      });
+    }
+  }
+
+  // Método para cambiar de página
+  void _changePage(int index) {
+    if (index != _currentIndex) {
+      // Si estamos cambiando a la pestaña de carrito (Cliente, índice 3),
+      // forzar una actualización completa del carrito
+      if (_userRole == 1 && index == 3) {
+        _resetCartService();
+      }
+
+      setState(() {
+        _currentIndex = index;
+      });
+      _pageController.jumpToPage(index);
+      _pageStreamController.add(index);
+    }
+  }
+
+  // Cargar datos del usuario desde preferencias
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleId = prefs.getInt('user_rol');
+      final name = prefs.getString('user_name');
+      final userId = prefs.getInt('user_id');
+
+      // Configurar el CartService con el ID del usuario actual
+      if (userId != null) {
+        _cartService.setUserId(userId.toString());
+        print('✅ CartService inicializado con ID de usuario: $userId');
+      } else {
+        print('⚠️ No se encontró ID de usuario en SharedPreferences');
+      }
+
+      setState(() {
+        _userRole = roleId ?? 0;
         _userName = name;
-        _userCedula = cedula;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error al cargar datos de usuario: $e');
+      setState(() {
         _isLoading = false;
       });
     }
   }
 
+  Future<void> _checkDebugMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final debugMode = prefs.getBool('debug_mode') ?? false;
+      setState(() {
+        showAdminSettings = debugMode;
+      });
+    } catch (e) {
+      print('Error al verificar modo debug: $e');
+    }
+  }
+
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  void _onItemTapped(int index) {
-    if (_selectedIndex == index) return;
-
-    setState(() => _selectedIndex = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _onPageChanged(int index) {
-    if (_selectedIndex != index) {
-      setState(() => _selectedIndex = index);
-      // Sincronizar la barra de navegación con la página actual
-      final CurvedNavigationBarState? navBarState = _navBarKey.currentState;
-      navBarState?.setPage(index);
-    }
-  }
-
-  Widget _buildBody() {
+  Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return PageView(
-      controller: _pageController,
-      physics: _scrollPhysics,
-      onPageChanged: _onPageChanged,
-      children: _getPages(),
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final backgroundColor = theme.colorScheme.surface;
+
+    return WillPopScope(
+      onWillPop: () async {
+        // Evitar mostrar múltiples diálogos
+        if (_isShowingDialog) return false;
+
+        setState(() {
+          _isShowingDialog = true;
+        });
+
+        // Mostrar diálogo de confirmación para cerrar sesión
+        final shouldLogout = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false, // Evitar cerrar el diálogo tocando fuera
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Cerrar sesión'),
+                content: const Text('¿Deseas cerrar sesión?'),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context, false);
+                      setState(() {
+                        _isShowingDialog = false;
+                      });
+                    },
+                    child: const Text('Cancelar'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context, true);
+                      setState(() {
+                        _isShowingDialog = false;
+                      });
+                    },
+                    child: const Text(
+                      'Cerrar sesión',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+        );
+
+        // Restablecer el estado del diálogo si se cerró inesperadamente
+        if (mounted && _isShowingDialog) {
+          setState(() {
+            _isShowingDialog = false;
+          });
+        }
+
+        if (shouldLogout == true) {
+          await _logout();
+        }
+        return false; // Siempre retornar false para evitar la navegación hacia atrás
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: _buildAppBarTitle(),
+          automaticallyImplyLeading: false,
+          backgroundColor: const Color(0xFF3ea69b),
+          foregroundColor: Colors.white,
+          centerTitle: false,
+          elevation: 0,
+          toolbarHeight: 70.0,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(color: Colors.white, width: 1.5),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(30),
+            ),
+          ),
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF3ea69b),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+              image: DecorationImage(
+                image: AssetImage('assets/images/fondo-flores-2.png'),
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(right: 20.0),
+              child: GestureDetector(
+                onTap: () => _showUserModal(context),
+                child: Tooltip(
+                  message: 'Perfil de usuario',
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white,
+                    foregroundColor: primaryColor,
+                    child: Icon(_getRoleIcon(), size: 20),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          children: _getPagesForRole(_userRole),
+        ),
+        bottomNavigationBar: CurvedNavigationBar(
+          key: _navBarKey,
+          index: _currentIndex,
+          height: 60.0,
+          items: _getNavItemsForRole(_userRole, Colors.white),
+          color: primaryColor,
+          buttonBackgroundColor: primaryColor,
+          backgroundColor: backgroundColor,
+          animationCurve: Curves.easeInOut,
+          animationDuration: const Duration(milliseconds: 300),
+          onTap: _changePage,
+          letIndexChange: (index) => true,
+        ),
+      ),
     );
   }
 
-  List<Widget> _getPages() {
-    switch (_userRole) {
-      case 0: // Admin
+  // Obtener páginas según el rol del usuario
+  List<Widget> _getPagesForRole(int role) {
+    switch (role) {
+      case 0: // Administrador
         return [
-          const ReportScreen(),
-          const RegistersScreen(),
+          AdminHomeScreen(
+            userName: _userName ?? 'Administrador',
+            onNavigate:
+                (index) => setState(() {
+                  _currentIndex = index;
+                  _pageController.jumpToPage(index);
+                }),
+          ),
           const MenuScreen(),
-          const OrdersScreen(),
           const AdminChatScreen(),
+          const AdminUsersScreen(), // Pantalla de administración de usuarios
+        ];
+      case 1: // Cliente
+        return [
+          ClientHomeScreen(
+            userName: _userName ?? 'Usuario',
+            onNavigate:
+                (index) => setState(() {
+                  _currentIndex = index;
+                  _pageController.jumpToPage(index);
+                }),
+          ),
+          const ClientMenuScreen(),
+          const ChatScreen(),
+          CartScreen(
+            isEmbedded: true,
+            onTabChange: (index) {
+              setState(() {
+                _currentIndex = index;
+                _pageController.jumpToPage(index);
+              });
+            },
+          ),
         ];
       case 2: // Cocinero
         return [
-          const CookHomeScreen(),
+          CookHomeScreen(userName: _userName ?? 'Cocinero'),
           const ActiveOrdersScreen(),
           const OrderHistoryScreen(),
           const CookProfileScreen(),
         ];
       case 3: // Barista
         return [
-          const BaristaHomeScreen(),
+          BaristaHomeScreen(userName: _userName ?? 'Barista'),
           const BaristaActiveOrdersScreen(),
           const BaristaOrderHistoryScreen(),
           const BaristaProfileScreen(),
         ];
-      default: // Cliente (rol 1)
-        return [
-          ClientHomeScreen(
-            userName: _userName,
-            userCedula: _userCedula,
-            onNavigate: _onItemTapped,
-          ),
-          const ClientMenuScreen(),
-          const ChatScreen(),
-          const CartScreen(),
-        ];
+      default:
+        return [const PlaceholderScreen(title: 'Error de Rol')];
     }
   }
 
-  List<Widget> _getNavigationItems() {
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
-
-    switch (_userRole) {
-      case 0: // Admin
+  // Obtener ítems de navegación según el rol
+  List<Widget> _getNavItemsForRole(int role, Color iconColor) {
+    switch (role) {
+      case 0: // Administrador
         return [
-          _buildNavItem(Icons.report, 'Reportes', 0, primaryColor),
-          _buildNavItem(Icons.person, 'Registros', 1, primaryColor),
-          _buildNavItem(Icons.menu, 'Menú', 2, primaryColor),
-          _buildNavItem(Icons.shopping_bag, 'Pedidos', 3, primaryColor),
-          _buildNavItem(Icons.chat, 'Chat', 4, primaryColor),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.dashboard, color: iconColor),
+              Text(
+                'Inicio',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.restaurant_menu, color: iconColor),
+              Text(
+                'Menú',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat, color: iconColor),
+              Text(
+                'Chat',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.people, color: iconColor),
+              Text(
+                'Usuarios',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+        ];
+      case 1: // Cliente
+        return [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.home, color: iconColor),
+              Text(
+                'Cliente',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.restaurant_menu, color: iconColor),
+              Text(
+                'Menú',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat, color: iconColor),
+              Text(
+                'Chat',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Stack(
+            children: [
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.shopping_cart, color: iconColor),
+                  Text(
+                    'Carrito',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'Lighthouse',
+                      color: iconColor,
+                    ),
+                  ),
+                ],
+              ),
+              if (_cartItemCount > 0)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      _cartItemCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ];
       case 2: // Cocinero
         return [
-          _buildNavItem(Icons.home, 'Inicio', 0, primaryColor),
-          _buildNavItem(Icons.lunch_dining, 'Pedidos', 1, primaryColor),
-          _buildNavItem(Icons.history, 'Historial', 2, primaryColor),
-          _buildNavItem(Icons.person, 'Perfil', 3, primaryColor),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.home, color: iconColor),
+              Text(
+                'Inicio',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.fastfood, color: iconColor),
+              Text(
+                'Órdenes',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.history, color: iconColor),
+              Text(
+                'Historial',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.person, color: iconColor),
+              Text(
+                'Perfil',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
         ];
       case 3: // Barista
         return [
-          _buildNavItem(Icons.home, 'Inicio', 0, primaryColor),
-          _buildNavItem(Icons.coffee, 'Pedidos', 1, primaryColor),
-          _buildNavItem(Icons.history, 'Historial', 2, primaryColor),
-          _buildNavItem(Icons.person, 'Perfil', 3, primaryColor),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.home, color: iconColor),
+              Text(
+                'Inicio',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.coffee, color: iconColor),
+              Text(
+                'Órdenes',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.history, color: iconColor),
+              Text(
+                'Historial',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.person, color: iconColor),
+              Text(
+                'Perfil',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
         ];
-      default: // Cliente (rol 1)
+      default:
         return [
-          _buildNavItem(Icons.home, 'Inicio', 0, primaryColor),
-          _buildNavItem(Icons.menu, 'Menú', 1, primaryColor),
-          _buildNavItem(Icons.chat, 'Chat', 2, primaryColor),
-          _buildNavItem(Icons.shopping_cart, 'Carrito', 3, primaryColor),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error, color: iconColor),
+              Text(
+                'Error',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Lighthouse',
+                  color: iconColor,
+                ),
+              ),
+            ],
+          ),
         ];
     }
   }
 
-  // Método auxiliar para construir los items de navegación
-  Widget _buildNavItem(
-    IconData icon,
-    String label,
-    int index,
-    Color primaryColor,
-  ) {
-    final isSelected = _selectedIndex == index;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 26, color: isSelected ? Colors.white : Colors.grey),
-        if (isSelected)
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
+  // Construir el título de la barra de aplicación según el índice actual
+  Widget _buildAppBarTitle() {
+    final titleStyle = TextStyle(
+      fontFamily: 'Lighthouse',
+      fontSize: 24,
+      fontWeight: FontWeight.bold,
+      color: Colors.white,
+      shadows: [
+        Shadow(
+          color: Colors.black.withOpacity(0.3),
+          offset: const Offset(1, 1),
+          blurRadius: 3,
+        ),
       ],
     );
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (_isLoading) {
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    return Scaffold(
-      appBar: null,
-      body: Column(
-        children: [
-          // Nuevo encabezado personalizado con título y badge de rol
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8.0,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Título con fuente Lighthouse y color del tema
-                  Text(
-                    _getAppBarTitle(),
-                    style: TextStyle(
-                      fontFamily: 'Lighthouse',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: theme.colorScheme.primary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  // Badge de rol del usuario (con funcionalidad de modal)
-                  GestureDetector(
-                    onTap: _showUserProfileModal,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _getUserRoleIcon(),
-                            color: theme.colorScheme.onPrimary,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getRoleName().toLowerCase(),
-                            style: TextStyle(
-                              color: theme.colorScheme.onPrimary,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Contenido principal
-          Expanded(child: _buildBody()),
-        ],
-      ),
-      bottomNavigationBar: CurvedNavigationBar(
-        key: _navBarKey,
-        index: _selectedIndex,
-        height: 60.0,
-        items: _getNavigationItems(),
-        color: Colors.white,
-        buttonBackgroundColor: theme.colorScheme.primary,
-        backgroundColor: theme.colorScheme.primaryContainer,
-        animationCurve: Curves.easeInOut,
-        animationDuration: const Duration(milliseconds: 300),
-        onTap: _onItemTapped,
-        letIndexChange: (index) => true,
-      ),
-    );
-  }
-
-  String _getAppBarTitle() {
     switch (_userRole) {
       case 0: // Admin
-        return [
-          'Reportes',
-          'Registros',
-          'Menú Admin',
-          'Pedidos',
-          'Chat Admin',
-        ][_selectedIndex];
+        switch (_currentIndex) {
+          case 0:
+            return Text('Dashboard', style: titleStyle);
+          case 1:
+            return Text('Menú', style: titleStyle);
+          case 2:
+            return Text('Chat', style: titleStyle);
+          case 3:
+            return Text('Usuarios', style: titleStyle);
+          default:
+            return Text('Admin', style: titleStyle);
+        }
+      case 1: // Cliente
+        switch (_currentIndex) {
+          case 0:
+            return Text('Cliente', style: titleStyle);
+          case 1:
+            return Text('Menú', style: titleStyle);
+          case 2:
+            return Text('Chat', style: titleStyle);
+          case 3:
+            return Text('Carrito', style: titleStyle);
+          default:
+            return Text('Cliente', style: titleStyle);
+        }
       case 2: // Cocinero
-        return [
-          'Inicio',
-          'Pedidos Activos',
-          'Historial',
-          'Perfil',
-        ][_selectedIndex];
+        switch (_currentIndex) {
+          case 0:
+            return Text('Cocinero', style: titleStyle);
+          case 1:
+            return Text('Órdenes Activas', style: titleStyle);
+          case 2:
+            return Text('Historial', style: titleStyle);
+          case 3:
+            return Text('Perfil', style: titleStyle);
+          default:
+            return Text('Cocinero', style: titleStyle);
+        }
       case 3: // Barista
-        return [
-          'Inicio',
-          'Pedidos Activos',
-          'Historial',
-          'Perfil',
-        ][_selectedIndex];
-      default: // Cliente (rol 1)
-        return ['Inicio', 'Menú', 'Chat', 'Carrito'][_selectedIndex];
+        switch (_currentIndex) {
+          case 0:
+            return Text('Barista', style: titleStyle);
+          case 1:
+            return Text('Órdenes Activas', style: titleStyle);
+          case 2:
+            return Text('Historial', style: titleStyle);
+          case 3:
+            return Text('Perfil', style: titleStyle);
+          default:
+            return Text('Barista', style: titleStyle);
+        }
+      default:
+        return Text('Le Brunch', style: titleStyle);
     }
   }
 
-  void _showUserProfileModal() {
+  // Mostrar modal con información del usuario
+  void _showUserModal(BuildContext context) {
     final theme = Theme.of(context);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          alignment: Alignment.topRight,
-          insetPadding: const EdgeInsets.only(top: 70, right: 20),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 5,
-          child: Container(
-            width: 280,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Encabezado con avatar y nombre
-                Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: theme.colorScheme.primary,
-                      radius: 24,
-                      child: const Icon(
-                        Icons.person,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _userName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            _getRoleName(),
-                            style: TextStyle(
-                              color: theme.colorScheme.primary,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Divider(),
-
-                // Información del usuario
-                if (_userCedula.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildInfoItem(Icons.credit_card, "Cédula", _userCedula),
-                ],
-
-                const SizedBox(height: 16),
-                const Divider(),
-
-                // Botón de cerrar sesión
-                InkWell(
-                  onTap: () async {
-                    Navigator.pop(context); // Cerrar el modal
-                    _logout();
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.red.withOpacity(0.1),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.logout_rounded, color: Colors.red, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          "Cerrar Sesión",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Avatar y nombre
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: theme.colorScheme.primary,
+                child: Text(
+                  _userName != null && _userName!.isNotEmpty
+                      ? _userName!.substring(0, 1).toUpperCase()
+                      : 'U',
+                  style: TextStyle(
+                    fontSize: 30,
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _userName ?? 'Usuario',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                _getRoleName(),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Opciones
+              ListTile(
+                leading: Icon(
+                  Icons.person_outline,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text('Mi Perfil'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Navegar a la última pestaña (perfil)
+                  setState(
+                    () =>
+                        _currentIndex =
+                            _getNavItemsForRole(
+                              _userRole,
+                              Colors.white,
+                            ).length -
+                            1,
+                  );
+                  _pageController.jumpToPage(_currentIndex);
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.settings_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text('Configuración'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Aquí iría la navegación a configuración
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: Icon(Icons.logout, color: Colors.red),
+                title: const Text(
+                  'Cerrar Sesión',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Cerrar el modal
+                  setState(() {
+                    _isShowingDialog = true;
+                  });
+
+                  // Mostrar diálogo de confirmación
+                  showDialog<bool>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder:
+                        (context) => AlertDialog(
+                          title: const Text('Cerrar sesión'),
+                          content: const Text('¿Deseas cerrar sesión?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context, false);
+                                setState(() {
+                                  _isShowingDialog = false;
+                                });
+                              },
+                              child: const Text('Cancelar'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context, true);
+                                _logout(); // Llamar directamente al método de cierre de sesión
+                                setState(() {
+                                  _isShowingDialog = false;
+                                });
+                              },
+                              child: const Text(
+                                'Cerrar sesión',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                  ).then((value) {
+                    // Asegurarse de restablecer el estado del diálogo
+                    if (mounted && _isShowingDialog) {
+                      setState(() {
+                        _isShowingDialog = false;
+                      });
+                    }
+                  });
+                },
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildInfoItem(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.grey),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              Text(value, style: const TextStyle(fontSize: 16)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
+  // Obtener nombre del rol actual
   String _getRoleName() {
     switch (_userRole) {
       case 0:
-        return "Administrador";
+        return 'Administrador';
+      case 1:
+        return 'Cliente';
       case 2:
-        return "Cocinero";
+        return 'Cocinero';
       case 3:
-        return "Barista";
+        return 'Barista';
       default:
-        return "Cliente";
+        return 'Invitado';
     }
   }
 
-  IconData _getUserRoleIcon() {
+  // Obtener ícono según el rol del usuario
+  IconData _getRoleIcon() {
     switch (_userRole) {
-      case 0: // Admin
+      case 0: // Administrador
         return Icons.admin_panel_settings;
+      case 1: // Cliente
+        return Icons.person;
       case 2: // Cocinero
         return Icons.restaurant;
       case 3: // Barista
         return Icons.coffee;
-      default: // Cliente (rol 1)
+      default:
         return Icons.person;
     }
   }
 
+  // Método para cerrar sesión
   Future<void> _logout() async {
-    // Diálogo de confirmación
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Cerrar sesión'),
-          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text(
-                'Cerrar sesión',
-                style: TextStyle(color: Colors.red),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+    try {
+      // 1. Llamar al endpoint de logout en el backend
+      final response = await http.post(
+        Uri.parse('http://192.168.1.121:3000/logout'),
+        headers: {"Content-Type": "application/json"},
+      );
 
-    if (confirm == true) {
+      // IMPORTANTE: Limpiar primero todos los datos de carrito, antes de cualquier otra cosa
       try {
-        // Limpiar datos locales
+        // Limpiar completamente TODOS los carritos guardados en SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('auth_token');
-        await prefs.remove('user_rol');
-        await prefs.remove('user_name');
+        final allKeys = prefs.getKeys().toList();
+
+        // Eliminar específicamente todas las claves relacionadas con carritos
+        for (final key in allKeys) {
+          if (key.startsWith('cart_')) {
+            await prefs.remove(key);
+            print('🗑️ Eliminada clave de carrito: $key');
+          }
+        }
+
+        // También limpiar la memoria caché del carrito
+        await _cartService.clearAllCarts();
+        print(
+          '🧹 Todos los datos de carritos eliminados de SharedPreferences y memoria',
+        );
+      } catch (e) {
+        print('❌ Error al limpiar datos de carritos: $e');
+      }
+
+      if (response.statusCode == 200) {
+        // 2. Limpiar todos los datos locales de forma segura
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(
+          'user_logged_out',
+          true,
+        ); // Marcar bandera para limpiar chat history
+        await prefs.remove('auth_token'); // Token específico
+        await prefs.remove('user_rol'); // Rol del usuario
+        await prefs.remove('user_name'); // Nombre del usuario
         await prefs.remove('user_cedula');
+        await prefs.remove('user_id'); // Eliminar ID del usuario
         await prefs.remove('gemini_connected');
         await prefs.remove('debug_mode');
         await prefs.remove('echo_mode');
         await prefs.remove('persistent_chat_user_id');
         await prefs.remove('temporary_chat_id');
 
-        // Limpia cualquier dato del carrito
-        await prefs.remove('cart');
+        // Establecer el ID a 'guest' para el nuevo estado
+        await _cartService.setUserId('guest');
+        print('✅ CartService reiniciado y establecido como invitado');
 
-        // Limpiar otros datos importantes
-        try {
-          http
-              .post(
-                Uri.parse('http://192.168.1.121:3000/logout'),
-                headers: {"Content-Type": "application/json"},
-              )
-              .timeout(const Duration(seconds: 2))
-              .catchError((_) {});
-        } catch (_) {}
+        // Actualizar el contador del carrito en la UI
+        _updateCartItemCount();
 
-        // Esperar brevemente para que se completen operaciones pendientes
-        await Future.delayed(Duration(milliseconds: 100));
-
-        // Método de solución para error de Hero:
-        // Usar Navigator.pushNamedAndRemoveUntil con reemplazo directo a la ruta inicial
-        // sin intentar hacer pop o realizar animaciones de transición
+        // 3. Redirección segura a WelcomeScreen
         if (mounted) {
-          // Usar este método evita problemas con animaciones Hero
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushAndRemoveUntil(
-              PageRouteBuilder(
-                pageBuilder:
-                    (context, animation, secondaryAnimation) => Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
-                    ),
-                transitionDuration: Duration.zero,
-                opaque: false,
-              ),
-              (_) => false,
-            );
-
-            // Después de un breve retraso, ir a la página principal
-            Future.delayed(const Duration(milliseconds: 50), () {
-              Navigator.of(context).pushReplacementNamed('/');
-            });
-          });
-        }
-      } catch (e) {
-        print("Error durante logout: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error al cerrar sesión: ${e.toString()}")),
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (Route<dynamic> route) =>
+                false, // Elimina toda la pila de navegación
           );
         }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Error al cerrar sesión en el servidor"),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error de conexión: ${e.toString()}")),
+        );
       }
     }
   }

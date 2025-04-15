@@ -847,8 +847,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         try {
           final confirmMessage =
               specialInstructions != null && specialInstructions.isNotEmpty
-                  ? "Confirma al cliente que has añadido $_pendingDishName a su pedido con las instrucciones especiales que solicitó."
-                  : "Confirma al cliente que has añadido $_pendingDishName a su pedido.";
+                  ? "Confirma al cliente que has añadido $_pendingDishName a su pedido con las instrucciones especiales que solicitó. Sugiere también que revise su carrito para comprobar y completar el pedido."
+                  : "Confirma al cliente que has añadido $_pendingDishName a su pedido. Sugiere también que revise su carrito para comprobar y completar el pedido.";
 
           final response = await _geminiService.sendMessage(confirmMessage);
 
@@ -885,9 +885,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _showTypingIndicator();
 
         try {
-          final errorMessage =
-              "Informa al cliente que no pudiste encontrar '$_pendingDishName' en el menú y pídele que sea más específico.";
-          final response = await _geminiService.sendMessage(errorMessage);
+          // Buscar sugerencias en el menú
+          final menuItems = await _geminiService.fetchMenu();
+          final suggestions = _findSimilarDishes(menuItems, _pendingDishName!);
+
+          String errorPrompt;
+          if (suggestions.isNotEmpty) {
+            // Crear lista de sugerencias para incluir en el mensaje
+            final suggestionsList = suggestions
+                .take(3)
+                .map((dish) => "- ${dish['nombre']} (${dish['categoria']})")
+                .join("\n");
+
+            errorPrompt =
+                "Informa al cliente que no pudiste encontrar exactamente '$_pendingDishName' en el menú, pero " +
+                "que tenemos estas alternativas similares:\n$suggestionsList\n" +
+                "Pregunta si le gustaría alguna de estas opciones en su lugar.";
+          } else {
+            errorPrompt =
+                "Informa al cliente que no pudiste encontrar '$_pendingDishName' en el menú y pídele que sea más específico " +
+                "o que mencione otro plato de nuestro menú.";
+          }
+
+          final response = await _geminiService.sendMessage(errorPrompt);
 
           if (mounted) {
             setState(() {
@@ -904,7 +924,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               _messages.add(
                 ChatMessage.fromSupport(
                   message:
-                      'Lo siento, no pude encontrar "$_pendingDishName" en nuestro menú. ¿Podrías ser más específico?',
+                      'Lo siento, no pude encontrar "$_pendingDishName" en nuestro menú. ¿Podrías ser más específico o pedir algo de nuestra carta?',
                 ),
               );
             });
@@ -919,6 +939,76 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         return;
       }
     }
+  }
+
+  /// Busca platos similares por nombre
+  List<Map<String, dynamic>> _findSimilarDishes(
+    List<dynamic> dishes,
+    String queryName,
+  ) {
+    if (dishes.isEmpty) return [];
+
+    // Normalizar consulta (simplificar para comparación)
+    final normalizedQuery = _normalizeText(queryName);
+    final queryWords =
+        normalizedQuery.split(' ').where((word) => word.length > 2).toList();
+
+    if (queryWords.isEmpty) return [];
+
+    // Calcular puntuación para cada plato
+    final scoredDishes =
+        dishes
+            .map((dish) {
+              if (dish['nombre'] == null) return {'dish': dish, 'score': 0};
+
+              final String dishName = dish['nombre'].toString();
+              final normalizedDishName = _normalizeText(dishName);
+
+              // Calcular puntuación por coincidencia de palabras
+              int score = 0;
+              for (final word in queryWords) {
+                if (normalizedDishName.contains(word)) {
+                  score +=
+                      word.length; // Palabras más largas tienen mayor puntuación
+                }
+              }
+
+              // Bonificación por categoría
+              if (dish['categoria'] != null) {
+                final categoria = _normalizeText(dish['categoria'].toString());
+                if (normalizedQuery.contains(categoria)) {
+                  score += 5;
+                }
+              }
+
+              return {'dish': dish, 'score': score};
+            })
+            .where((item) => item['score'] > 0)
+            .toList();
+
+    // Ordenar por puntuación más alta
+    scoredDishes.sort(
+      (a, b) => (b['score'] as int).compareTo(a['score'] as int),
+    );
+
+    // Extraer sólo los platos
+    return scoredDishes
+        .take(5) // Limitar a 5 sugerencias
+        .map((item) => item['dish'] as Map<String, dynamic>)
+        .toList();
+  }
+
+  /// Normaliza un texto para comparaciones
+  String _normalizeText(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ñ', 'n');
   }
 
   /// Muestra un mensaje de confirmación cuando se agrega un plato
@@ -1269,355 +1359,316 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Column(
+      // AppBar personalizado sin botón de opciones
+      appBar: AppBar(
+        title: Row(
           children: [
-            // Cabecera con logo
-            Container(
-              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
+            // Avatar con los colores del tema (verde con ícono blanco)
+            CircleAvatar(
+              backgroundColor: const Color(
+                0xFF3EA69B,
+              ), // Verde principal del tema
+              child: Icon(
+                Icons.restaurant,
+                color: Colors.white, // Icono en blanco
               ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      // Logo o avatar
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.2),
-                        child: GestureDetector(
-                          onTap: () {
-                            // Registrar el tiempo del toque
-                            _handleDebugTap();
-                          },
-                          child: Icon(
-                            Icons.restaurant,
-                            color: Theme.of(context).colorScheme.primary,
+            ),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Brunchy',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  _isConnected
+                      ? (_isGeminiWorking ? 'En línea' : 'Modo básico')
+                      : 'Conectando...',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color:
+                        _isConnected
+                            ? (_isGeminiWorking
+                                ? Colors.green
+                                : Theme.of(context).colorScheme.error)
+                            : Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 1,
+        // Solo mostrar botón de debug si está en modo de depuración
+        actions:
+            _debugMode
+                ? [
+                  IconButton(
+                    onPressed: _showDebugOptions,
+                    icon: Icon(
+                      Icons.bug_report,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    tooltip: 'Opciones de depuración',
+                  ),
+                ]
+                : [], // Lista vacía cuando no está en modo depuración
+      ),
+      // Cuerpo principal con fondo
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage("assets/images/fondolb.jpg"),
+            fit: BoxFit.cover,
+            colorFilter: ColorFilter.mode(
+              Colors.white.withOpacity(0.9), // Atenuar fondo para legibilidad
+              BlendMode.lighten,
+            ),
+          ),
+        ),
+        child: GestureDetector(
+          onTap: _handleDebugTap, // Gestor para activar modo debug
+          child: Column(
+            children: [
+              // Lista de mensajes
+              Expanded(
+                child:
+                    _messages.isEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _isEchoMode
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.restaurant,
+                                size: 80,
+                                color:
+                                    _isEchoMode
+                                        ? Theme.of(
+                                          context,
+                                        ).colorScheme.error.withOpacity(0.5)
+                                        : Theme.of(
+                                          context,
+                                        ).colorScheme.primary.withOpacity(0.5),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _isEchoMode
+                                    ? 'Modo Eco: Gemini no disponible'
+                                    : 'Iniciando conversación...',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color:
+                                      _isEchoMode
+                                          ? Theme.of(context).colorScheme.error
+                                          : Theme.of(
+                                            context,
+                                          ).colorScheme.outline,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (_isCheckingConnection)
+                                CircularProgressIndicator(strokeWidth: 3)
+                              else if (!_isConnected)
+                                ElevatedButton.icon(
+                                  onPressed: _retryConnection,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Conectar'),
+                                ),
+                              if (_isEchoMode && !_isCheckingConnection)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 16.0),
+                                  child: ElevatedButton.icon(
+                                    onPressed: _forceGeminiConnection,
+                                    icon: const Icon(Icons.power),
+                                    label: const Text(
+                                      'Forzar conexión con Gemini',
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          Theme.of(context).colorScheme.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        )
+                        : GestureDetector(
+                          onTap: () => FocusScope.of(context).unfocus(),
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            itemCount: _messages.length,
+                            itemBuilder: (context, index) {
+                              // Filtrar mensajes del sistema que no deben mostrarse al cliente
+                              final message = _messages[index];
+                              if (message.isFromSystem &&
+                                  (message.message.contains(
+                                        "Nueva conversación iniciada para",
+                                      ) ||
+                                      message.message.contains(
+                                        "chat reiniciado",
+                                      ))) {
+                                // No mostrar estos mensajes a usuarios normales (solo en modo debug)
+                                if (!_debugMode) {
+                                  return SizedBox.shrink(); // Widget invisible
+                                }
+                              }
+                              return ChatMessageBubble(message: message);
+                            },
                           ),
                         ),
-                      ),
-                      SizedBox(width: 12),
-                      // Título
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Brunchy',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              'Tu mesero virtual',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                          ],
+              ),
+
+              // Indicador de escribiendo
+              if (_isTyping)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      Text(
+                        'Brunchy está escribiendo',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline,
                         ),
                       ),
-                      // Indicador de estado
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color:
-                              _isEchoMode
-                                  ? Colors.deepOrange
-                                  : (_isConnected
-                                      ? Colors.green
-                                      : Colors.orange),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _isEchoMode
-                                  ? Icons.warning_amber_rounded
-                                  : (_isConnected
-                                      ? Icons.check_circle
-                                      : Icons.sync),
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              _isEchoMode
-                                  ? 'Modo Eco'
-                                  : (_isConnected ? 'En línea' : 'Conectando'),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 24,
+                        height: 14,
+                        child: const ThreeDotsLoading(),
                       ),
                     ],
                   ),
-
-                  // Botón adicional para forzar conexión cuando estamos en modo eco
-                  if (_isEchoMode)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: Icon(Icons.power, size: 16),
-                          label: Text('Forzar conexión con Gemini'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primary,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: _forceGeminiConnection,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            // Lista de mensajes
-            Expanded(
-              child:
-                  _messages.isEmpty
-                      ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _isEchoMode
-                                  ? Icons.warning_amber_rounded
-                                  : Icons.restaurant_menu,
-                              size: 80,
-                              color:
-                                  _isEchoMode
-                                      ? Theme.of(
-                                        context,
-                                      ).colorScheme.error.withOpacity(0.5)
-                                      : Theme.of(
-                                        context,
-                                      ).colorScheme.primary.withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _isEchoMode
-                                  ? 'Modo Eco: Gemini no disponible'
-                                  : 'Iniciando conversación...',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color:
-                                    _isEchoMode
-                                        ? Theme.of(context).colorScheme.error
-                                        : Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            if (_isCheckingConnection)
-                              CircularProgressIndicator(strokeWidth: 3)
-                            else if (!_isConnected)
-                              ElevatedButton.icon(
-                                onPressed: _retryConnection,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Conectar'),
-                              ),
-                            if (_isEchoMode && !_isCheckingConnection)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 16.0),
-                                child: ElevatedButton.icon(
-                                  onPressed: _forceGeminiConnection,
-                                  icon: const Icon(Icons.power),
-                                  label: const Text(
-                                    'Forzar conexión con Gemini',
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        Theme.of(context).colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      )
-                      : GestureDetector(
-                        onTap: () => FocusScope.of(context).unfocus(),
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            return ChatMessageBubble(message: _messages[index]);
-                          },
-                        ),
-                      ),
-            ),
-
-            // Indicador de escribiendo
-            if (_isTyping)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
                 ),
-                alignment: Alignment.centerLeft,
+
+              // Separador
+              Divider(height: 1),
+
+              // Campo de entrada de mensaje
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      offset: Offset(0, -1),
+                      blurRadius: 3,
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
-                    Text(
-                      'Brunchy está escribiendo',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.outline,
+                    // Botón para forzar conexión en modo eco
+                    if (_isEchoMode)
+                      Container(
+                        margin: EdgeInsets.only(right: 4),
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.power_settings_new,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          onPressed: _forceGeminiConnection,
+                          tooltip: 'Forzar conexión',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+
+                    // Campo de texto
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _focusNode,
+                        decoration: InputDecoration(
+                          hintText: '¿Qué te gustaría ordenar?',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Theme.of(
+                            context,
+                          ).colorScheme.surfaceVariant.withOpacity(0.5),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          enabled: _isConnected || _isCheckingConnection,
+                          // Añadir indicador visual si estamos en modo eco
+                          prefixIcon:
+                              _isEchoMode
+                                  ? Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.error.withOpacity(0.7),
+                                  )
+                                  : null,
+                          hintStyle: TextStyle(
+                            color:
+                                _isEchoMode
+                                    ? Theme.of(
+                                      context,
+                                    ).colorScheme.error.withOpacity(0.7)
+                                    : null,
+                          ),
+                        ),
+                        textCapitalization: TextCapitalization.sentences,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _handleSendMessage(),
+                        maxLines: 5,
+                        minLines: 1,
                       ),
                     ),
+
                     const SizedBox(width: 8),
-                    SizedBox(
-                      width: 24,
-                      height: 14,
-                      child: const ThreeDotsLoading(),
+
+                    // Botón de enviar
+                    Material(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(20),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap:
+                            (_isConnected && !_isTyping)
+                                ? _handleSendMessage
+                                : null,
+                        child: Container(
+                          padding: EdgeInsets.all(10),
+                          child: Icon(
+                            Icons.send,
+                            color:
+                                (_isConnected && !_isTyping)
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.5),
+                            size: 20,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-
-            // Separador
-            Divider(height: 1),
-
-            // Campo de entrada de mensaje
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    offset: Offset(0, -1),
-                    blurRadius: 3,
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Botón para forzar conexión en modo eco
-                  if (_isEchoMode)
-                    Container(
-                      margin: EdgeInsets.only(right: 4),
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.power_settings_new,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        onPressed: _forceGeminiConnection,
-                        tooltip: 'Forzar conexión',
-                        style: IconButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer.withOpacity(0.5),
-                        ),
-                      ),
-                    ),
-
-                  // Campo de texto
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      focusNode: _focusNode,
-                      decoration: InputDecoration(
-                        hintText: '¿Qué te gustaría ordenar?',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceVariant.withOpacity(0.5),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        enabled: _isConnected || _isCheckingConnection,
-                        // Añadir indicador visual si estamos en modo eco
-                        prefixIcon:
-                            _isEchoMode
-                                ? Icon(
-                                  Icons.warning_amber_rounded,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.error.withOpacity(0.7),
-                                )
-                                : null,
-                        hintStyle: TextStyle(
-                          color:
-                              _isEchoMode
-                                  ? Theme.of(
-                                    context,
-                                  ).colorScheme.error.withOpacity(0.7)
-                                  : null,
-                        ),
-                      ),
-                      textCapitalization: TextCapitalization.sentences,
-                      keyboardType: TextInputType.text,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _handleSendMessage(),
-                      maxLines: 5,
-                      minLines: 1,
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // Botón de enviar
-                  Material(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(20),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap:
-                          (_isConnected && !_isTyping)
-                              ? _handleSendMessage
-                              : null,
-                      child: Container(
-                        padding: EdgeInsets.all(10),
-                        child: Icon(
-                          Icons.send,
-                          color:
-                              (_isConnected && !_isTyping)
-                                  ? Colors.white
-                                  : Colors.white.withOpacity(0.5),
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

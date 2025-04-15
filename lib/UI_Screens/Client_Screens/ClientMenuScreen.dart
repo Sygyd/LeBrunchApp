@@ -3,6 +3,7 @@ import '/Api_services/menu/get_dishes_service.dart';
 import '/UI_Screens/Widgets/search_bar.dart' as custom;
 import '/UI_Screens/Widgets/category_carousel.dart';
 import '/UI_Screens/Widgets/dish_card.dart';
+import '/UI_Screens/Widgets/background_scaffold.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -17,9 +18,10 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   bool get wantKeepAlive => true;
 
   final TextEditingController _searchController = TextEditingController();
-  final ValueNotifier<List<String>> _selectedCategories = ValueNotifier([]);
   List<Map<String, dynamic>> _dishes = [];
   String? _expandedDishId;
+  String _selectedCategory = '';
+  bool _isLoading = false;
 
   final List<Map<String, String>> _categories = [
     {'name': 'Tablas', 'image': 'assets/images/tablas.jpg'},
@@ -37,14 +39,17 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
   Future<void> _fetchDishes() async {
     try {
+      setState(() => _isLoading = true);
       final data = await GetDishesService().getDishes();
       if (mounted) {
         setState(() {
           _dishes = data;
+          _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error al cargar menú: $e')));
@@ -52,19 +57,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     }
   }
 
-  // Método para manejar la selección de categorías
-  void _toggleCategory(String category) {
-    final newCategories = List<String>.from(_selectedCategories.value);
-    if (newCategories.contains(category)) {
-      newCategories.remove(category);
-    } else {
-      newCategories.add(category);
-    }
-    _selectedCategories.value = newCategories; // Actualiza el ValueNotifier
-  }
-
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
 
     return WillPopScope(
@@ -72,7 +67,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
         // Esto bloquea completamente el botón de retroceso
         return false;
       },
-      child: Scaffold(
+      child: BackgroundScaffold(
         body: SafeArea(
           minimum: const EdgeInsets.only(top: 0),
           child: Column(
@@ -91,28 +86,32 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
               ),
 
               // Carrusel de categorías
-              ValueListenableBuilder<List<String>>(
-                valueListenable: _selectedCategories,
-                builder: (context, selectedCategories, child) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10.0),
-                    child: CategoryCarousel(
-                      categories: _categories,
-                      selectedCategories: selectedCategories,
-                      toggleCategory: _toggleCategory,
-                    ),
-                  );
-                },
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10.0),
+                child: SizedBox(
+                  height: 120,
+                  child: CategoryCarousel(
+                    categories: _categories,
+                    selectedCategory: _selectedCategory,
+                    onCategorySelected: (category) {
+                      setState(() {
+                        if (_selectedCategory == category) {
+                          _selectedCategory = '';
+                        } else {
+                          _selectedCategory = category;
+                        }
+                      });
+                    },
+                  ),
+                ),
               ),
 
               // Lista de platos
               Expanded(
-                child: ValueListenableBuilder<List<String>>(
-                  valueListenable: _selectedCategories,
-                  builder: (context, selectedCategories, _) {
-                    return _buildDishList(selectedCategories);
-                  },
-                ),
+                child:
+                    _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildDishList(),
               ),
             ],
           ),
@@ -121,7 +120,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     );
   }
 
-  Widget _buildDishList(List<String> selectedCategories) {
+  Widget _buildDishList() {
     // Filtrar los platos según la búsqueda y las categorías seleccionadas
     final filteredDishes =
         _dishes.where((dish) {
@@ -129,8 +128,8 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
             _searchController.text.toLowerCase(),
           );
           final categoryMatch =
-              selectedCategories.isEmpty ||
-              selectedCategories.contains(dish['categoria']);
+              _selectedCategory.isEmpty ||
+              dish['categoria'] == _selectedCategory;
           return nameMatch && categoryMatch;
         }).toList();
 
@@ -169,7 +168,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
     // Usamos un widget que no obligue a reconstruir toda la vista
     return ListView.builder(
-      key: ValueKey('dish-list-${selectedCategories.join('-')}'),
+      key: ValueKey('dish-list-${_selectedCategory}'),
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
@@ -195,7 +194,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   Text(
                     categoryName,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontFamily: 'LightHouse',
+                      fontFamily: 'MADE TOMMY',
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.primary,
                     ),
@@ -228,27 +227,20 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     // Definiendo tamaños apropiados para la cuadrícula
     final screenSize = MediaQuery.of(context).size;
 
-    // Determinamos cuántas tarjetas por fila según el ancho de pantalla
-    int crossAxisCount;
-    if (screenSize.width < 600) {
-      crossAxisCount = 2; // Móviles
-    } else if (screenSize.width < 1024) {
-      crossAxisCount = 3; // Tablets y pantallas medianas
-    } else {
-      crossAxisCount = 4; // Pantallas grandes
-    }
+    // Forzamos 3 tarjetas por fila independientemente del tamaño de pantalla
+    const int crossAxisCount = 3;
 
-    // Ajustamos el aspect ratio para que las tarjetas encajen perfectamente
-    final childAspectRatio = 0.65; // Valor ajustado para evitar overflow
+    // Ajustamos el aspect ratio para aprovechar mejor el espacio
+    const childAspectRatio = 0.65; // Permite mostrar más líneas de descripción
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: childAspectRatio,
-        crossAxisSpacing: 10, // Un poco más de espacio horizontal
-        mainAxisSpacing: 16,
+        crossAxisSpacing: 3, // Reducido para aprovechar espacio horizontal
+        mainAxisSpacing: 6, // Reducido para aprovechar espacio vertical
       ),
       itemCount: dishes.length,
       itemBuilder: (context, index) {
@@ -268,7 +260,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     );
   }
 
-  // Método para construir el ícono de la categoría
+  // Método para construir el ícono de la categoría con manejo de errores
   Widget _buildCategoryIcon(String categoryName) {
     // Buscar la imagen de la categoría en el carousel
     final categoryData = _categories.firstWhere(
@@ -288,9 +280,24 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
             offset: const Offset(0, 2),
           ),
         ],
-        image: DecorationImage(
-          image: AssetImage(categoryData['image']!),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Image.asset(
+          categoryData['image']!,
           fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            print('Error al cargar ícono de categoría $categoryName: $error');
+            // Devolver un contenedor coloreado con un ícono
+            return Container(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+              child: Icon(
+                Icons.category,
+                size: 20,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            );
+          },
         ),
       ),
     );
@@ -310,12 +317,16 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           const SizedBox(height: 16),
           Text(
             'No se encontraron platos',
-            style: Theme.of(context).textTheme.titleLarge,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontFamily: 'MADE TOMMY',
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Intenta con otra búsqueda o categoría',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'MADE TOMMY',
               color: Theme.of(context).colorScheme.outline,
             ),
           ),
@@ -323,11 +334,16 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           ElevatedButton.icon(
             onPressed: () {
               _searchController.clear();
-              _selectedCategories.value = [];
+              setState(() {
+                _selectedCategory = '';
+              });
               _fetchDishes();
             },
             icon: const Icon(Icons.refresh),
-            label: const Text('Mostrar todo el menú'),
+            label: const Text(
+              'Mostrar todo el menú',
+              style: TextStyle(fontFamily: 'MADE TOMMY'),
+            ),
           ),
         ],
       ),

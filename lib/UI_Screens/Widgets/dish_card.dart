@@ -106,164 +106,131 @@ class _DishCardState extends State<DishCard>
             ? double.tryParse(widget.dish['precio'].toString()) ?? 0.0
             : 0.0;
 
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() {
-          _isHovered = true;
-          _controller.forward();
-        });
-      },
-      onExit: (_) {
-        setState(() {
-          _isHovered = false;
-          _controller.reverse();
-        });
-      },
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _scaleAnimation.value,
-            child: Card(
-              color: theme.colorScheme.surface,
-              surfaceTintColor: theme.colorScheme.surfaceTint,
-              elevation: _isHovered ? 6 : 1,
-              shadowColor: theme.colorScheme.primary.withOpacity(0.3),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color:
-                      _isHovered
-                          ? theme.colorScheme.primary.withOpacity(0.3)
-                          : Colors.transparent,
-                  width: 1.5,
-                ),
+    // Si el plato no está disponible y el usuario es cliente (rol 1), no mostramos nada
+    if (widget.userRole == 1 && !(widget.dish['disponibilidad'] ?? false)) {
+      return const SizedBox.shrink();
+    }
+
+    // Obtener descripción si existe
+    final String descripcion = widget.dish['descripcion']?.toString() ?? '';
+
+    // Obtener ingredientes
+    final String ingredientes = widget.dish['ingredientes']?.toString() ?? '';
+
+    // Texto para mostrar en la descripción corta (para clientes)
+    final String descripcionCorta =
+        descripcion.isNotEmpty
+            ? descripcion.trim()
+            : ingredientes.isNotEmpty
+            ? "Ingredientes: $ingredientes"
+            : "";
+
+    // Diseño optimizado para aprovechar mejor el espacio
+    return Card(
+      elevation: 4,
+      shadowColor: theme.colorScheme.primary.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(3),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showDetailModal(context),
+        splashColor: theme.colorScheme.primary.withOpacity(0.1),
+        highlightColor: theme.colorScheme.primary.withOpacity(0.05),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Imagen con tamaño fijo más reducido
+            Hero(
+              tag: 'dish-image-${widget.dish['idplato']}',
+              child: SizedBox(
+                width: double.infinity,
+                height: 70,
+                child: _buildDishImage(context, theme, double.infinity, 70),
               ),
-              margin: const EdgeInsets.all(4),
-              child: InkWell(
-                onTap: () => _showDetailModal(context),
-                borderRadius: BorderRadius.circular(16),
-                splashColor: theme.colorScheme.primary.withOpacity(0.1),
-                highlightColor: theme.colorScheme.primary.withOpacity(0.05),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Imagen más grande
-                    Hero(
-                      tag: 'dish-image-${widget.dish['idplato']}',
-                      child: Container(
-                        width: double.infinity,
-                        height: 200, // Ajuste del tamaño de la imagen
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: theme.colorScheme.shadow.withOpacity(0.1),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: _buildDishImage(
-                          context,
-                          theme,
-                          double.infinity,
-                          140,
-                        ),
-                      ),
+            ),
+            // Contenido con padding optimizado
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 5.0,
+                vertical: 4.0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Nombre con estilo optimizado para espacio
+                  Text(
+                    widget.dish['nombre'] ?? 'Sin nombre',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontFamily: 'LightHouse',
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                      height: 1.0,
+                      fontSize: 11,
                     ),
-                    // Contenido compacto con colores del tema
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Nombre y precio en la misma línea
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  widget.dish['nombre'] ?? 'Sin nombre',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontFamily: 'LightHouse',
-                                    fontWeight: FontWeight.bold,
-                                    color: theme.colorScheme.onSurface,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '\$${price.toStringAsFixed(2)}',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontFamily: 'MADE TOMMY',
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          // Indicador de disponibilidad mejorado
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  (widget.dish['disponibilidad'] ?? false)
-                                      ? const Color(0xFF3EA69B)
-                                      : theme.colorScheme.error.withOpacity(
-                                        0.1,
-                                      ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  (widget.dish['disponibilidad'] ?? false)
-                                      ? Icons.check_circle
-                                      : Icons.cancel,
-                                  color:
-                                      (widget.dish['disponibilidad'] ?? false)
-                                          ? theme.colorScheme.primaryContainer
-                                          : theme.colorScheme.error,
-                                  size: 10,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  (widget.dish['disponibilidad'] ?? false)
-                                      ? 'Disponible'
-                                      : 'No disponible',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color:
-                                        (widget.dish['disponibilidad'] ?? false)
-                                            ? theme.colorScheme.primaryContainer
-                                            : theme.colorScheme.error,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  // Precio con estilo mejorado
+                  Text(
+                    '\$${price.toStringAsFixed(2)}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontFamily: 'MADE TOMMY',
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  // Para clientes: mostrar parte de la descripción
+                  if (widget.userRole == 1 && descripcionCorta.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      descripcionCorta,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 9.5,
+                        height: 1.1,
+                      ),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  // Mostrar disponibilidad solo para administradores
+                  if (widget.userRole == 0) ...[
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            (widget.dish['disponibilidad'] ?? false)
+                                ? const Color(0xFF3EA69B)
+                                : theme.colorScheme.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        (widget.dish['disponibilidad'] ?? false)
+                            ? 'Disponible'
+                            : 'No disponible',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color:
+                              (widget.dish['disponibilidad'] ?? false)
+                                  ? Colors.white
+                                  : theme.colorScheme.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9,
+                        ),
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
@@ -279,209 +246,232 @@ class _DishCardState extends State<DishCard>
     // Notificar al padre que se abrió el modal
     widget.onToggleExpanded(true);
 
-    showDialog(
+    // Usar showGeneralDialog en lugar de showDialog para tener más control
+    showGeneralDialog(
       context: context,
       barrierColor: Colors.black54,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          backgroundColor: theme.colorScheme.surface,
-          elevation: 8,
-          shadowColor: theme.colorScheme.shadow.withOpacity(0.2),
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 30,
-          ),
-          child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: 550, minWidth: 300),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Encabezado con título y botón de cerrar
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.dish['nombre'] ?? 'Sin nombre',
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontFamily: 'LightHouse',
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            widget.onToggleExpanded(false);
-                          },
-                          style: IconButton.styleFrom(
-                            backgroundColor: theme.colorScheme.surfaceVariant,
-                            foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+      barrierDismissible: true,
+      barrierLabel: 'Cerrar',
+      pageBuilder: (context, animation1, animation2) => const SizedBox.shrink(),
+      transitionBuilder: (context, animation1, animation2, child) {
+        final curvedAnimation = CurvedAnimation(
+          parent: animation1,
+          curve: Curves.easeInOut,
+        );
 
-                    const SizedBox(height: 20),
-
-                    // Imagen centrada y grande
-                    Center(
-                      child: Hero(
-                        tag: 'dish-image-${widget.dish['idplato']}',
-                        child: Container(
-                          width: double.infinity,
-                          height: 250, // Tamaño ajustado
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: theme.colorScheme.shadow.withOpacity(
-                                  0.15,
-                                ),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: _buildDishImage(
-                            context,
-                            theme,
-                            double.infinity,
-                            250,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Disponibilidad y precio
-                    _buildAvailabilityAndPrice(context, theme, price),
-
-                    Divider(
-                      height: 40,
-                      thickness: 1,
-                      color: theme.colorScheme.outline.withOpacity(0.5),
-                    ),
-
-                    // Contenido
-                    Column(
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.8, end: 1.0).animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: Tween<double>(
+              begin: 0.5,
+              end: 1.0,
+            ).animate(curvedAnimation),
+            child: Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              backgroundColor: theme.colorScheme.surface,
+              elevation: 8,
+              shadowColor: theme.colorScheme.shadow.withOpacity(0.2),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 30,
+              ),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 550, minWidth: 300),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Sección de ingredientes
-                        _buildInfoSection(
-                          context,
-                          'Ingredientes:',
-                          widget.dish['ingredientes'] ?? 'No especificados',
-                          Icons.rice_bowl_outlined,
+                        // Encabezado con título y botón de cerrar
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.dish['nombre'] ?? 'Sin nombre',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontFamily: 'LightHouse',
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                widget.onToggleExpanded(false);
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor:
+                                    theme.colorScheme.surfaceVariant,
+                                foregroundColor:
+                                    theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
 
-                        // Sección de descripción (si existe)
-                        if (widget.dish['descripcion'] != null &&
-                            widget.dish['descripcion'].toString().isNotEmpty)
-                          _buildInfoSection(
-                            context,
-                            'Descripción:',
-                            widget.dish['descripcion'] ?? '',
-                            Icons.description_outlined,
-                          ),
-                      ],
-                    ),
+                        const SizedBox(height: 20),
 
-                    // Botones de acción según el rol
-                    if (widget.userRole == 0) ...[
-                      // Botones de administrador
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                              widget.editDish?.call(widget.dish);
-                            },
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Editar'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: theme.colorScheme.primary,
-                              side: BorderSide(
-                                color: theme.colorScheme.primary,
+                        // Imagen centrada y grande
+                        Center(
+                          child: Hero(
+                            tag: 'dish-image-${widget.dish['idplato']}',
+                            child: Container(
+                              width: double.infinity,
+                              height: 250, // Tamaño ajustado
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: theme.colorScheme.shadow.withOpacity(
+                                      0.15,
+                                    ),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                              clipBehavior: Clip.antiAlias,
+                              child: _buildDishImage(
+                                context,
+                                theme,
+                                double.infinity,
+                                250,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                              widget.deleteDish?.call(
-                                widget.dish['idplato'].toString(),
-                              );
-                            },
-                            icon: const Icon(Icons.delete),
-                            label: const Text('Eliminar'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.error,
-                              foregroundColor: theme.colorScheme.onError,
-                              elevation: 2,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Disponibilidad y precio
+                        _buildAvailabilityAndPrice(context, theme, price),
+
+                        Divider(
+                          height: 40,
+                          thickness: 1,
+                          color: theme.colorScheme.outline.withOpacity(0.5),
+                        ),
+
+                        // Contenido
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Sección de ingredientes
+                            _buildInfoSection(
+                              context,
+                              'Ingredientes:',
+                              widget.dish['ingredientes'] ?? 'No especificados',
+                              Icons.rice_bowl_outlined,
+                            ),
+
+                            // Sección de descripción (si existe)
+                            if (widget.dish['descripcion'] != null &&
+                                widget.dish['descripcion']
+                                    .toString()
+                                    .isNotEmpty)
+                              _buildInfoSection(
+                                context,
+                                'Descripción:',
+                                widget.dish['descripcion'] ?? '',
+                                Icons.description_outlined,
+                              ),
+                          ],
+                        ),
+
+                        // Botones de acción según el rol
+                        if (widget.userRole == 0) ...[
+                          // Botones de administrador
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  widget.editDish?.call(widget.dish);
+                                },
+                                icon: const Icon(Icons.edit),
+                                label: const Text('Editar'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.primary,
+                                  side: BorderSide(
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  widget.deleteDish?.call(
+                                    widget.dish['idplato'].toString(),
+                                  );
+                                },
+                                icon: const Icon(Icons.delete),
+                                label: const Text('Eliminar'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.error,
+                                  foregroundColor: theme.colorScheme.onError,
+                                  elevation: 2,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (widget.userRole == 1 &&
+                            (widget.dish['disponibilidad'] ?? false)) ...[
+                          // Botón de agregar al carrito para cliente
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                // Agregar al carrito
+                                _addToCart(context);
+                              },
+                              icon: const Icon(Icons.add_shopping_cart),
+                              label: const Text('Agregar al Pedido'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: theme.colorScheme.primary,
+                                foregroundColor: theme.colorScheme.onPrimary,
+                                elevation: 2,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 16,
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ] else if (widget.userRole == 1 &&
-                        (widget.dish['disponibilidad'] ?? false)) ...[
-                      // Botón de agregar al carrito para cliente
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            // Agregar al carrito
-                            _addToCart(context);
-                          },
-                          icon: const Icon(Icons.add_shopping_cart),
-                          label: const Text('Agregar al Pedido'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colorScheme.primary,
-                            foregroundColor: theme.colorScheme.onPrimary,
-                            elevation: 2,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         );
       },
+      transitionDuration: const Duration(milliseconds: 300),
     ).then((_) => widget.onToggleExpanded(false));
   }
 
@@ -514,11 +504,7 @@ class _DishCardState extends State<DishCard>
       context: context,
       title: '¡Añadido al Carrito!',
       message: '$name ha sido añadido a tu pedido',
-      buttonText: 'Ver Carrito',
-      onPressed: () {
-        // Navegar a la pantalla del carrito
-        _navigateTo('/cart');
-      },
+      buttonText: 'Aceptar',
     );
   }
 
@@ -571,50 +557,85 @@ class _DishCardState extends State<DishCard>
     );
   }
 
-  // Método para construir la imagen del plato
+  // Método para construir la imagen del plato de forma segura
   Widget _buildDishImage(
     BuildContext context,
     ThemeData theme,
     double width,
     double height,
   ) {
-    return widget.dish['imagen_url'] != null &&
-            widget.dish['imagen_url'].isNotEmpty
-        ? CachedNetworkImage(
-          imageUrl: widget.dish['imagen_url'],
-          fit: BoxFit.cover,
-          width: width,
-          height: height,
-          placeholder:
-              (context, url) => Container(
-                color: theme.colorScheme.surfaceVariant,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
+    // Verificar si la URL existe y es válida
+    final imageUrl = widget.dish['imagen_url']?.toString() ?? '';
+    final bool hasValidUrl =
+        imageUrl.isNotEmpty &&
+        (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'));
+
+    if (!hasValidUrl) {
+      // Si no hay URL válida, mostrar un placeholder
+      return Container(
+        color: theme.colorScheme.surfaceVariant,
+        width: width,
+        height: height,
+        child: Center(
+          child: Icon(
+            Icons.restaurant,
+            size: height * 0.4,
+            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+          ),
+        ),
+      );
+    }
+
+    // Si hay URL válida, usar CachedNetworkImage con manejo adecuado
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.cover,
+      width: width,
+      height: height,
+      placeholder:
+          (context, url) => Container(
+            color: theme.colorScheme.surfaceVariant,
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+      errorWidget: (context, url, error) {
+        // Log del error para diagnóstico
+        print('Error al cargar imagen: $url - Error: $error');
+        return Container(
+          color: theme.colorScheme.surfaceVariant,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.broken_image_rounded,
+                size: height * 0.3,
+                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+              ),
+              if (height > 150) // Solo mostrar texto en imágenes grandes
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Imagen no disponible',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(
+                        0.7,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-          errorWidget:
-              (context, url, error) => Container(
-                color: theme.colorScheme.surfaceVariant,
-                child: Icon(
-                  Icons.fastfood,
-                  size: height * 0.4,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-          fadeInDuration: const Duration(milliseconds: 200),
-          fadeOutDuration: const Duration(milliseconds: 100),
-        )
-        : Container(
-          color: theme.colorScheme.surfaceVariant,
-          child: Icon(
-            Icons.image_not_supported,
-            size: height * 0.4,
-            color: theme.colorScheme.onSurfaceVariant,
+            ],
           ),
         );
+      },
+      fadeInDuration: const Duration(milliseconds: 200),
+      fadeOutDuration: const Duration(milliseconds: 100),
+    );
   }
 
   // Método para construir la información de disponibilidad y precio
@@ -629,52 +650,53 @@ class _DishCardState extends State<DishCard>
       alignment: WrapAlignment.start,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        // Disponibilidad
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color:
-                (widget.dish['disponibilidad'] ?? false)
-                    ? const Color(0xFF3EA69B)
-                    : theme.colorScheme.error.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
+        // Disponibilidad solo para administradores
+        if (widget.userRole == 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
               color:
                   (widget.dish['disponibilidad'] ?? false)
-                      ? theme.colorScheme.primaryContainer
-                      : theme.colorScheme.error,
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                (widget.dish['disponibilidad'] ?? false)
-                    ? Icons.check_circle
-                    : Icons.cancel,
+                      ? const Color(0xFF3EA69B)
+                      : theme.colorScheme.error.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
                 color:
                     (widget.dish['disponibilidad'] ?? false)
                         ? theme.colorScheme.primaryContainer
                         : theme.colorScheme.error,
-                size: 18,
+                width: 1,
               ),
-              const SizedBox(width: 8),
-              Text(
-                (widget.dish['disponibilidad'] ?? false)
-                    ? 'Disponible'
-                    : 'No disponible',
-                style: theme.textTheme.bodyMedium?.copyWith(
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  (widget.dish['disponibilidad'] ?? false)
+                      ? Icons.check_circle
+                      : Icons.cancel,
                   color:
                       (widget.dish['disponibilidad'] ?? false)
                           ? theme.colorScheme.primaryContainer
                           : theme.colorScheme.error,
-                  fontWeight: FontWeight.bold,
+                  size: 18,
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Text(
+                  (widget.dish['disponibilidad'] ?? false)
+                      ? 'Disponible'
+                      : 'No disponible',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color:
+                        (widget.dish['disponibilidad'] ?? false)
+                            ? theme.colorScheme.primaryContainer
+                            : theme.colorScheme.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
 
         // Precio
         Container(

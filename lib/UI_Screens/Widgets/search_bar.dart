@@ -2,8 +2,15 @@ import 'package:flutter/material.dart';
 
 class SearchBar extends StatelessWidget {
   final TextEditingController controller;
+  final Function(String)? onChanged;
+  final FocusNode? focusNode;
 
-  const SearchBar({Key? key, required this.controller}) : super(key: key);
+  const SearchBar({
+    Key? key,
+    required this.controller,
+    this.onChanged,
+    this.focusNode,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -11,6 +18,7 @@ class SearchBar extends StatelessWidget {
 
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       decoration: InputDecoration(
         hintText: 'Buscar plato...',
         hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -31,7 +39,7 @@ class SearchBar extends StatelessWidget {
           borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
         ),
       ),
-      onChanged: (value) => {},
+      onChanged: onChanged ?? (value) => {},
     );
   }
 }
