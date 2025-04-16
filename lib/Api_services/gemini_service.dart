@@ -1310,79 +1310,177 @@ Tu respuesta como Brunchy (sin mencionar tablas inexistentes):
     }
   }
 
-  /// Busca un plato por nombre con búsqueda flexible
+  /// Encuentra un plato por su nombre (búsqueda flexible)
   Map<String, dynamic>? _findDishByName(List<dynamic> dishes, String dishName) {
-    // Normalizar el nombre del plato (quitar acentos, pasar a minúsculas)
+    if (dishes.isEmpty || dishName.isEmpty) {
+      return null;
+    }
+
+    print('🔍 Buscando plato: "$dishName"');
+
+    // Normalizar el nombre del plato que se busca
     final normalizedDishName = _normalizeText(dishName);
+    final dishNameWords =
+        normalizedDishName
+            .split(' ')
+            .where(
+              (word) => word.length > 1,
+            ) // Considerar palabras de al menos 2 letras
+            .toList();
 
-    // 1. Primero intentar encontrar una coincidencia exacta
-    try {
-      var matchingDish = dishes.firstWhere(
-        (dish) =>
-            _normalizeText(dish['nombre'].toString()) == normalizedDishName,
-        orElse: () => {},
-      );
+    if (dishNameWords.isEmpty) {
+      return null;
+    }
 
-      if (matchingDish.isNotEmpty) {
-        return matchingDish;
+    // 1. Buscar coincidencia exacta
+    for (final dish in dishes) {
+      final normalizedMenuDishName = _normalizeText(dish['nombre'].toString());
+
+      if (normalizedMenuDishName == normalizedDishName) {
+        print('✅ Coincidencia exacta encontrada: ${dish['nombre']}');
+        return dish;
       }
-    } catch (e) {
-      // Continuar con la búsqueda parcial
     }
 
-    // 2. Buscar coincidencia parcial
-    // Buscar platos cuyo nombre contiene todas las palabras del pedido
-    final dishNameWords = normalizedDishName.split(' ');
+    // 2. Buscar coincidencia parcial considerando variaciones comunes
+    final dishVariations = _generateDishVariations(dishName);
+    for (final variation in dishVariations) {
+      final normalizedVariation = _normalizeText(variation);
 
-    // Filtrar platos que contienen todas las palabras clave
-    final candidateDishes =
-        dishes.where((dish) {
-          final normalizedMenuDishName = _normalizeText(
-            dish['nombre'].toString(),
-          );
-          return dishNameWords.every(
-            (word) => word.length > 2 && normalizedMenuDishName.contains(word),
-          );
-        }).toList();
-
-    // Si hay candidatos, usar el primero
-    if (candidateDishes.isNotEmpty) {
-      print(
-        'Coincidencia parcial encontrada: ${candidateDishes.first['nombre']}',
-      );
-      return candidateDishes.first;
-    }
-
-    // 3. Intentar buscar la palabra más larga del pedido
-    // Ordenar palabras por longitud (de mayor a menor)
-    dishNameWords.sort((a, b) => b.length.compareTo(a.length));
-
-    // Buscar platos que contienen la palabra más larga
-    for (final word in dishNameWords) {
-      if (word.length <= 2) continue; // Ignorar palabras muy cortas
-
-      final wordMatches =
-          dishes
-              .where(
-                (dish) =>
-                    _normalizeText(dish['nombre'].toString()).contains(word),
-              )
-              .toList();
-
-      if (wordMatches.isNotEmpty) {
-        print(
-          'Coincidencia con palabra clave "$word": ${wordMatches.first['nombre']}',
+      for (final dish in dishes) {
+        final normalizedMenuDishName = _normalizeText(
+          dish['nombre'].toString(),
         );
-        return wordMatches.first;
+
+        if (normalizedMenuDishName.contains(normalizedVariation) ||
+            normalizedVariation.contains(normalizedMenuDishName)) {
+          print(
+            '✅ Coincidencia por variación encontrada: ${dish['nombre']} para "$variation"',
+          );
+          return dish;
+        }
       }
     }
 
-    // No se encontró ninguna coincidencia
+    // 3. Buscar coincidencia por palabras clave
+    // Calcular puntuación para cada plato basado en coincidencias de palabras
+    final scoredDishes =
+        dishes
+            .map((dish) {
+              final normalizedMenuDishName = _normalizeText(
+                dish['nombre'].toString(),
+              );
+
+              int score = 0;
+              // Mayor puntuación para platos que contienen todas las palabras clave
+              for (final word in dishNameWords) {
+                if (word.length <= 2) continue; // Ignorar palabras muy cortas
+
+                if (normalizedMenuDishName.contains(word)) {
+                  // Palabras más largas tienen más peso
+                  score += word.length * 2;
+
+                  // Bonus por palabra al inicio del nombre
+                  if (normalizedMenuDishName.startsWith(word)) {
+                    score += 5;
+                  }
+                }
+              }
+
+              // Bonus por categoría similar
+              if (dish['categoria'] != null) {
+                final normalizedCategory = _normalizeText(
+                  dish['categoria'].toString(),
+                );
+                if (dishNameWords.any(
+                  (word) => normalizedCategory.contains(word),
+                )) {
+                  score += 8;
+                }
+              }
+
+              return {'dish': dish, 'score': score};
+            })
+            .where((item) => item['score'] > 0)
+            .toList();
+
+    // Ordenar por mayor puntuación
+    scoredDishes.sort(
+      (a, b) => (b['score'] as int).compareTo(a['score'] as int),
+    );
+
+    // Si hay un plato con puntuación significativamente mayor, usarlo
+    if (scoredDishes.isNotEmpty) {
+      final topScore = scoredDishes.first['score'] as int;
+
+      // Si la puntuación es significativa (al menos 8 puntos o contiene palabras importantes)
+      if (topScore >= 8 ||
+          _containsSignificantWord(
+            dishNameWords,
+            scoredDishes.first['dish']['nombre'].toString(),
+          )) {
+        print(
+          '✅ Coincidencia por palabras clave encontrada: ${scoredDishes.first['dish']['nombre']} (score: $topScore)',
+        );
+        return scoredDishes.first['dish'];
+      }
+    }
+
     return null;
   }
 
+  /// Genera variaciones comunes de nombres de platos
+  List<String> _generateDishVariations(String dishName) {
+    final variations = <String>[];
+    final normalizedName = _normalizeText(dishName);
+
+    // Agregar original
+    variations.add(normalizedName);
+
+    // Variaciones comunes en español
+    if (normalizedName.contains("cafe")) {
+      variations.add(normalizedName.replaceAll("cafe", "café"));
+    }
+    if (normalizedName.contains("te")) {
+      variations.add(normalizedName.replaceAll("te", "té"));
+    }
+
+    // Agregar versión sin diminutivos
+    if (normalizedName.endsWith("ito") || normalizedName.endsWith("ita")) {
+      variations.add(normalizedName.substring(0, normalizedName.length - 3));
+    }
+
+    // Agregar versión singular/plural
+    if (normalizedName.endsWith("s")) {
+      variations.add(normalizedName.substring(0, normalizedName.length - 1));
+    } else {
+      variations.add(normalizedName + "s");
+    }
+
+    return variations;
+  }
+
+  /// Verifica si el nombre contiene palabras significativas para la búsqueda
+  bool _containsSignificantWord(
+    List<String> dishNameWords,
+    String menuDishName,
+  ) {
+    // Palabras consideradas significativas para identificar un plato (más de 4 letras)
+    final significantWords =
+        dishNameWords.where((word) => word.length > 4).toList();
+
+    if (significantWords.isEmpty) return false;
+
+    final normalizedMenuDishName = _normalizeText(menuDishName);
+
+    // Verificar si alguna palabra significativa está en el nombre del menú
+    return significantWords.any(
+      (word) => normalizedMenuDishName.contains(word),
+    );
+  }
+
   /// Agrega un plato al carrito del cliente
-  Future<bool> addDishToCart(String dishName) async {
+  Future<bool> addDishToCart(String dishName, {String? specialNotes}) async {
     try {
       print('🍽️ Buscando plato en el menú: "$dishName"');
 
@@ -1423,9 +1521,14 @@ Tu respuesta como Brunchy (sin mencionar tablas inexistentes):
           price: price,
           imageUrl: dish['imagen_url'] ?? '',
           originalData: dish,
+          notes:
+              specialNotes, // Usar directamente las notas especiales proporcionadas
         );
 
         print('🛒 Plato añadido al carrito correctamente');
+        if (specialNotes != null) {
+          print('📝 Notas especiales agregadas: "$specialNotes"');
+        }
 
         // Guardar preferencia de usuario para análisis
         try {
