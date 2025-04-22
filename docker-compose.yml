@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Servicio del servidor Node.js
+  server:
+    build: ./sevidor
+    container_name: le-brunch-server
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    environment:
+      - PGUSER=${PGUSER:-postgres}
+      - PGHOST=postgres
+      - PGPASSWORD=${PGPASSWORD:-postgres}
+      - PGDATABASE=${PGDATABASE:-le_brunch}
+      - PGPORT=5432
+      - SERVER_IP=0.0.0.0
+      - SERVER_PORT=3000
+    volumes:
+      - ./sevidor:/app
+      - /app/node_modules
+    networks:
+      - le-brunch-network
+
+  # Servicio de base de datos PostgreSQL
+  postgres:
+    image: postgres:14
+    container_name: le-brunch-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${PGUSER:-postgres}
+      - POSTGRES_PASSWORD=${PGPASSWORD:-postgres}
+      - POSTGRES_DB=${PGDATABASE:-le_brunch}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - le-brunch-network
+    
+  # Servicio opcional: pgAdmin para administrar la base de datos
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: le-brunch-pgadmin
+    restart: always
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@lebrunch.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - le-brunch-network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  le-brunch-network:
+    driver: bridge

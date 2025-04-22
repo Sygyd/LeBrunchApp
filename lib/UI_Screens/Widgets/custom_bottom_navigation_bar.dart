@@ -133,17 +133,19 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   // Método para cambiar de página
   void _changePage(int index) {
     if (index != _currentIndex) {
-      // Si estamos cambiando a la pestaña de carrito (Cliente, índice 3),
-      // forzar una actualización completa del carrito
-      if (_userRole == 1 && index == 3) {
-        _resetCartService();
-      }
-
+      // Ya no reiniciamos el carrito al cambiar a la pestaña de carrito
+      // Esto evita perder los productos añadidos desde el chat
+      
       setState(() {
         _currentIndex = index;
       });
       _pageController.jumpToPage(index);
       _pageStreamController.add(index);
+      
+      // Solo actualizamos el contador del carrito si vamos a la pestaña del carrito
+      if (_userRole == 1 && index == 3) {
+        _updateCartItemCount();
+      }
     }
   }
 

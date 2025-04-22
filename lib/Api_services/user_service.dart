@@ -3,14 +3,14 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../services/server_connection_service.dart';
 
 class UserService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final ServerConnectionService _serverConnectionService = ServerConnectionService();
 
   Future<String> _getApiBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverIp = prefs.getString('server_ip') ?? '192.168.1.121';
-    return 'http://$serverIp:3000';
+    return _serverConnectionService.baseUrl;
   }
 
   // Obtener todos los usuarios desde la base de datos

@@ -56,6 +56,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   String? _pendingModifications;
   bool _awaitingSpecialInstructions = false;
 
+  // Control para el desplazamiento automático
+  bool _shouldAutoScroll = true;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +81,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       // Cargar el modo de depuración desde preferencias
       _loadDebugMode();
+
+      // Desplazar al último mensaje después de cargar la pantalla
+      _scrollToBottom();
+    });
+
+    // Agregar listener al controlador de scroll para detectar cuando se añaden nuevos mensajes
+    _scrollController.addListener(() {
+      // Si estamos cerca del final del scroll, mantener el desplazamiento automático activo
+      if (_scrollController.hasClients &&
+          _scrollController.position.pixels >
+              _scrollController.position.maxScrollExtent - 100) {
+        _shouldAutoScroll = true;
+      } else {
+        _shouldAutoScroll = false;
+      }
     });
   }
 
@@ -257,11 +275,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   /// Hace scroll hasta el último mensaje
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     }
   }
 
@@ -487,6 +509,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final message = _messageController.text.trim();
     _messageController.clear();
 
+    // Activar el auto-scroll cuando enviamos un nuevo mensaje
+    _shouldAutoScroll = true;
+
     // Mostrar el mensaje del usuario inmediatamente
     setState(() {
       _messages.add(ChatMessage.fromUser(message: message));
@@ -494,7 +519,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
 
     // Hacer scroll al fondo después de mostrar el mensaje
-    _scrollToBottom();
+    if (_shouldAutoScroll) {
+      _scrollToBottom();
+    }
 
     // Procesar el mensaje para detectar posibles pedidos de platos
     await _processMessageForDishRequest(message);
@@ -522,8 +549,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         await _processMessageForDishRequest(response.message);
       }
 
-      // Hacer scroll al fondo
-      _scrollToBottom();
+      // Hacer scroll al fondo si el auto-scroll está activo
+      if (_shouldAutoScroll) {
+        _scrollToBottom();
+      }
     } catch (e) {
       // Verificar si el widget sigue montado antes de actualizar el estado
       if (!mounted) return;
@@ -541,7 +570,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _isTyping = false;
       });
 
-      _scrollToBottom();
+      if (_shouldAutoScroll) {
+        _scrollToBottom();
+      }
     }
   }
 

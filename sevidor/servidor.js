@@ -7,9 +7,9 @@ const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
 const pedidosRoutes = require("./pedidos");
 
-// Configuración del servidor
-const ip = '192.168.1.121';
-const port = 3000;
+// Configuración del servidor usando variables de entorno
+const ip = process.env.SERVER_IP || '0.0.0.0';  // Usa 0.0.0.0 para escuchar en todas las interfaces
+const port = process.env.SERVER_PORT || 3000;
 // NO usar puerto 5678 bajo ninguna circunstancia
 
 const app = express();

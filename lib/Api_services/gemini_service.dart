@@ -1276,6 +1276,14 @@ Tu respuesta como Brunchy (sin mencionar tablas inexistentes):
         _geminiHistories[_currentUserId!] = List<Content>.from(firstMessage);
       }
 
+      // Asegurar que se limpien todos los historiales si no hay usuario actual
+      if (_currentUserId == null || _currentUserId == 'anonymous') {
+        // Limpiar todos los historiales para asegurar que no queden mensajes antiguos
+        _chatHistories.clear();
+        _geminiHistories.clear();
+        print('Limpiando TODOS los historiales de chat (reseteo completo)');
+      }
+
       _startNewChatSession();
       clearChatHistory(); // Limpiar el historial de UI también
     } catch (e) {
