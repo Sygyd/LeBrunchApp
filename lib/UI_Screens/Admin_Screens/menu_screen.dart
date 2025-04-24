@@ -9,6 +9,7 @@ import '/UI_Screens/Widgets/category_carousel.dart';
 import '/UI_Screens/Widgets/dish_card.dart';
 import 'dart:async';
 import '/UI_Screens/Widgets/background_scaffold.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -165,9 +166,18 @@ class _MenuScreenState extends State<MenuScreen>
 
     if (confirm == true) {
       try {
+        // Obtener la dirección del servidor
+        final prefs = await SharedPreferences.getInstance();
+        final serverIp =
+            prefs.getString('serverIp') ??
+            dotenv.env['NODE_SERVER_IP'] ??
+            'server'; // Cambiado para Docker
+        final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
+        final baseUrl = 'http://$serverIp:$serverPort';
+
         // 1. Llamar al endpoint de logout en el backend
         final response = await http.post(
-          Uri.parse('http://192.168.1.121:3000/logout'),
+          Uri.parse('$baseUrl/logout'),
           headers: {"Content-Type": "application/json"},
         );
 

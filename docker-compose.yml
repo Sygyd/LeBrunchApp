@@ -1,67 +1,65 @@
-version: '3.8'
+# Docker Compose para Le Brunch App
+# Este archivo define los servicios necesarios para la aplicación:
+# - db: Base de datos PostgreSQL
+# - server: Servidor Node.js con la API
+# - app: Aplicación web Flutter
 
 services:
-  # Servicio del servidor Node.js
-  server:
-    build: ./sevidor
-    container_name: le-brunch-server
-    restart: always
-    ports:
-      - "3000:3000"
-    depends_on:
-      - postgres
+  db:
+    image: postgres:15
+    container_name: lebrunch_postgres
     environment:
-      - PGUSER=${PGUSER:-postgres}
-      - PGHOST=postgres
-      - PGPASSWORD=${PGPASSWORD:-postgres}
-      - PGDATABASE=${PGDATABASE:-le_brunch}
-      - PGPORT=5432
-      - SERVER_IP=0.0.0.0
-      - SERVER_PORT=3000
-    volumes:
-      - ./sevidor:/app
-      - /app/node_modules
-    networks:
-      - le-brunch-network
-
-  # Servicio de base de datos PostgreSQL
-  postgres:
-    image: postgres:14
-    container_name: le-brunch-postgres
-    restart: always
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=${PGUSER:-postgres}
-      - POSTGRES_PASSWORD=${PGPASSWORD:-postgres}
-      - POSTGRES_DB=${PGDATABASE:-le_brunch}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: monito
+      POSTGRES_DB: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    networks:
-      - le-brunch-network
-    
-  # Servicio opcional: pgAdmin para administrar la base de datos
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: le-brunch-pgadmin
-    restart: always
+      - ./db_init:/docker-entrypoint-initdb.d
     ports:
-      - "5050:80"
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@lebrunch.com}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - postgres
+      - "5432:5432"
+    restart: unless-stopped
     networks:
-      - le-brunch-network
+      - lebrunch_network
+
+  server:
+    build:
+      context: .
+      dockerfile: server.Dockerfile
+    container_name: lebrunch_server
+    depends_on:
+      - db
+    environment:
+      - NODE_SERVER_IP=server
+      - NODE_SERVER_PORT=3000
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=monito
+      - DB_NAME=postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/usr/src/app/uploads
+    restart: unless-stopped
+    networks:
+      - lebrunch_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lebrunch_app
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - lebrunch_network
+
+networks:
+  lebrunch_network:
+    driver: bridge
 
 volumes:
   postgres_data:
-  pgadmin_data:
-
-networks:
-  le-brunch-network:
-    driver: bridge

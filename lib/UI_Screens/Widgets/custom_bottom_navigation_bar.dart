@@ -135,13 +135,13 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     if (index != _currentIndex) {
       // Ya no reiniciamos el carrito al cambiar a la pestaña de carrito
       // Esto evita perder los productos añadidos desde el chat
-      
+
       setState(() {
         _currentIndex = index;
       });
       _pageController.jumpToPage(index);
       _pageStreamController.add(index);
-      
+
       // Solo actualizamos el contador del carrito si vamos a la pestaña del carrito
       if (_userRole == 1 && index == 3) {
         _updateCartItemCount();

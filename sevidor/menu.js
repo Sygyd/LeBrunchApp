@@ -4,6 +4,11 @@ const multer = require("multer");
 const path = require("path");
 const router = express.Router();
 
+// Obtener URL del servidor desde variables de entorno
+const serverIP = process.env.NODE_SERVER_IP || '192.168.1.121';
+const serverPort = process.env.NODE_SERVER_PORT || 3000;
+const serverUrl = `http://${serverIP}:${serverPort}`;
+
 // Configuración de multer para guardar archivos en la carpeta "uploads"
 const storage = multer.diskStorage({
   destination: "./uploads",
@@ -26,7 +31,7 @@ router.get("/menu", async (req, res) => {
 // Agregar un nuevo plato al menú
 router.post("/menu", upload.single("imagen"), async (req, res) => {
   const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
-  const imagen_url = req.file ? `http://192.168.1.121:3000/uploads/${req.file.filename}` : null; // Usa la IP de tu máquina
+  const imagen_url = req.file ? `${serverUrl}/uploads/${req.file.filename}` : null;
 
   try {
     const result = await pool.query(
@@ -61,7 +66,7 @@ router.put("/menu/:id", upload.single("imagen"), async (req, res) => {
   const { id } = req.params;
   const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
   const imagen_url = req.file
-    ? `http://192.168.1.121:3000/uploads/${req.file.filename}`
+    ? `${serverUrl}/uploads/${req.file.filename}`
     : null;
 
   try {

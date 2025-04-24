@@ -23,8 +23,9 @@ class GeminiService {
   int _currentApiKeyIndex = 0;
 
   // URL del servidor Node.js para consultas a la base de datos
-  final String _serverIp;
-  final int _nodeJsPort;
+  // No son final para poder cambiarlos si hay error con dotenv
+  String _serverIp = '192.168.1.121'; // Valor predeterminado
+  int _nodeJsPort = 3000; // Valor predeterminado
 
   // Construye URLs basadas en la IP configurada
   String get _menuUrl => 'http://$_serverIp:$_nodeJsPort/menu';
@@ -72,11 +73,23 @@ class GeminiService {
   List<dynamic>? _menuCache;
 
   // Constructor privado
-  GeminiService._internal()
-    : _serverIp = dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121'),
-      _nodeJsPort = int.parse(
-        dotenv.get('NODE_SERVER_PORT', fallback: '3000'),
-      ) {
+  GeminiService._internal() {
+    try {
+      // Intentar obtener valores del archivo .env si está disponible
+      if (dotenv.env.containsKey('NODE_SERVER_IP')) {
+        _serverIp = dotenv.env['NODE_SERVER_IP']!;
+      }
+
+      if (dotenv.env.containsKey('NODE_SERVER_PORT')) {
+        _nodeJsPort = int.parse(dotenv.env['NODE_SERVER_PORT']!);
+      }
+    } catch (e) {
+      // Si hay un error con dotenv, usar valores predeterminados
+      print('Error al cargar variables de entorno: $e');
+      print('Usando valores predeterminados para la conexión al servidor');
+      // Los valores predeterminados ya están asignados en la declaración
+    }
+
     print('Iniciando servicio de chat Gemini con IP del servidor: $_serverIp');
     print('Puerto del servidor: $_nodeJsPort');
 

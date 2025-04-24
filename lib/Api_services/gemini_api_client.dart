@@ -15,7 +15,8 @@ class GeminiApiClient {
   String _apiKey;
 
   // Servidor de Node.js para fallback
-  final String _serverUrl;
+  String _serverUrl =
+      'http://192.168.1.121:3000'; // Valor predeterminado inicial
 
   // Modelos de Gemini ordenados por preferencia
   static const List<String> _models = [
@@ -25,9 +26,34 @@ class GeminiApiClient {
   ];
 
   // Constructor
-  GeminiApiClient(this._apiKey)
-    : _serverUrl =
-          'http://${dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121')}:${dotenv.get('NODE_SERVER_PORT', fallback: '3000')}';
+  GeminiApiClient(this._apiKey) {
+    // Inicializar el serverUrl de manera segura
+    String serverIp;
+    String serverPort;
+
+    try {
+      // Intentar obtener los valores de dotenv si están disponibles
+      if (dotenv.env.containsKey('NODE_SERVER_IP')) {
+        serverIp = dotenv.env['NODE_SERVER_IP']!;
+      } else {
+        serverIp = '192.168.1.121'; // Valor predeterminado
+      }
+
+      if (dotenv.env.containsKey('NODE_SERVER_PORT')) {
+        serverPort = dotenv.env['NODE_SERVER_PORT']!;
+      } else {
+        serverPort = '3000'; // Valor predeterminado
+      }
+    } catch (e) {
+      // Si hay algún error, usar valores predeterminados
+      print('Error al acceder a variables de entorno en GeminiApiClient: $e');
+      serverIp = '192.168.1.121';
+      serverPort = '3000';
+    }
+
+    _serverUrl = 'http://$serverIp:$serverPort';
+    print('GeminiApiClient inicializado con servidor: $_serverUrl');
+  }
 
   // Actualizar la clave API
   void updateApiKey(String newApiKey) {

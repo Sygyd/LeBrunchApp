@@ -7,9 +7,9 @@ const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
 const pedidosRoutes = require("./pedidos");
 
-// Configuración del servidor usando variables de entorno
-const ip = process.env.SERVER_IP || '0.0.0.0';  // Usa 0.0.0.0 para escuchar en todas las interfaces
-const port = process.env.SERVER_PORT || 3000;
+// Configuración del servidor desde variables de entorno
+const ip = process.env.NODE_SERVER_IP || '0.0.0.0';
+const port = process.env.NODE_SERVER_PORT || 3000;
 // NO usar puerto 5678 bajo ninguna circunstancia
 
 const app = express();

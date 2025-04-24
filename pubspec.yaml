@@ -40,7 +40,6 @@ flutter:
     - assets/images/fondo-flores-2.png
     - assets/logos/
     - assets/fonts/
-    - .env
   fonts:
     - family: LightHouse
       fonts:

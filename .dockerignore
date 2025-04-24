@@ -1,0 +1,69 @@
+# Archivos y directorios de Git
+.git
+.gitignore
+
+# Archivos de IDE y editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependencias y archivos generados de Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.pub-cache/
+.pub/
+.DS_Store
+
+# Archivos de dependencias de Node.js
+sevidor/node_modules/
+sevidor/npm-debug.log
+sevidor/yarn-error.log
+sevidor/yarn-debug.log
+sevidor/.pnpm-debug.log
+sevidor/package-lock.json
+sevidor/yarn.lock
+
+# Directorios de caché y registros
+.coverage/
+.nyc_output/
+coverage/
+logs/
+*.log
+
+# Archivos de entorno y secretos
+.env
+*.env
+*.env.*
+!.env.example
+
+# Otros archivos del proyecto
+README.md
+LICENSE
+CHANGELOG.md
+docs/
+
+# Archivos específicos de plataforma
+android/
+ios/
+windows/
+macos/
+linux/
+
+# Archivos temporales y de base de datos
+*.tmp
+*.temp
+*.bak
+*.backup
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de Docker
+Dockerfile.dev
+Dockerfile.prod
+docker-compose.dev.yml
+docker-compose.prod.yml 
