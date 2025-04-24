@@ -659,18 +659,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     ];
 
     // Verificar si el mensaje contiene alguna de las palabras clave
-    bool containsAddIntent = false;
-    String? matchedKeyword;
-
-    // Buscamos la palabra clave más larga que coincida primero
-    addKeywords.sort((a, b) => b.length.compareTo(a.length));
-    for (final keyword in addKeywords) {
-      if (message.toLowerCase().contains(keyword.toLowerCase())) {
-        containsAddIntent = true;
-        matchedKeyword = keyword.toLowerCase();
-        break;
-      }
-    }
+    final containsAddIntent = addKeywords.any(
+      (keyword) => message.toLowerCase().contains(keyword.toLowerCase()),
+    );
 
     if (containsAddIntent) {
       // Palabras a ignorar en la extracción del nombre del plato
@@ -701,112 +692,125 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         'llevar',
       ];
 
-      // Extraer el texto después de la palabra clave
-      final messageLower = message.toLowerCase();
-      final int keywordIndex = messageLower.indexOf(matchedKeyword!);
-      final int startIndex = keywordIndex + matchedKeyword.length;
+      // Dividir el mensaje en palabras
+      final words = message.toLowerCase().split(' ');
 
-      if (startIndex < messageLower.length) {
-        // Obtener el resto del texto después de la palabra clave
-        String remainingText = messageLower.substring(startIndex).trim();
-
-        // Eliminar palabras iniciales como "un", "una", etc.
-        for (final word in ignoreWords) {
-          if (remainingText.startsWith("$word ")) {
-            remainingText = remainingText.substring(word.length).trim();
-          }
+      // Encontrar posiciones donde aparecen las palabras clave
+      final keywordIndices = <int>[];
+      for (int i = 0; i < words.length; i++) {
+        if (addKeywords.contains(words[i])) {
+          keywordIndices.add(i);
         }
+      }
 
-        // Buscar modificadores para separar el nombre del plato de las modificaciones
-        String? dishName;
-        String? modifications;
+      if (keywordIndices.isNotEmpty) {
+        for (final keywordIndex in keywordIndices) {
+          // Buscar las palabras que siguen a la palabra clave
+          if (keywordIndex < words.length - 1) {
+            // Extraer posible nombre de plato (hasta 8 palabras después de la palabra clave)
+            final maxWords = 8;
+            final endIndex =
+                (keywordIndex + maxWords + 1) < words.length
+                    ? keywordIndex + maxWords + 1
+                    : words.length;
 
-        // Buscar el primer modificador en el texto
-        int modifierPos = -1;
-        for (final modifier in modifierKeywords) {
-          final pos = remainingText.indexOf(" $modifier ");
-          if (pos != -1 && (modifierPos == -1 || pos < modifierPos)) {
-            modifierPos = pos;
-          }
-        }
+            final possibleDishSegment = words.sublist(
+              keywordIndex + 1,
+              endIndex,
+            );
+            final filteredWords =
+                possibleDishSegment
+                    .where((word) => !ignoreWords.contains(word))
+                    .toList();
 
-        if (modifierPos != -1) {
-          // Si hay un modificador, separar el nombre del plato y las modificaciones
-          dishName = remainingText.substring(0, modifierPos).trim();
-          modifications = remainingText.substring(modifierPos).trim();
-        } else {
-          // Si no hay modificador claro, usar todo como nombre del plato
-          dishName = remainingText;
-        }
+            if (filteredWords.isNotEmpty) {
+              // Primero intentamos extraer solo el nombre del plato
+              final dishNameWords = <String>[];
+              String? modifications;
 
-        // Limpiar el nombre del plato de puntuación al final (comas, puntos, etc.)
-        if (dishName != null && dishName.isNotEmpty) {
-          dishName = dishName.replaceAll(RegExp(r'[.,;:!?]$'), '').trim();
-
-          // Limitar el nombre a un máximo de 8 palabras
-          final dishWords = dishName.split(' ');
-          if (dishWords.length > 8) {
-            dishName = dishWords.take(8).join(' ');
-          }
-
-          print('Detectado posible pedido: "$dishName"');
-
-          if (dishName.isNotEmpty) {
-            // Guardar el nombre del plato y modificaciones para procesarlo después
-            _pendingDishName = dishName;
-            _pendingModifications = modifications;
-            _awaitingSpecialInstructions = true;
-
-            // Enviar mensaje a Gemini pidiendo confirmación y preguntando por instrucciones especiales
-            final promptForGemini =
-                "El cliente ha pedido '$dishName'" +
-                (modifications != null
-                    ? " con las siguientes modificaciones: $modifications."
-                    : ".") +
-                " Por favor, confirma el pedido y pregunta si desea agregar instrucciones especiales (sin ingredientes, cocción especial, etc.) o si desea añadirlo directamente a su pedido.";
-
-            // Mostrar indicador de escritura
-            _showTypingIndicator();
-
-            // Enviar la solicitud a Gemini
-            try {
-              final response = await _geminiService.sendMessage(
-                promptForGemini,
-              );
-
-              if (mounted) {
-                setState(() {
-                  _messages.add(response);
-                  _isTyping = false;
-                });
-                _scrollToBottom();
+              // Buscar palabras que indican modificaciones
+              int modifierIndex = -1;
+              for (int i = 0; i < filteredWords.length; i++) {
+                if (modifierKeywords.contains(filteredWords[i])) {
+                  modifierIndex = i;
+                  break;
+                }
               }
-            } catch (e) {
-              // Si falla, mostrar un mensaje del sistema como fallback
-              print('Error al solicitar confirmación a Gemini: $e');
-              if (mounted) {
-                setState(() {
-                  _isTyping = false;
-                  final String promptMessage =
-                      modifications != null
-                          ? '¿Deseas agregar "$dishName" con las modificaciones: $modifications a tu pedido? ¿Alguna instrucción especial adicional?'
-                          : '¿Deseas agregar "$dishName" a tu pedido? ¿Alguna instrucción especial?';
 
-                  _messages.add(
-                    ChatMessage.fromSupport(message: promptMessage),
+              // Separar nombre del plato y modificaciones
+              if (modifierIndex != -1) {
+                dishNameWords.addAll(filteredWords.sublist(0, modifierIndex));
+                modifications = filteredWords.sublist(modifierIndex).join(' ');
+              } else {
+                dishNameWords.addAll(filteredWords);
+              }
+
+              final dishName = dishNameWords.join(' ');
+
+              if (dishName.isNotEmpty) {
+                print('Detectado pedido de plato: "$dishName"');
+
+                // Guardar el nombre del plato y modificaciones para procesarlo después
+                _pendingDishName = dishName;
+                _pendingModifications = modifications;
+                _awaitingSpecialInstructions = true;
+
+                // Envía un mensaje a Gemini pidiendo que pregunte por instrucciones especiales
+                final promptForGemini =
+                    "Por favor, pregúntale al cliente si desea agregar instrucciones especiales para $dishName" +
+                    (modifications != null
+                        ? " con las modificaciones: $modifications"
+                        : "") +
+                    ". Menciona ejemplos como: sin ingredientes específicos, cocción especial, etc. Y pregúntale si desea añadirlo a su pedido.";
+
+                // Mostrar indicador de escritura
+                _showTypingIndicator();
+
+                // Enviar la solicitud a Gemini para que pregunte por instrucciones
+                try {
+                  final response = await _geminiService.sendMessage(
+                    promptForGemini,
                   );
-                });
-                _scrollToBottom();
+
+                  if (mounted) {
+                    setState(() {
+                      _messages.add(response);
+                      _isTyping = false;
+                    });
+
+                    // Hacer scroll para mostrar la pregunta
+                    _scrollToBottom();
+                  }
+                } catch (e) {
+                  // Si falla, mostrar un mensaje del sistema como fallback
+                  print(
+                    'Error al pedir a Gemini que pregunte por instrucciones: $e',
+                  );
+                  if (mounted) {
+                    setState(() {
+                      _isTyping = false;
+                      final String promptMessage =
+                          modifications != null
+                              ? '¿Deseas agregar alguna instrucción especial adicional para "$dishName" con las modificaciones: $modifications?'
+                              : '¿Deseas agregar alguna instrucción especial para "$dishName" (sin ingredientes, cocción especial, etc.)?';
+
+                      _messages.add(
+                        ChatMessage.fromSupport(message: promptMessage),
+                      );
+                    });
+                    _scrollToBottom();
+                  }
+                }
+
+                return;
               }
             }
-
-            return;
           }
         }
       }
     }
 
-    // Si estamos esperando instrucciones especiales para un plato ya detectado
+    // Verificar si es una respuesta a una solicitud de instrucciones especiales
     if (_awaitingSpecialInstructions && _pendingDishName != null) {
       // Buscar indicadores de confirmación o negación
       final confirmations = [
@@ -850,13 +854,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     : message); // Usar solo el mensaje actual
       }
 
-      // Intentar añadir el plato al carrito con las instrucciones especiales
-      final success = await _geminiService.addDishToCart(
-        _pendingDishName!,
-        specialNotes: specialInstructions,
-      );
+      // Intentar añadir el plato al carrito
+      final success = await _geminiService.addDishToCart(_pendingDishName!);
 
       if (success) {
+        // Si hay instrucciones especiales, agregarlas como notas al último elemento
+        if (specialInstructions != null && specialInstructions.isNotEmpty) {
+          final cartService = CartService();
+          final items = cartService.items;
+          if (items.isNotEmpty) {
+            final lastItem = items.last;
+            cartService.updateNotes(lastItem.id, specialInstructions);
+          }
+        }
+
         // Mostrar notificación emergente
         _showDishAddedConfirmation(_pendingDishName!);
 
