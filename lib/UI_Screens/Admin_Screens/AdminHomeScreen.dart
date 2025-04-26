@@ -227,8 +227,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           'Órdenes',
           'Pendientes: $pendingOrders',
           Icons.receipt_long,
-          const Color(0xFF64B5F6),
+          const Color(0xFFFF9800),
           () => Navigator.pushNamed(context, '/admin-orders'),
+        ),
+        _buildFeatureCard(
+          context,
+          'Historial de Pedidos',
+          '',
+          Icons.history,
+          const Color(0xFF64B5F6),
+          () => Navigator.pushNamed(context, '/admin-order-history'),
         ),
         _buildFeatureCard(
           context,
@@ -237,6 +245,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           Icons.bar_chart,
           const Color(0xFF81C784),
           () => Navigator.pushNamed(context, '/admin-reports'),
+        ),
+        _buildFeatureCard(
+          context,
+          'Platos Populares',
+          '',
+          Icons.trending_up,
+          const Color(0xFFBA68C8),
+          () => Navigator.pushNamed(context, '/admin-popular-dishes'),
         ),
       ],
     );
@@ -329,17 +345,20 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   fontWeight: FontWeight.bold,
                   fontFamily: 'MADE TOMMY',
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontFamily: 'MADE TOMMY',
-                ),
                 textAlign: TextAlign.center,
               ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontFamily: 'MADE TOMMY',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ],
           ),
         ),

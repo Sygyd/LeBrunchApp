@@ -5,6 +5,8 @@ import './add_user_modal.dart';
 import './filter_chip.dart';
 import '../../../UI_Screens/Widgets/background_scaffold.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -51,38 +53,100 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     });
 
     try {
+      // Usar siempre la IP fija
+      const String fixedIp = '192.168.1.121';
+      final prefs = await SharedPreferences.getInstance();
+
+      // Guardar en ambas claves para futura consistencia
+      await prefs.setString('server_ip', fixedIp);
+      await prefs.setString('serverIp', fixedIp);
+
+      print('🔌 Intentando conectar con el servidor: $fixedIp');
+
+      // Verificar que el servicio esté disponible haciendo un ping
+      bool serverAlive = false;
+      try {
+        final pingResponse = await http
+            .get(Uri.parse('http://$fixedIp:3000/pedidos/stats/count'))
+            .timeout(const Duration(seconds: 3));
+
+        serverAlive =
+            pingResponse.statusCode >= 200 && pingResponse.statusCode < 300;
+        print(
+          '🔄 Ping al servidor: ${pingResponse.statusCode} (${serverAlive ? "✅ Conectado" : "❌ Error"})',
+        );
+      } catch (e) {
+        print('⚠️ Error de conexión en ping al servidor: $e');
+      }
+
+      // Intentar cargar usuarios desde el servicio
       final usersData = await _userService.getAllUsers();
-      print('📋 Datos crudos recibidos para usuarios: $usersData');
+      print('📋 Datos recibos para usuarios: ${usersData.length} registros');
 
       final users = usersData.map((data) => User.fromJson(data)).toList();
 
-      print('👥 Usuarios procesados: ${users.length}');
-      for (var user in users) {
-        print(
-          '  - ${user.nombreCompleto} (${user.email}): id=${user.id}, rol=${user.rol} (${user.rolNombre})',
-        );
+      if (users.isNotEmpty) {
+        print('👥 Usuarios procesados: ${users.length}');
+        for (var user in users) {
+          print(
+            '  - ${user.nombreCompleto} (${user.email}): id=${user.id}, rol=${user.rol} (${user.rolNombre})',
+          );
+        }
+      } else {
+        print('⚠️ No se pudieron obtener usuarios del servicio principal');
+
+        // Intento alternativo directamente usando HTTP si el servidor está disponible
+        if (serverAlive) {
+          try {
+            print('🔄 Intento directo a la API de usuarios...');
+            final directResponse = await http
+                .get(
+                  Uri.parse('http://$fixedIp:3000/users'),
+                  headers: {'Content-Type': 'application/json'},
+                )
+                .timeout(const Duration(seconds: 5));
+
+            if (directResponse.statusCode == 200) {
+              final List<dynamic> directData = json.decode(directResponse.body);
+              print(
+                '📤 Datos obtenidos directamente: ${directData.length} registros',
+              );
+
+              final directUsers =
+                  directData
+                      .map(
+                        (data) => User.fromJson(data as Map<String, dynamic>),
+                      )
+                      .toList();
+
+              print(
+                '👥 Usuarios procesados directamente: ${directUsers.length}',
+              );
+
+              if (mounted) {
+                setState(() {
+                  _users = directUsers;
+                  _applyFilters();
+                  _isLoading = false;
+                });
+                return; // Salir si tuvimos éxito con la conexión directa
+              }
+            } else {
+              print(
+                '❌ Error en respuesta directa: ${directResponse.statusCode}',
+              );
+            }
+          } catch (directError) {
+            print('❌ Error en conexión directa: $directError');
+          }
+        }
       }
 
       // Obtener el ID del usuario actual
-      final prefs = await SharedPreferences.getInstance();
       final currentUserId = prefs.getInt('user_id');
       print(
         '🔑 ID del usuario actual (SharedPreferences): $currentUserId (${currentUserId.runtimeType})',
       );
-
-      // Imprimir todas las claves guardadas en SharedPreferences para diagnóstico
-      print('🔐 Todas las claves en SharedPreferences:');
-      final keys = prefs.getKeys();
-      for (var key in keys) {
-        print('  - $key: ${prefs.get(key)} (${prefs.get(key)?.runtimeType})');
-      }
-
-      // Verificar explícitamente si se pudo obtener el ID
-      if (currentUserId == null) {
-        print(
-          '⚠️ No se pudo obtener el ID del usuario actual - Verificar login.dart',
-        );
-      }
 
       if (mounted) {
         setState(() {
@@ -92,13 +156,31 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           _isLoading = false;
         });
       }
+
+      // Mensaje informativo cuando no hay usuarios
+      if (users.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              serverAlive
+                  ? 'No se encontraron usuarios en la base de datos. ¿Has registrado alguno?'
+                  : 'No se pudo conectar al servidor ($fixedIp:3000). Comprueba que el servidor esté activo.',
+            ),
+            backgroundColor: serverAlive ? Colors.orange : Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     } catch (e) {
       print('❌ Error al cargar usuarios: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        _showErrorSnackBar('Error al cargar usuarios: $e');
+        _showErrorSnackBar(
+          'Error al cargar usuarios. Comprueba que el servidor esté activo (192.168.1.121:3000)',
+        );
       }
     }
   }
@@ -397,6 +479,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: TextField(
                       controller: _searchController,
+                      // Prevenir enfoque automático
+                      autofocus: false,
+                      focusNode: FocusNode(),
                       decoration: InputDecoration(
                         hintText: 'Buscar usuarios...',
                         prefixIcon: const Icon(Icons.search),
@@ -597,27 +682,63 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     ),
                   ),
 
-                  // Lista de usuarios filtrados
-                  Expanded(
-                    child:
-                        _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _filteredUsers.isEmpty
-                            ? _buildEmptyState()
-                            : RefreshIndicator(
-                              onRefresh: _loadUsers,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.only(
-                                  bottom: 80,
-                                ), // Espacio para la navegación
-                                itemCount: _filteredUsers.length,
-                                itemBuilder: (context, index) {
-                                  final user = _filteredUsers[index];
-                                  return _buildUserCard(user, theme);
-                                },
+                  // Mostrar mensaje cuando no hay usuarios
+                  _filteredUsers.isEmpty
+                      ? Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.person_off,
+                                size: 64,
+                                color: Colors.grey[400],
                               ),
-                            ),
-                  ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No se encontraron usuarios',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _searchQuery.isNotEmpty ||
+                                        _selectedRoles.isNotEmpty
+                                    ? 'Intenta con otros filtros de búsqueda'
+                                    : 'No hay usuarios registrados o no se pudo conectar al servidor',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 24),
+                              if (_searchQuery.isNotEmpty ||
+                                  _selectedRoles.isNotEmpty)
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _selectedRoles.clear();
+                                      _searchController.clear();
+                                      _applyFilters();
+                                    });
+                                  },
+                                  icon: const Icon(Icons.filter_alt_off),
+                                  label: const Text('Limpiar filtros'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFB85C38),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      )
+                      : Expanded(child: _buildUserList()),
                 ],
               ),
             ),
@@ -654,120 +775,94 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Botones de opciones (solo visible cuando está expandido)
-          AnimatedOpacity(
-            opacity: _isExpanded ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Administrador
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(
-                    begin: 0.0,
-                    end: _isExpanded ? 1.0 : 0.0,
-                  ),
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                  // Delay para el primer botón
-                  builder: (context, value, child) {
-                    // Delay artificial - solo aparece después de 60ms cuando se expande
-                    double actualValue =
-                        _isExpanded
-                            ? (value < 0.2 ? 0.0 : (value - 0.2) / 0.8)
-                            : 0.0;
-
-                    return Transform.translate(
-                      offset: Offset(0, 30 * (1 - actualValue)),
-                      child: Opacity(
-                        opacity: actualValue,
-                        child: _buildActionButton(
-                          icon: Icons.admin_panel_settings,
-                          color: const Color(0xFF9C27B0),
-                          tooltip: 'Agregar Administrador',
-                          onPressed:
-                              () => _showAddUserModal(preselectedRole: 0),
-                          label: 'Administrador',
+          if (_isExpanded) // Solo renderizar cuando está expandido
+            AnimatedOpacity(
+              opacity: 1.0,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Administrador
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    // Delay para el primer botón
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(0, 30 * (1 - value)),
+                        child: Opacity(
+                          opacity: value,
+                          child: _buildActionButton(
+                            icon: Icons.admin_panel_settings,
+                            color: const Color(0xFF9C27B0),
+                            tooltip: 'Agregar Administrador',
+                            onPressed:
+                                () => _showAddUserModal(preselectedRole: 0),
+                            label: 'Administrador',
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                // Cocinero
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(
-                    begin: 0.0,
-                    end: _isExpanded ? 1.0 : 0.0,
+                      );
+                    },
                   ),
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                  // Delay para el segundo botón
-                  builder: (context, value, child) {
-                    // Delay artificial - aparece después de 120ms cuando se expande
-                    double actualValue =
-                        _isExpanded
-                            ? (value < 0.4 ? 0.0 : (value - 0.4) / 0.6)
-                            : 0.0;
-
-                    return Transform.translate(
-                      offset: Offset(0, 30 * (1 - actualValue)),
-                      child: Opacity(
-                        opacity: actualValue,
-                        child: _buildActionButton(
-                          icon: Icons.restaurant,
-                          color: const Color(0xFFE57373),
-                          tooltip: 'Agregar Cocinero',
-                          onPressed:
-                              () => _showAddUserModal(preselectedRole: 2),
-                          label: 'Cocinero',
+                  const SizedBox(height: 12),
+                  // Cocinero
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    // Delay para el segundo botón
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(0, 30 * (1 - value)),
+                        child: Opacity(
+                          opacity: value,
+                          child: _buildActionButton(
+                            icon: Icons.restaurant,
+                            color: const Color(0xFFE57373),
+                            tooltip: 'Agregar Cocinero',
+                            onPressed:
+                                () => _showAddUserModal(preselectedRole: 2),
+                            label: 'Cocinero',
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                // Barista
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(
-                    begin: 0.0,
-                    end: _isExpanded ? 1.0 : 0.0,
+                      );
+                    },
                   ),
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                  // Delay para el tercer botón
-                  builder: (context, value, child) {
-                    // Delay artificial - aparece después de 180ms cuando se expande
-                    double actualValue =
-                        _isExpanded
-                            ? (value < 0.6 ? 0.0 : (value - 0.6) / 0.4)
-                            : 0.0;
-
-                    return Transform.translate(
-                      offset: Offset(0, 30 * (1 - actualValue)),
-                      child: Opacity(
-                        opacity: actualValue,
-                        child: _buildActionButton(
-                          icon: Icons.coffee,
-                          color: const Color(0xFF4DD0E1),
-                          tooltip: 'Agregar Barista',
-                          onPressed:
-                              () => _showAddUserModal(preselectedRole: 3),
-                          label: 'Barista',
+                  const SizedBox(height: 12),
+                  // Barista
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    // Delay para el tercer botón
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(0, 30 * (1 - value)),
+                        child: Opacity(
+                          opacity: value,
+                          child: _buildActionButton(
+                            icon: Icons.coffee,
+                            color: const Color(0xFF4DD0E1),
+                            tooltip: 'Agregar Barista',
+                            onPressed:
+                                () => _showAddUserModal(preselectedRole: 3),
+                            label: 'Barista',
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-              ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
-          ),
 
           // Botón principal (siempre visible y en posición fija)
           Container(
-            margin: const EdgeInsets.only(bottom: 80, right: 6),
+            margin: const EdgeInsets.only(bottom: 20, right: 6),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -1423,6 +1518,98 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   },
                   child: Text('Eliminar', style: TextStyle(color: Colors.red)),
                 ),
+            ],
+          ),
+    );
+  }
+
+  Widget _buildUserList() {
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _filteredUsers.isEmpty
+        ? _buildEmptyState()
+        : RefreshIndicator(
+          onRefresh: _loadUsers,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: ListView.builder(
+              key: ValueKey<int>(_filteredUsers.length),
+              padding: const EdgeInsets.only(
+                bottom: 20,
+              ), // Espacio para la navegación
+              itemCount: _filteredUsers.length,
+              itemBuilder: (context, index) {
+                final user = _filteredUsers[index];
+                // Usar AnimatedOpacity para animar la entrada de las tarjetas
+                return AnimatedOpacity(
+                  opacity: 1.0,
+                  duration: Duration(milliseconds: 300 + (index * 50)),
+                  curve: Curves.easeInOut,
+                  child: _buildUserCard(user, Theme.of(context)),
+                );
+              },
+            ),
+          ),
+        );
+  }
+
+  // Diálogo para configurar la IP del servidor
+  void _showConfigDialog(String currentIp) {
+    // Siempre usar la IP fija 192.168.1.121
+    const String fixedIp = '192.168.1.121';
+    final TextEditingController ipController = TextEditingController(
+      text: fixedIp,
+    );
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Configuración del Servidor'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'La aplicación está configurada para conectarse al servidor usando la dirección IP $fixedIp.',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ipController,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección IP',
+                    hintText: '192.168.1.121',
+                    border: OutlineInputBorder(),
+                  ),
+                  enabled: false, // Deshabilitar la edición
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('server_ip', fixedIp);
+                  await prefs.setString('serverIp', fixedIp);
+
+                  if (!mounted) return;
+                  Navigator.pop(context);
+
+                  // Mostrar mensaje de confirmación
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Usando la IP fija del servidor: 192.168.1.121',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+
+                  // Recargar los usuarios
+                  _loadUsers();
+                },
+                child: const Text('Aceptar'),
+              ),
             ],
           ),
     );

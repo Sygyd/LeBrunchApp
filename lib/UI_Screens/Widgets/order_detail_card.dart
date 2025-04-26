@@ -175,12 +175,12 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     final estado = widget.order['estado'] ?? 'pendiente';
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
       child: InkWell(
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -189,8 +189,8 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: 6,
+                      vertical: 3,
                     ),
                     decoration: BoxDecoration(
                       color: _getStatusColor(estado, theme),
@@ -201,14 +201,16 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
+                        fontSize: 10,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Text(
                     'Pedido #${widget.order['idpedido']}',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
+                      fontSize: 14,
                     ),
                   ),
                   const Spacer(),
@@ -216,12 +218,13 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                     '${widget.order['fecha'] ?? ''} ${widget.order['hora'] ?? ''}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               // Información del cliente
               Row(
@@ -259,13 +262,16 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
 
               // Si está expandido, mostrar los items
               if (widget.isExpanded && items.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
 
-                Text('Detalle del pedido', style: theme.textTheme.titleSmall),
+                Text(
+                  'Detalle del pedido',
+                  style: theme.textTheme.titleSmall?.copyWith(fontSize: 12),
+                ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
 
                 ListView.builder(
                   shrinkWrap: true,
@@ -277,25 +283,30 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                     final precioUnitario = item['precio_unitario'] ?? 0.0;
 
                     return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
+                      padding: const EdgeInsets.symmetric(vertical: 2.0),
                       child: Row(
                         children: [
                           Text(
                             '$cantidadItem x',
                             style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.bold,
+                              fontSize: 12,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               item['nombre'] ?? 'Item',
-                              style: theme.textTheme.bodyMedium,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                           Text(
                             _formatCurrency(precioUnitario * cantidadItem),
-                            style: theme.textTheme.bodyMedium,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -303,8 +314,8 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                   },
                 ),
 
-                const SizedBox(height: 16),
-                const Divider(),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
 
                 // Total
                 Row(
@@ -338,7 +349,13 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         OutlinedButton.icon(
                           icon: const Icon(Icons.cancel_outlined),
                           label: const Text('Cancelar'),
-                          onPressed: () => widget.onStatusChange!('cancelado'),
+                          onPressed:
+                              () => _showConfirmationDialog(
+                                context,
+                                'Cancelar Pedido',
+                                '¿Estás seguro de que deseas cancelar este pedido?',
+                                'cancelado',
+                              ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red,
                           ),
@@ -347,7 +364,13 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         ElevatedButton.icon(
                           icon: const Icon(Icons.check_circle_outline),
                           label: const Text('Completar'),
-                          onPressed: () => widget.onStatusChange!('completado'),
+                          onPressed:
+                              () => _showConfirmationDialog(
+                                context,
+                                'Completar Pedido',
+                                '¿Estás seguro de que deseas marcar este pedido como completado?',
+                                'completado',
+                              ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
@@ -377,21 +400,28 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                 ),
                 if (widget.onTap != null) ...[
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Tocar para ver detalles',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.primary,
+                  GestureDetector(
+                    onTap: widget.onTap,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.isExpanded ? 'Ver menos' : 'Ver más',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
-                      Icon(
-                        Icons.arrow_drop_down,
-                        size: 16,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ],
+                        Icon(
+                          widget.isExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: theme.colorScheme.primary,
+                          size: 16,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ],
@@ -426,5 +456,105 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
       default:
         return status.toUpperCase();
     }
+  }
+
+  void _showConfirmationDialog(
+    BuildContext context,
+    String title,
+    String message,
+    String status,
+  ) {
+    final theme = Theme.of(context);
+
+    // Usar los colores directamente del esquema de colores del tema
+    final Color actionColor =
+        status == 'cancelado'
+            ? theme.colorScheme.error
+            : theme.colorScheme.primary;
+
+    final Color overlayColor = theme.colorScheme.surface.withOpacity(0.95);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Evitar cierre accidental
+      builder:
+          (context) => Theme(
+            // Asegurar que el diálogo utilice el tema actual
+            data: theme,
+            child: AlertDialog(
+              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+              contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              title: Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: actionColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              content: Text(
+                message,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontFamily: 'LightHouse',
+                ),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: actionColor, width: 2),
+              ),
+              backgroundColor: overlayColor,
+              elevation: 8,
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.onSurface.withOpacity(
+                      0.8,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text('Cancelar', style: theme.textTheme.labelLarge),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onStatusChange!(status);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: actionColor,
+                    foregroundColor:
+                        status == 'cancelado'
+                            ? theme.colorScheme.onError
+                            : theme.colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Confirmar',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color:
+                          status == 'cancelado'
+                              ? theme.colorScheme.onError
+                              : theme.colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
   }
 }

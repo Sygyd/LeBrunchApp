@@ -21,6 +21,8 @@ class OrdersService {
     String? startDate,
     String? endDate,
     String? estado,
+    String? startTime,
+    String? endTime,
   }) async {
     try {
       // Construir la URL con parámetros de consulta
@@ -28,6 +30,8 @@ class OrdersService {
       if (startDate != null) queryParams['startDate'] = startDate;
       if (endDate != null) queryParams['endDate'] = endDate;
       if (estado != null) queryParams['estado'] = estado;
+      if (startTime != null) queryParams['startTime'] = startTime;
+      if (endTime != null) queryParams['endTime'] = endTime;
 
       final baseUrl = await _getBaseUrl();
       final uri = Uri.parse(
@@ -48,12 +52,24 @@ class OrdersService {
           '❌ Error al obtener pedidos: ${response.statusCode} - ${response.body}',
         );
         // Si el backend devuelve un error, intentar con otro endpoint más simple
-        return await _queryOrdersDirect(startDate, endDate, estado);
+        return await _queryOrdersDirect(
+          startDate,
+          endDate,
+          estado,
+          startTime,
+          endTime,
+        );
       }
     } catch (e) {
       print('⚠️ Excepción al obtener pedidos: $e');
       // Intentar con otro endpoint más simple
-      return await _queryOrdersDirect(startDate, endDate, estado);
+      return await _queryOrdersDirect(
+        startDate,
+        endDate,
+        estado,
+        startTime,
+        endTime,
+      );
     }
   }
 
@@ -62,27 +78,50 @@ class OrdersService {
     String? startDate,
     String? endDate,
     String? estado,
+    String? startTime,
+    String? endTime,
   ) async {
     try {
-      // Intentar consulta directa a la base de datos
-      final query = {
-        'query':
-            'SELECT p.idpedido, p.idpersona, p.estado, ' +
-            'TO_CHAR(p.fecha, \'YYYY-MM-DD\') as fecha, ' +
-            'TO_CHAR(p.fecha, \'HH24:MI\') as hora, ' +
-            'pe.nombre || \' \' || pe.apellido as cliente ' +
-            'FROM pedidos p ' +
-            'INNER JOIN personas pe ON p.idpersona = pe.idpersonas ' +
-            'WHERE 1=1' +
-            (estado != null ? " AND p.estado = '$estado'" : '') +
-            (startDate != null ? " AND p.fecha >= '$startDate'::date" : '') +
-            (endDate != null
-                ? " AND p.fecha <= '$endDate'::date + interval '1 day'"
-                : '') +
-            ' ORDER BY p.fecha DESC',
-      };
+      // Construir la consulta SQL con los filtros
+      String sql =
+          'SELECT p.idpedido, p.idpersona, p.estado, ' +
+          'TO_CHAR(p.fecha, \'YYYY-MM-DD\') as fecha, ' +
+          'TO_CHAR(p.fecha, \'HH24:MI\') as hora, ' +
+          'pe.nombre || \' \' || pe.apellido as cliente ' +
+          'FROM pedidos p ' +
+          'INNER JOIN personas pe ON p.idpersona = pe.idpersonas ' +
+          'WHERE 1=1';
 
-      print('🔍 Intentando consulta directa: ${query['query']}');
+      // Añadir filtro de estado si está definido
+      if (estado != null) {
+        sql += " AND p.estado = '$estado'";
+      }
+
+      // Añadir filtro de fecha si está definido
+      if (startDate != null) {
+        sql += " AND p.fecha >= '$startDate'::date";
+      }
+
+      if (endDate != null) {
+        sql += " AND p.fecha <= '$endDate'::date + interval '1 day'";
+      }
+
+      // Añadir filtro de hora si está definido
+      if (startTime != null) {
+        sql += " AND TO_CHAR(p.fecha, 'HH24:MI') >= '$startTime'";
+      }
+
+      if (endTime != null) {
+        sql += " AND TO_CHAR(p.fecha, 'HH24:MI') <= '$endTime'";
+      }
+
+      // Ordenar por fecha descendente por defecto
+      sql += ' ORDER BY p.fecha DESC';
+
+      print('🔍 Intentando consulta directa: $sql');
+
+      // Crear el objeto query para la consulta
+      final query = {'query': sql};
 
       final baseUrl = await _getBaseUrl();
       final uri = Uri.parse('$baseUrl/db/query');
@@ -331,10 +370,20 @@ class OrdersService {
 
       print('🔄 Actualizando estado de pedido #$orderId a $newStatus');
 
+      // Convertir estado si es necesario (completado/cancelado → entregado/cancelado para el servidor)
+      String serverStatus = newStatus;
+      if (newStatus == 'completado') {
+        // El servidor usa 'entregado' en lugar de 'completado'
+        serverStatus = 'entregado';
+        print(
+          'ℹ️ Convertido "completado" a "entregado" para comunicación con servidor',
+        );
+      }
+
       final response = await http.patch(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'estado': newStatus}),
+        body: jsonEncode({'estado': serverStatus}),
       );
 
       if (response.statusCode == 200) {
@@ -345,12 +394,15 @@ class OrdersService {
           '❌ Error al actualizar estado: ${response.statusCode} - ${response.body}',
         );
         // Intentar método alternativo
-        return await _updateOrderStatusFallback(orderId, newStatus);
+        return await _updateOrderStatusFallback(orderId, serverStatus);
       }
     } catch (e) {
       print('⚠️ Excepción al actualizar estado: $e');
       // Intentar método alternativo
-      return await _updateOrderStatusFallback(orderId, newStatus);
+      return await _updateOrderStatusFallback(
+        orderId,
+        newStatus == 'completado' ? 'entregado' : newStatus,
+      );
     }
   }
 

@@ -27,14 +27,14 @@ class _MenuScreenState extends State<MenuScreen>
   @override
   bool get wantKeepAlive => true;
   final TextEditingController _searchController = TextEditingController();
-  final ValueNotifier<List<String>> _selectedCategories = ValueNotifier([]);
+  // Solo un _selectedCategories que sea un Set<String>
+  Set<String> _selectedCategories = {};
   List<Map<String, dynamic>> _dishes = [];
   int _selectedIndex = 0;
   // Guarda el ID del plato expandido actualmente (si existe)
   String? _expandedDishId;
   bool _isSearching = false;
   String _searchQuery = '';
-  String _selectedCategory = '';
   List<Map<String, dynamic>> _filteredDishes = [];
   bool _isLoading = false;
   // Crear el FocusNode al declararlo para evitar problemas de inicialización
@@ -81,13 +81,13 @@ class _MenuScreenState extends State<MenuScreen>
 
   // Método para manejar la selección de categorías
   void _toggleCategory(String category) {
-    final newCategories = List<String>.from(_selectedCategories.value);
+    final newCategories = List<String>.from(_selectedCategories);
     if (newCategories.contains(category)) {
       newCategories.remove(category);
     } else {
       newCategories.add(category);
     }
-    _selectedCategories.value = newCategories; // Actualiza el ValueNotifier
+    _selectedCategories = newCategories.toSet(); // Actualiza el Set<String>
   }
 
   Future<void> _deleteDish(String id) async {
@@ -209,71 +209,77 @@ class _MenuScreenState extends State<MenuScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-
     return BackgroundScaffold(
       body: SafeArea(
+        minimum: const EdgeInsets.only(top: 0),
         child: Stack(
           children: [
-            RefreshIndicator(
-              onRefresh: _fetchDishes,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: custom.SearchBar(
-                            controller: _searchController,
-                            focusNode: _searchFocusNode,
-                            onChanged: (value) {
+            Column(
+              children: [
+                // Barra de búsqueda y carrusel
+                Expanded(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 16.0,
+                          right: 16.0,
+                          top: 8.0,
+                          bottom: 12.0,
+                        ),
+                        child: custom.SearchBar(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                              _filterDishes();
+                            });
+                          },
+                        ),
+                      ),
+
+                      // Carrusel de categorías con selección múltiple
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10.0),
+                        child: SizedBox(
+                          height: 120,
+                          child: CategoryCarousel(
+                            categories: _categories,
+                            multiSelect: true,
+                            selectedCategories: _selectedCategories,
+                            onCategoryToggled: (category) {
                               setState(() {
-                                _searchQuery = value;
-                                _applyFilters();
+                                if (_selectedCategories.contains(category)) {
+                                  _selectedCategories.remove(category);
+                                } else {
+                                  _selectedCategories.add(category);
+                                }
+                                _filterDishes();
                               });
                             },
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+
+                      // Lista de platos
+                      Expanded(
+                        child:
+                            _isLoading
+                                ? const Center(
+                                  child: CircularProgressIndicator(),
+                                )
+                                : _buildDishList(),
+                      ),
+                      SizedBox(height: 0),
+                    ],
                   ),
-                  // Carrusel de categorías
-                  ValueListenableBuilder<List<String>>(
-                    valueListenable: _selectedCategories,
-                    builder: (context, selectedCategories, child) {
-                      return CategoryCarousel(
-                        categories: _categories,
-                        selectedCategory: _selectedCategory,
-                        onCategorySelected: (category) {
-                          setState(() {
-                            if (_selectedCategory == category) {
-                              _selectedCategory = '';
-                            } else {
-                              _selectedCategory = category;
-                            }
-                            _applyFilters();
-                          });
-                        },
-                      );
-                    },
-                  ),
-                  // Lista de platos
-                  Expanded(
-                    child:
-                        _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _buildDishList(),
-                  ),
-                  // Espacio de 0 para pegarse a la barra
-                  SizedBox(height: 0),
-                ],
-              ),
+                ),
+              ],
             ),
-            // Botón de agregar plato optimizado
             Positioned(
               right: 20,
-              bottom:
-                  20, // Reducido para acercarse más a la barra de navegación
+              bottom: 20,
               child: Container(
                 decoration: BoxDecoration(
                   boxShadow: [
@@ -288,7 +294,6 @@ class _MenuScreenState extends State<MenuScreen>
                 ),
                 child: FloatingActionButton(
                   onPressed: () async {
-                    // Mostrar el modal para agregar plato
                     final result = await showModalBottomSheet<bool>(
                       context: context,
                       isScrollControlled: true,
@@ -301,7 +306,6 @@ class _MenuScreenState extends State<MenuScreen>
                           ),
                     );
 
-                    // Si se agregó un plato exitosamente, actualizar la lista
                     if (result == true) {
                       _fetchDishes();
                     }
@@ -319,52 +323,37 @@ class _MenuScreenState extends State<MenuScreen>
     );
   }
 
-  void _applyFilters() {
-    final query = _searchQuery.toLowerCase();
+  void _filterDishes() {
     setState(() {
       _filteredDishes =
           _dishes.where((dish) {
             final nameMatch = dish['nombre'].toString().toLowerCase().contains(
-              query,
+              _searchQuery.toLowerCase(),
             );
+
             final categoryMatch =
-                _selectedCategory.isEmpty ||
-                dish['categoria'] == _selectedCategory;
+                _selectedCategories.isEmpty ||
+                _selectedCategories.contains(dish['categoria']);
+
             return nameMatch && categoryMatch;
           }).toList();
     });
   }
 
   Widget _buildDishList() {
-    // Filtrar los platos según la búsqueda y las categorías seleccionadas
-    final filteredDishes =
-        _dishes.where((dish) {
-          final nameMatch = dish['nombre'].toString().toLowerCase().contains(
-            _searchController.text.toLowerCase(),
-          );
-          final categoryMatch =
-              _selectedCategory.isEmpty ||
-              dish['categoria'] == _selectedCategory;
-          return nameMatch && categoryMatch;
-        }).toList();
-
-    if (filteredDishes.isEmpty) {
+    if (_filteredDishes.isEmpty) {
       return _buildEmptyState();
     }
 
-    // Agrupar los platos por categoría
     final Map<String, List<Map<String, dynamic>>> dishesByCategory = {};
 
-    // Primero, inicializar todas las categorías del carousel para mantener el orden
     for (var category in _categories) {
       dishesByCategory[category['name']!] = [];
     }
 
-    // Añadir una categoría "Otros" para platos sin categoría reconocida
     dishesByCategory['Otros'] = [];
 
-    // Agrupar los platos filtrados por categoría
-    for (var dish in filteredDishes) {
+    for (var dish in _filteredDishes) {
       final category = dish['categoria']?.toString() ?? 'Otros';
       if (dishesByCategory.containsKey(category)) {
         dishesByCategory[category]!.add(dish);
@@ -373,34 +362,27 @@ class _MenuScreenState extends State<MenuScreen>
       }
     }
 
-    // Eliminar categorías vacías
     dishesByCategory.removeWhere((key, value) => value.isEmpty);
 
-    // Si no hay categorías con platos después del filtrado
     if (dishesByCategory.isEmpty) {
       return _buildEmptyState();
     }
 
-    // Usamos un widget que no obligue a reconstruir toda la vista
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 120),
-      // Construir secciones para cada categoría
       itemCount: dishesByCategory.length,
       itemBuilder: (context, index) {
-        // Obtener la categoría en el orden del carousel
         final categoryName = dishesByCategory.keys.toList()[index];
         final categoryDishes = dishesByCategory[categoryName]!;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Encabezado de categoría
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: Row(
                 children: [
-                  // Buscar la imagen de la categoría en el carousel
                   _buildCategoryIcon(categoryName),
                   const SizedBox(width: 12),
                   Text(
@@ -424,7 +406,6 @@ class _MenuScreenState extends State<MenuScreen>
               ),
             ),
 
-            // Grid para platos de esta categoría
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: _buildCategoryDishGrid(categoryDishes),
@@ -436,22 +417,18 @@ class _MenuScreenState extends State<MenuScreen>
   }
 
   Widget _buildCategoryDishGrid(List<Map<String, dynamic>> dishes) {
-    // Definiendo tamaños apropiados para la cuadrícula
     final screenSize = MediaQuery.of(context).size;
 
-    // Determinamos cuántas tarjetas por fila según el ancho de pantalla
     int crossAxisCount;
     if (screenSize.width < 600) {
-      crossAxisCount = 3; // Móviles - 3 tarjetas por fila
+      crossAxisCount = 3;
     } else if (screenSize.width < 1024) {
-      crossAxisCount = 4; // Tablets y pantallas medianas
+      crossAxisCount = 4;
     } else {
-      crossAxisCount = 5; // Pantallas grandes
+      crossAxisCount = 5;
     }
 
-    // Ajustamos el aspect ratio para que las tarjetas encajen perfectamente
-    final childAspectRatio =
-        0.66; // Valor ajustado para tarjetas más proporcionales
+    final childAspectRatio = 0.66;
 
     return GridView.builder(
       shrinkWrap: true,
@@ -459,15 +436,14 @@ class _MenuScreenState extends State<MenuScreen>
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: childAspectRatio,
-        crossAxisSpacing: 6, // Menos espacio horizontal
-        mainAxisSpacing: 10, // Menos espacio vertical
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 10,
       ),
       itemCount: dishes.length,
       itemBuilder: (context, index) {
         return FutureBuilder<int?>(
           future: widget.getUserRole(),
           builder: (context, snapshot) {
-            // Mientras se carga, usamos 0 por defecto
             final userRole = snapshot.data ?? 0;
             return DishCard(
               dish: dishes[index],
@@ -481,7 +457,6 @@ class _MenuScreenState extends State<MenuScreen>
                 });
               },
               editDish: (dish) {
-                // Mostrar el modal para editar el plato
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
@@ -503,9 +478,7 @@ class _MenuScreenState extends State<MenuScreen>
     );
   }
 
-  // Método para construir el ícono de la categoría
   Widget _buildCategoryIcon(String categoryName) {
-    // Buscar la imagen de la categoría en el carousel
     final categoryData = _categories.firstWhere(
       (category) => category['name'] == categoryName,
       orElse: () => {'name': categoryName, 'image': 'assets/images/tablas.jpg'},
@@ -562,7 +535,7 @@ class _MenuScreenState extends State<MenuScreen>
             onPressed: () {
               _searchController.clear();
               setState(() {
-                _selectedCategory = '';
+                _selectedCategories = {};
                 _searchQuery = '';
                 _filteredDishes = _dishes;
               });

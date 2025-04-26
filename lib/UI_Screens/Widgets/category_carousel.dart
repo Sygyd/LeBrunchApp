@@ -3,15 +3,36 @@ import 'dart:math' as math;
 
 class CategoryCarousel extends StatelessWidget {
   final List<Map<String, String>> categories;
-  final String selectedCategory;
-  final Function(String) onCategorySelected;
+
+  // Propiedades para selección única
+  final String? selectedCategory;
+  final Function(String)? onCategorySelected;
+
+  // Propiedades para selección múltiple
+  final Set<String>? selectedCategories;
+  final Function(String)? onCategoryToggled;
+
+  // Modo múltiple
+  final bool multiSelect;
 
   const CategoryCarousel({
     super.key,
     required this.categories,
-    required this.selectedCategory,
-    required this.onCategorySelected,
-  });
+    this.selectedCategory,
+    this.onCategorySelected,
+    this.selectedCategories,
+    this.onCategoryToggled,
+    this.multiSelect = false,
+  }) : assert(
+         (multiSelect &&
+                 selectedCategories != null &&
+                 onCategoryToggled != null) ||
+             (!multiSelect &&
+                 selectedCategory != null &&
+                 onCategorySelected != null),
+         'Debe proporcionar selectedCategory y onCategorySelected para selección única, '
+         'o selectedCategories y onCategoryToggled para selección múltiple.',
+       );
 
   @override
   Widget build(BuildContext context) {
@@ -26,12 +47,21 @@ class CategoryCarousel extends StatelessWidget {
         physics: const BouncingScrollPhysics(),
         itemBuilder: (context, index) {
           final category = categories[index];
-          final isSelected = selectedCategory == category['name'];
+          final bool isSelected =
+              multiSelect
+                  ? selectedCategories!.contains(category['name'])
+                  : selectedCategory == category['name'];
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 8.0),
             child: GestureDetector(
-              onTap: () => onCategorySelected(category['name']!),
+              onTap: () {
+                if (multiSelect) {
+                  onCategoryToggled!(category['name']!);
+                } else {
+                  onCategorySelected!(category['name']!);
+                }
+              },
               child: TweenAnimationBuilder<double>(
                 tween: Tween<double>(begin: 0, end: isSelected ? 1 : 0),
                 duration: const Duration(milliseconds: 300),
@@ -87,7 +117,10 @@ class CategoryCarousel extends StatelessWidget {
                               Transform.rotate(
                                 angle: isSelected ? math.pi * 2 * 0.02 : 0,
                                 child: Hero(
-                                  tag: 'category_${category['name']}',
+                                  tag:
+                                      multiSelect
+                                          ? 'category_multi_${category['name']}'
+                                          : 'category_${category['name']}',
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(14),
                                     child: Container(

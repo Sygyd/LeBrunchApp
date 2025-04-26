@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/order_detail_card.dart';
 
@@ -28,39 +29,48 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   List<Map<String, dynamic>> _orders = [];
   Set<int> _expandedItems = {}; // Conjunto de índices de items expandidos
   String? _filterStatus; // Para filtrar por estado
+  DateTime _selectedDate =
+      DateTime.now(); // Fecha seleccionada, inicialmente hoy
+  bool _isAscendingOrder = false; // Orden ascendente o descendente
+
+  // Variables para el rango de fechas
+  DateTime? _rangeStartDate;
+  DateTime? _rangeEndDate;
+  bool _isDateRangeActive = false;
 
   @override
   void initState() {
     super.initState();
     _filterStatus = widget.estado;
-    _loadOrders();
+
+    // Si no se proporciona fecha de inicio/fin, cargar todas las órdenes
+    if (widget.startDate == null && widget.endDate == null) {
+      _loadOrders(); // Cargar todas las órdenes sin filtro de fecha
+    } else {
+      _loadOrders(); // Cargar órdenes con los filtros proporcionados
+    }
   }
 
-  Future<void> _loadOrders() async {
+  // Método para cargar las órdenes de una fecha específica
+  Future<void> _loadOrdersForDate(DateTime date) async {
+    final formatter = DateFormat('yyyy-MM-dd');
+    final formattedDate = formatter.format(date);
+
     setState(() {
       _isLoading = true;
+      _selectedDate = date; // Actualizar la fecha seleccionada
+      _isDateRangeActive = false; // Desactivar el rango de fechas
+      _rangeStartDate = null;
+      _rangeEndDate = null;
     });
 
     try {
-      print(
-        'Cargando órdenes con filtro: ${_filterStatus ?? "TODOS"}',
-      ); // Log para debug
-
+      // Explícitamente establecer _filterStatus para mantener el filtro actual
       final orders = await _ordersService.getOrders(
-        startDate: widget.startDate,
-        endDate: widget.endDate,
+        startDate: formattedDate,
+        endDate: formattedDate,
         estado: _filterStatus,
       );
-
-      print('Órdenes obtenidas: ${orders.length}');
-
-      // Debug: mostrar estados de las órdenes recibidas
-      if (orders.isNotEmpty) {
-        print('Estados de las órdenes:');
-        for (var order in orders) {
-          print('Pedido #${order['idpedido']} - Estado: ${order['estado']}');
-        }
-      }
 
       if (mounted) {
         setState(() {
@@ -69,7 +79,190 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         });
       }
     } catch (e) {
-      print('Error al cargar órdenes: $e'); // Log para debug
+      print('Error al cargar órdenes por fecha: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar los pedidos: $e')),
+        );
+      }
+    }
+  }
+
+  // Método unificado para seleccionar fecha o rango de fechas
+  Future<void> _showCalendarPicker(BuildContext context) async {
+    final config = CalendarDatePicker2WithActionButtonsConfig(
+      calendarType: CalendarDatePicker2Type.range,
+      selectedDayHighlightColor: Theme.of(context).colorScheme.primary,
+      weekdayLabels: ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'],
+      weekdayLabelTextStyle: const TextStyle(
+        fontFamily: 'MADE TOMMY',
+        color: Colors.black87,
+        fontWeight: FontWeight.bold,
+      ),
+      firstDayOfWeek: 1, // Lunes
+      controlsHeight: 50,
+      controlsTextStyle: const TextStyle(
+        fontFamily: 'MADE TOMMY',
+        color: Colors.black,
+        fontSize: 15,
+        fontWeight: FontWeight.bold,
+      ),
+      dayTextStyle: const TextStyle(
+        fontFamily: 'MADE TOMMY',
+        color: Colors.black,
+        fontWeight: FontWeight.bold,
+      ),
+      selectedDayTextStyle: const TextStyle(
+        fontFamily: 'MADE TOMMY',
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+      ),
+      yearTextStyle: const TextStyle(
+        fontFamily: 'MADE TOMMY',
+        color: Colors.black,
+        fontSize: 15,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    // Preparar los valores iniciales
+    List<DateTime?> initialValues = [];
+    if (_isDateRangeActive && _rangeStartDate != null) {
+      // Si hay un rango activo, mostrar el rango
+      initialValues = [_rangeStartDate, _rangeEndDate];
+    } else {
+      // Si no hay rango, mostrar la fecha seleccionada
+      initialValues = [_selectedDate];
+    }
+
+    final results = await showCalendarDatePicker2Dialog(
+      context: context,
+      config: config,
+      dialogSize: const Size(325, 400),
+      borderRadius: BorderRadius.circular(15),
+      value: initialValues,
+      dialogBackgroundColor: Colors.white,
+    );
+
+    // Procesar resultados
+    if (results != null && results.isNotEmpty) {
+      setState(() {
+        _isLoading = true;
+
+        if (results.length > 1 && results[1] != null) {
+          // Es un rango de fechas
+          _isDateRangeActive = true;
+          _rangeStartDate = results[0];
+          _rangeEndDate = results[1];
+        } else {
+          // Es una fecha individual
+          _isDateRangeActive = false;
+          _selectedDate = results[0] ?? DateTime.now();
+          _rangeStartDate = null;
+          _rangeEndDate = null;
+        }
+      });
+
+      // Cargar las órdenes con los nuevos parámetros
+      await _loadOrdersWithDates();
+    }
+  }
+
+  // Método para cargar órdenes con las fechas actuales (ya sea rango o fecha individual)
+  Future<void> _loadOrdersWithDates() async {
+    final formatter = DateFormat('yyyy-MM-dd');
+    String? startDate;
+    String? endDate;
+
+    if (_isDateRangeActive && _rangeStartDate != null) {
+      // Usar rango de fechas
+      startDate = formatter.format(_rangeStartDate!);
+      endDate =
+          _rangeEndDate != null ? formatter.format(_rangeEndDate!) : startDate;
+    } else {
+      // Usar fecha individual
+      startDate = formatter.format(_selectedDate);
+      endDate = startDate;
+    }
+
+    try {
+      final orders = await _ordersService.getOrders(
+        startDate: startDate,
+        endDate: endDate,
+        estado: _filterStatus,
+      );
+
+      if (mounted) {
+        setState(() {
+          _orders = _sortOrders(orders);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error al cargar órdenes: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar los pedidos: $e')),
+        );
+      }
+    }
+  }
+
+  // Método principal para cargar órdenes con los filtros actuales
+  Future<void> _loadOrders() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Construir los posibles parámetros de consulta
+      String? startDate = widget.startDate;
+      String? endDate = widget.endDate;
+
+      // Si hay un rango de fechas activo, usar esas fechas
+      if (_isDateRangeActive && _rangeStartDate != null) {
+        final formatter = DateFormat('yyyy-MM-dd');
+        startDate = formatter.format(_rangeStartDate!);
+        endDate =
+            _rangeEndDate != null
+                ? formatter.format(_rangeEndDate!)
+                : startDate;
+      }
+      // Si no hay rango pero hay fecha seleccionada (y no hay parámetros de widget), usar esa fecha
+      else if (startDate == null && endDate == null) {
+        final formatter = DateFormat('yyyy-MM-dd');
+        startDate = formatter.format(_selectedDate);
+        endDate = startDate;
+      }
+
+      print(
+        'Cargando órdenes con filtro: ${_filterStatus ?? "TODOS"}, ' +
+            'Fecha: ${startDate ?? "Todas"} - ${endDate ?? "Todas"}',
+      );
+
+      final orders = await _ordersService.getOrders(
+        startDate: startDate,
+        endDate: endDate,
+        estado: _filterStatus,
+      );
+
+      // Ordenar las órdenes según la preferencia del usuario
+      final sortedOrders = _sortOrders(orders);
+
+      if (mounted) {
+        setState(() {
+          _orders = sortedOrders;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error al cargar órdenes: $e');
 
       if (mounted) {
         setState(() {
@@ -157,17 +350,156 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     }
   }
 
+  // Método para cambiar el orden
+  void _toggleSortOrder() {
+    setState(() {
+      _isAscendingOrder = !_isAscendingOrder;
+      _orders = _sortOrders(_orders);
+    });
+  }
+
+  // Método para ordenar las órdenes
+  List<Map<String, dynamic>> _sortOrders(List<Map<String, dynamic>> orders) {
+    // Crear una copia para no modificar la original
+    final sortedOrders = List<Map<String, dynamic>>.from(orders);
+
+    // Ordenar por fecha y hora
+    sortedOrders.sort((a, b) {
+      // Construir DateTime completo con fecha y hora
+      final aDateStr = a['fecha'] ?? '';
+      final aTimeStr = a['hora'] ?? '';
+      final bDateStr = b['fecha'] ?? '';
+      final bTimeStr = b['hora'] ?? '';
+
+      DateTime aDateTime, bDateTime;
+
+      try {
+        // Intentar parsear fechas y horas
+        aDateTime = DateTime.parse('${aDateStr}T${aTimeStr}:00');
+      } catch (e) {
+        // Si hay error, usar fecha actual pero muy antigua
+        aDateTime = DateTime(1900);
+      }
+
+      try {
+        bDateTime = DateTime.parse('${bDateStr}T${bTimeStr}:00');
+      } catch (e) {
+        bDateTime = DateTime(1900);
+      }
+
+      // Comparar según el orden seleccionado
+      return _isAscendingOrder
+          ? aDateTime.compareTo(bDateTime)
+          : bDateTime.compareTo(aDateTime);
+    });
+
+    return sortedOrders;
+  }
+
+  // Método para formatear el rango de fechas para mostrar
+  String _formatDateRange() {
+    if (_rangeStartDate == null) return '';
+
+    final formatter = DateFormat('dd/MM/yyyy');
+    final start = formatter.format(_rangeStartDate!);
+
+    if (_rangeEndDate == null ||
+        _rangeEndDate!.isAtSameMomentAs(_rangeStartDate!)) {
+      return start;
+    }
+
+    final end = formatter.format(_rangeEndDate!);
+    return '$start - $end';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Ordenar y agrupar las órdenes por estado
+    Map<String, List<Map<String, dynamic>>> groupedOrders = {
+      'pendiente': [],
+      'completado': [],
+      'cancelado': [],
+      'otro': [],
+    };
+
+    // Organizar las órdenes por estado
+    for (var order in _orders) {
+      String status = (order['estado'] ?? 'otro').toLowerCase();
+      if (groupedOrders.containsKey(status)) {
+        groupedOrders[status]!.add(order);
+      } else {
+        groupedOrders['otro']!.add(order);
+      }
+    }
+
+    // Formatear la fecha o rango de fechas seleccionado
+    String formattedSelectedDate = '';
+    if (_isDateRangeActive && _rangeStartDate != null) {
+      formattedSelectedDate = _formatDateRange();
+    } else if (widget.startDate == null && widget.endDate == null) {
+      formattedSelectedDate = DateFormat('dd/MM/yyyy').format(_selectedDate);
+    } else if (widget.startDate != null && widget.endDate == widget.startDate) {
+      formattedSelectedDate = DateFormat(
+        'dd/MM/yyyy',
+      ).format(DateFormat('yyyy-MM-dd').parse(widget.startDate!));
+    } else if (widget.startDate != null && widget.endDate != null) {
+      final start = DateFormat(
+        'dd/MM/yyyy',
+      ).format(DateFormat('yyyy-MM-dd').parse(widget.startDate!));
+      final end = DateFormat(
+        'dd/MM/yyyy',
+      ).format(DateFormat('yyyy-MM-dd').parse(widget.endDate!));
+      formattedSelectedDate = '$start - $end';
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.title,
+              style: const TextStyle(
+                fontFamily: 'MADE TOMMY',
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (formattedSelectedDate.isNotEmpty)
+              Text(
+                formattedSelectedDate,
+                style: const TextStyle(fontSize: 12, fontFamily: 'MADE TOMMY'),
+              ),
+          ],
+        ),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
         automaticallyImplyLeading: true,
         actions: [
+          // Botón para cambiar el orden (ascendente/descendente)
+          IconButton(
+            icon: Icon(
+              _isAscendingOrder ? Icons.arrow_upward : Icons.arrow_downward,
+            ),
+            onPressed: _toggleSortOrder,
+            tooltip:
+                _isAscendingOrder
+                    ? 'Ordenar descendente'
+                    : 'Ordenar ascendente',
+          ),
+
+          // Botón unificado para calendario (fecha o rango)
+          IconButton(
+            icon: Icon(
+              Icons.calendar_month,
+              color: _isDateRangeActive ? Colors.amber : null,
+            ),
+            onPressed: () => _showCalendarPicker(context),
+            tooltip: 'Seleccionar fecha o rango',
+          ),
+
           // Botón para actualizar la lista
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -186,77 +518,27 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
               setState(() {
                 _filterStatus = value == 'todos' ? null : value;
               });
-              _loadOrders();
+              widget.startDate == null && widget.endDate == null
+                  ? _loadOrdersWithDates()
+                  : _loadOrders();
             },
             itemBuilder:
                 (context) => [
-                  PopupMenuItem(
+                  const PopupMenuItem<String?>(
                     value: 'todos',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color:
-                              _filterStatus == null
-                                  ? theme.colorScheme.primary
-                                  : Colors.transparent,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Todos los estados'),
-                      ],
-                    ),
+                    child: Text('Mostrar todos'),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem<String?>(
                     value: 'pendiente',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color:
-                              _filterStatus == 'pendiente'
-                                  ? Colors.orange
-                                  : Colors.transparent,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Pendientes'),
-                      ],
-                    ),
+                    child: Text('Pendientes'),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem<String?>(
                     value: 'completado',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color:
-                              _filterStatus == 'completado'
-                                  ? Colors.green
-                                  : Colors.transparent,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Completados'),
-                      ],
-                    ),
+                    child: Text('Completados'),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem<String?>(
                     value: 'cancelado',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color:
-                              _filterStatus == 'cancelado'
-                                  ? Colors.red
-                                  : Colors.transparent,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Cancelados'),
-                      ],
-                    ),
+                    child: Text('Cancelados'),
                   ),
                 ],
           ),
@@ -323,182 +605,240 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: [
-                              if (widget.startDate != null &&
-                                  widget.endDate != null)
-                                Chip(
-                                  label: Text(
-                                    'Período: ${_formatDate(widget.startDate!)} - ${_formatDate(widget.endDate!)}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                  backgroundColor: theme.colorScheme.primary
-                                      .withOpacity(0.2),
-                                  visualDensity: VisualDensity.compact,
-                                  deleteIcon: const Icon(Icons.close, size: 16),
-                                  onDeleted: () {
-                                    // Aquí iría el código para eliminar este filtro
-                                  },
-                                ),
-                              if (_filterStatus != null)
-                                Chip(
-                                  avatar: Icon(
-                                    Icons.circle,
-                                    size: 12,
-                                    color: _getStatusColor(
-                                      _filterStatus!,
-                                      theme,
-                                    ),
-                                  ),
-                                  label: Text(
-                                    'Estado: ${_capitalizeFirstLetter(_filterStatus!)}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                  backgroundColor: _getStatusColor(
-                                    _filterStatus!,
-                                    theme,
-                                  ).withOpacity(0.2),
-                                  visualDensity: VisualDensity.compact,
-                                  deleteIcon: const Icon(Icons.close, size: 16),
-                                  onDeleted: () {
-                                    setState(() {
-                                      _filterStatus = null;
-                                    });
-                                    _loadOrders();
-                                  },
-                                ),
-                            ],
-                          ),
+                          if (_filterStatus != null)
+                            Chip(
+                              label: Text(
+                                'Estado: ${_capitalizeFirstLetter(_filterStatus!)}',
+                              ),
+                              deleteIcon: const Icon(Icons.close, size: 16),
+                              onDeleted: () {
+                                setState(() {
+                                  _filterStatus = null;
+                                });
+                                _loadOrders();
+                              },
+                            ),
                         ],
                       ),
                     ),
 
-                  // Contador de pedidos
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
+                  // Pedidos encontrados y valor total
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    color: theme.colorScheme.secondaryContainer.withOpacity(
+                      0.5,
+                    ),
                     child: Row(
                       children: [
                         Text(
                           '${_orders.length} pedidos encontrados',
-                          style: theme.textTheme.titleSmall,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const Spacer(),
-                        if (_orders.isNotEmpty) ...[
-                          Text('Total: ', style: theme.textTheme.bodyMedium),
-                          Text(
-                            _formatCurrency(_calculateTotal()),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        Text(
+                          'Total: ${_formatCurrency(_calculateTotal())}',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
                           ),
-                        ],
+                        ),
                       ],
                     ),
                   ),
 
-                  // Lista de pedidos
+                  // Lista de pedidos agrupados por estado
                   Expanded(
-                    child: ListView.builder(
+                    child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _orders.length,
-                      itemBuilder: (context, index) {
-                        final order = _orders[index];
-                        // Comprobar si tenemos detalles completos o estamos en modo fallback
-                        final bool isLimitedData =
-                            order['items'] == null ||
-                            (order['items'] as List).isEmpty;
+                      children: [
+                        // 1. Primero mostrar pedidos pendientes
+                        if (groupedOrders['pendiente']!.isNotEmpty) ...[
+                          _buildSectionHeader(
+                            'Pendientes',
+                            Colors.orange,
+                            theme,
+                          ),
+                          ...groupedOrders['pendiente']!
+                              .map((order) => _buildOrderCard(order, theme))
+                              .toList(),
+                          const SizedBox(height: 16),
+                        ],
 
-                        if (isLimitedData) {
-                          // Para pedidos sin detalles completos (modo fallback), mostrar tarjeta simplificada
-                          return Card(
-                            margin: const EdgeInsets.symmetric(
-                              vertical: 8,
-                              horizontal: 0,
-                            ),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: _getStatusColor(
-                                  order['estado'] ?? 'pendiente',
-                                  theme,
-                                ),
-                                child: Icon(
-                                  Icons.receipt_outlined,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Text(
-                                    'Pedido #${order['idpedido']}',
-                                    style: theme.textTheme.titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Chip(
-                                    label: Text(
-                                      _getStatusText(
-                                        order['estado'] ?? 'pendiente',
-                                      ),
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                    backgroundColor: _getStatusColor(
-                                      order['estado'] ?? 'pendiente',
-                                      theme,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Cliente: ${order['cliente'] ?? 'Cliente'}',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Fecha: ${order['fecha'] ?? ''} ${order['hora'] ?? ''}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withOpacity(0.6),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.refresh_outlined),
-                                tooltip: 'Actualizar detalles',
-                                onPressed: _loadOrders,
-                              ),
-                            ),
-                          );
-                        }
+                        // 2. Luego mostrar pedidos completados
+                        if (groupedOrders['completado']!.isNotEmpty) ...[
+                          _buildSectionHeader(
+                            'Completados',
+                            Colors.green,
+                            theme,
+                          ),
+                          ...groupedOrders['completado']!
+                              .map((order) => _buildOrderCard(order, theme))
+                              .toList(),
+                          const SizedBox(height: 16),
+                        ],
 
-                        // Para pedidos con detalles completos, mostrar tarjeta completa
-                        return OrderDetailCard(
-                          order: order,
-                          isExpanded: _expandedItems.contains(index),
-                          onTap: () => _toggleExpanded(index),
-                          onStatusChange:
-                              (newStatus) =>
-                                  _updateOrderStatus(index, newStatus),
-                        );
-                      },
+                        // 3. Finalmente pedidos cancelados
+                        if (groupedOrders['cancelado']!.isNotEmpty) ...[
+                          _buildSectionHeader('Cancelados', Colors.red, theme),
+                          ...groupedOrders['cancelado']!
+                              .map((order) => _buildOrderCard(order, theme))
+                              .toList(),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // 4. Si hay pedidos con otros estados
+                        if (groupedOrders['otro']!.isNotEmpty) ...[
+                          _buildSectionHeader(
+                            'Otros estados',
+                            Colors.grey,
+                            theme,
+                          ),
+                          ...groupedOrders['otro']!
+                              .map((order) => _buildOrderCard(order, theme))
+                              .toList(),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Espacio extra al final para evitar que el FAB tape contenido
+                        const SizedBox(height: 80),
+                      ],
                     ),
                   ),
                 ],
               ),
+    );
+  }
+
+  // Widget para construir los encabezados de sección
+  Widget _buildSectionHeader(String title, Color color, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 24,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status, ThemeData theme) {
+    switch (status.toLowerCase()) {
+      case 'pendiente':
+        return Colors.orange;
+      case 'completado':
+      case 'entregado':
+        return Colors.green;
+      case 'cancelado':
+        return Colors.red;
+      default:
+        return theme.colorScheme.secondary;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'pendiente':
+        return 'PENDIENTE';
+      case 'completado':
+      case 'entregado':
+        return 'COMPLETADO';
+      case 'cancelado':
+        return 'CANCELADO';
+      default:
+        return status.toUpperCase();
+    }
+  }
+
+  Widget _buildOrderCard(Map<String, dynamic> order, ThemeData theme) {
+    final orderIndex = _orders.indexOf(order);
+
+    // Si es un pedido con datos incompletos, mostrar vista simplificada
+    if (!order.containsKey('items') ||
+        order['items'] == null ||
+        (order['items'] as List).isEmpty) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(order['estado'] ?? '', theme),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  _getStatusText(order['estado'] ?? ''),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Pedido #${order['idpedido']}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(
+                'Cliente: ${order['cliente'] ?? 'Cliente'}',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Fecha: ${order['fecha'] ?? ''} ${order['hora'] ?? ''}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+            ],
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.refresh_outlined),
+            tooltip: 'Actualizar detalles',
+            onPressed: _loadOrders,
+          ),
+        ),
+      );
+    }
+
+    // Para pedidos con detalles completos, siempre mostrar expandido
+    return OrderDetailCard(
+      order: order,
+      isExpanded: true, // Siempre expandido
+      onTap: null, // Desactivar toggle al tocar
+      onStatusChange: (newStatus) => _updateOrderStatus(orderIndex, newStatus),
     );
   }
 
@@ -528,31 +868,5 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
       total += order['total'] ?? 0.0;
     }
     return total;
-  }
-
-  Color _getStatusColor(String status, ThemeData theme) {
-    switch (status.toLowerCase()) {
-      case 'pendiente':
-        return Colors.orange;
-      case 'completado':
-        return Colors.green;
-      case 'cancelado':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getStatusText(String status) {
-    switch (status.toLowerCase()) {
-      case 'pendiente':
-        return 'PENDIENTE';
-      case 'completado':
-        return 'COMPLETADO';
-      case 'cancelado':
-        return 'CANCELADO';
-      default:
-        return status.toUpperCase();
-    }
   }
 }

@@ -8,6 +8,8 @@ import '../Admin_Screens/AdminChatScreen.dart';
 import '../Admin_Screens/ReportsScreen.dart';
 import '../Admin_Screens/OrderHistoryScreen.dart';
 import '../Admin_Screens/AdminHomeScreen.dart';
+import '../Admin_Screens/AdminOrdersScreen.dart';
+import '../Admin_Screens/PopularDishesScreen.dart';
 import '../Admin_Screens/menu_screen.dart';
 import '../Admin_Screens/Users/AdminUsersScreen.dart';
 import 'splash_screen.dart';
@@ -116,6 +118,10 @@ class AppRoutes {
 
       case '/admin/orders':
       case '/admin-orders':
+        return MaterialPageRoute(builder: (_) => const AdminOrdersScreen());
+
+      case '/admin/order-history':
+      case '/admin-order-history':
         return MaterialPageRoute(
           builder:
               (_) => OrderHistoryScreen(
@@ -125,6 +131,10 @@ class AppRoutes {
                 estado: args['estado'],
               ),
         );
+
+      case '/admin/popular-dishes':
+      case '/admin-popular-dishes':
+        return MaterialPageRoute(builder: (_) => const PopularDishesScreen());
 
       // Ruta para la administración de usuarios
       case '/admin/users':

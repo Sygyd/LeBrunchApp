@@ -9,14 +9,24 @@ class UserService {
 
   Future<String> _getApiBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverIp = prefs.getString('server_ip') ?? '192.168.1.121';
-    return 'http://$serverIp:3000';
+
+    // Usar siempre esta IP fija
+    const String fixedIp = '192.168.1.121';
+
+    // Guardar en ambas claves para futura consistencia
+    await prefs.setString('server_ip', fixedIp);
+    await prefs.setString('serverIp', fixedIp);
+
+    print('🌐 URL base de API: http://$fixedIp:3000');
+    return 'http://$fixedIp:3000';
   }
 
   // Obtener todos los usuarios desde la base de datos
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     try {
       final baseUrl = await _getApiBaseUrl();
+      print('🔌 Intentando conexión a: $baseUrl/users');
+
       final response = await http
           .get(
             Uri.parse('$baseUrl/users'),
@@ -57,12 +67,35 @@ class UserService {
         print(
           '❌ Error al obtener usuarios: ${response.statusCode} - ${response.body}',
         );
-        // Si el código no es 200 (por ejemplo 404), obtenemos los usuarios a través del endpoint de login
-        return await _getUsersFromLogin();
+
+        // Si el código no es 200, intentar el método alternativo
+        print('🔄 Intentando método alternativo para obtener usuarios...');
+        final backupUsers = await _getUsersFromLogin();
+        if (backupUsers.isNotEmpty) {
+          print('✅ Método alternativo exitoso: ${backupUsers.length} usuarios');
+          return backupUsers;
+        }
+
+        // Si todo falla, retornar una lista vacía
+        return [];
       }
     } catch (e) {
-      print('❌ Error al obtener usuarios, intentando método alternativo: $e');
-      return await _getUsersFromLogin();
+      print('❌ Error al obtener usuarios: $e');
+
+      // En caso de error, intentar el método alternativo
+      print('🔄 Intentando método alternativo para obtener usuarios...');
+      try {
+        final backupUsers = await _getUsersFromLogin();
+        if (backupUsers.isNotEmpty) {
+          print('✅ Método alternativo exitoso: ${backupUsers.length} usuarios');
+          return backupUsers;
+        }
+      } catch (backupError) {
+        print('❌ Error en método alternativo: $backupError');
+      }
+
+      // Si todo falla, retornar una lista vacía
+      return [];
     }
   }
 
@@ -192,44 +225,14 @@ class UserService {
 
         return users;
       } else {
-        // Si no podemos obtener información del servidor, devolver datos de ejemplo
-        return _getFallbackUsers();
+        // Si no podemos obtener información del servidor, devolver lista vacía
+        return [];
       }
     } catch (e) {
       print('Error en método alternativo de obtención de usuarios: $e');
-      // Si todo falla, devolver datos de ejemplo
-      return _getFallbackUsers();
+      // Si todo falla, devolver lista vacía
+      return [];
     }
-  }
-
-  // Datos de respaldo si no podemos conectar con el servidor
-  List<Map<String, dynamic>> _getFallbackUsers() {
-    return [
-      {
-        'id': 1,
-        'nombre': 'Admin',
-        'apellido': 'Principal',
-        'cedula': '12345678',
-        'email': 'admin@lebrunch.com',
-        'rol': 0,
-      },
-      {
-        'id': 2,
-        'nombre': 'Carlos',
-        'apellido': 'Rodríguez',
-        'cedula': '87654321',
-        'email': 'cocinero@lebrunch.com',
-        'rol': 2,
-      },
-      {
-        'id': 3,
-        'nombre': 'Ana',
-        'apellido': 'Martínez',
-        'cedula': '23456789',
-        'email': 'barista@lebrunch.com',
-        'rol': 3,
-      },
-    ];
   }
 
   // Obtener usuarios filtrados por rol

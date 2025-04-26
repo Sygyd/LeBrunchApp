@@ -20,7 +20,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _dishes = [];
   String? _expandedDishId;
-  String _selectedCategory = '';
+  Set<String> _selectedCategories = {};
   bool _isLoading = false;
 
   final List<Map<String, String>> _categories = [
@@ -85,20 +85,21 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                 child: custom.SearchBar(controller: _searchController),
               ),
 
-              // Carrusel de categorías
+              // Carrusel de categorías con selección múltiple
               Padding(
                 padding: const EdgeInsets.only(bottom: 10.0),
                 child: SizedBox(
                   height: 120,
                   child: CategoryCarousel(
                     categories: _categories,
-                    selectedCategory: _selectedCategory,
-                    onCategorySelected: (category) {
+                    multiSelect: true,
+                    selectedCategories: _selectedCategories,
+                    onCategoryToggled: (category) {
                       setState(() {
-                        if (_selectedCategory == category) {
-                          _selectedCategory = '';
+                        if (_selectedCategories.contains(category)) {
+                          _selectedCategories.remove(category);
                         } else {
-                          _selectedCategory = category;
+                          _selectedCategories.add(category);
                         }
                       });
                     },
@@ -128,8 +129,8 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
             _searchController.text.toLowerCase(),
           );
           final categoryMatch =
-              _selectedCategory.isEmpty ||
-              dish['categoria'] == _selectedCategory;
+              _selectedCategories.isEmpty ||
+              _selectedCategories.contains(dish['categoria']);
           return nameMatch && categoryMatch;
         }).toList();
 
@@ -168,7 +169,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
     // Usamos un widget que no obligue a reconstruir toda la vista
     return ListView.builder(
-      key: ValueKey('dish-list-${_selectedCategory}'),
+      key: ValueKey('dish-list-${_selectedCategories.join(',')}'),
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
@@ -335,7 +336,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
             onPressed: () {
               _searchController.clear();
               setState(() {
-                _selectedCategory = '';
+                _selectedCategories.clear();
               });
               _fetchDishes();
             },
