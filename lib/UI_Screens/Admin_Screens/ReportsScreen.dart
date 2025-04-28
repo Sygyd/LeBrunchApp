@@ -208,10 +208,44 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_getReportTitle()),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
+        title: Text(
+          _getReportTitle(),
+          style: TextStyle(
+            fontFamily: 'Lighthouse',
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                color: Colors.black.withOpacity(0.3),
+                offset: const Offset(1, 1),
+                blurRadius: 3,
+              ),
+            ],
+          ),
+        ),
+        automaticallyImplyLeading: true,
+        backgroundColor: const Color(0xFF3ea69b),
+        foregroundColor: Colors.white,
+        centerTitle: false,
         elevation: 0,
+        toolbarHeight: 70.0,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Colors.white, width: 1.5),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(30),
+          ),
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF3ea69b),
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+            image: DecorationImage(
+              image: AssetImage('assets/images/fondo-flores-2.png'),
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
       ),
       body:
           _isLoading

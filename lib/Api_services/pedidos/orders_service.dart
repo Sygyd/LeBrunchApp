@@ -25,11 +25,27 @@ class OrdersService {
     String? endTime,
   }) async {
     try {
+      // Log para depuración
+      print(
+        '🔎 getOrders llamado con estado: $estado, fechas: $startDate a $endDate',
+      );
+
+      // SOLUCIÓN DIRECTA: Hacer consulta SQL directa para historial
+      if (estado?.contains('completado') == true ||
+          estado?.contains('cancelado') == true) {
+        print('📌 Usando consulta SQL directa para historial');
+        return await _queryOrdersDirectSimple();
+      }
+
+      // Verificar si el estado contiene paréntesis, lo que indica que es una lista
+      bool isMultipleStates =
+          estado != null && estado.startsWith("(") && estado.endsWith(")");
+
       // Construir la URL con parámetros de consulta
       final queryParams = <String, String>{};
       if (startDate != null) queryParams['startDate'] = startDate;
       if (endDate != null) queryParams['endDate'] = endDate;
-      if (estado != null) queryParams['estado'] = estado;
+      if (estado != null && !isMultipleStates) queryParams['estado'] = estado;
       if (startTime != null) queryParams['startTime'] = startTime;
       if (endTime != null) queryParams['endTime'] = endTime;
 
@@ -40,11 +56,43 @@ class OrdersService {
 
       print('🔍 Consultando pedidos: $uri');
 
+      // Si tenemos múltiples estados, usamos directamente la consulta SQL
+      if (isMultipleStates) {
+        return await _queryOrdersDirectSimple();
+      }
+
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final orders = List<Map<String, dynamic>>.from(data);
+        print('🔍 Respuesta recibida: $data');
+
+        final List<Map<String, dynamic>> orders =
+            List<Map<String, dynamic>>.from(data);
+
+        // Verificar si estamos filtrando para historial (completado, cancelado)
+        bool isRequestingHistory =
+            estado == "('completado', 'cancelado')" ||
+            (estado != null &&
+                (estado == 'completado' || estado == 'cancelado'));
+
+        // Si estamos consultando el historial, asegurarnos que no regresen pedidos pendientes
+        if (isRequestingHistory) {
+          final filteredOrders =
+              orders
+                  .where(
+                    (order) =>
+                        order['estado'] == 'completado' ||
+                        order['estado'] == 'cancelado',
+                  )
+                  .toList();
+
+          print(
+            '✅ Se obtuvieron ${filteredOrders.length} pedidos para historial (filtrados de ${orders.length})',
+          );
+          return filteredOrders;
+        }
+
         print('✅ Se obtuvieron ${orders.length} pedidos');
         return orders;
       } else {
@@ -52,73 +100,42 @@ class OrdersService {
           '❌ Error al obtener pedidos: ${response.statusCode} - ${response.body}',
         );
         // Si el backend devuelve un error, intentar con otro endpoint más simple
-        return await _queryOrdersDirect(
-          startDate,
-          endDate,
-          estado,
-          startTime,
-          endTime,
-        );
+        return await _queryOrdersDirectSimple();
       }
     } catch (e) {
       print('⚠️ Excepción al obtener pedidos: $e');
       // Intentar con otro endpoint más simple
-      return await _queryOrdersDirect(
-        startDate,
-        endDate,
-        estado,
-        startTime,
-        endTime,
-      );
+      return await _queryOrdersDirectSimple();
     }
   }
 
-  // Método que intenta consultar directamente a la base de datos
-  Future<List<Map<String, dynamic>>> _queryOrdersDirect(
-    String? startDate,
-    String? endDate,
-    String? estado,
-    String? startTime,
-    String? endTime,
-  ) async {
+  // Método simplificado que consulta directamente completados y cancelados
+  Future<List<Map<String, dynamic>>> _queryOrdersDirectSimple() async {
     try {
-      // Construir la consulta SQL con los filtros
-      String sql =
-          'SELECT p.idpedido, p.idpersona, p.estado, ' +
-          'TO_CHAR(p.fecha, \'YYYY-MM-DD\') as fecha, ' +
-          'TO_CHAR(p.fecha, \'HH24:MI\') as hora, ' +
-          'pe.nombre || \' \' || pe.apellido as cliente ' +
-          'FROM pedidos p ' +
-          'INNER JOIN personas pe ON p.idpersona = pe.idpersonas ' +
-          'WHERE 1=1';
+      print(
+        '📊 Intentando consulta simplificada para pedidos completados y cancelados',
+      );
 
-      // Añadir filtro de estado si está definido
-      if (estado != null) {
-        sql += " AND p.estado = '$estado'";
-      }
+      // Consulta SQL simplificada para obtener solo pedidos completados y cancelados
+      final sql = '''
+        SELECT 
+          p.idpedido, 
+          p.idpersona, 
+          p.estado, 
+          TO_CHAR(p.fecha, 'YYYY-MM-DD') as fecha, 
+          TO_CHAR(p.fecha, 'HH24:MI') as hora, 
+          pe.nombre || ' ' || pe.apellido as cliente 
+        FROM 
+          pedidos p 
+        INNER JOIN 
+          personas pe ON p.idpersona = pe.idpersonas 
+        WHERE 
+          p.estado IN ('completado', 'cancelado') 
+        ORDER BY 
+          p.fecha DESC
+      ''';
 
-      // Añadir filtro de fecha si está definido
-      if (startDate != null) {
-        sql += " AND p.fecha >= '$startDate'::date";
-      }
-
-      if (endDate != null) {
-        sql += " AND p.fecha <= '$endDate'::date + interval '1 day'";
-      }
-
-      // Añadir filtro de hora si está definido
-      if (startTime != null) {
-        sql += " AND TO_CHAR(p.fecha, 'HH24:MI') >= '$startTime'";
-      }
-
-      if (endTime != null) {
-        sql += " AND TO_CHAR(p.fecha, 'HH24:MI') <= '$endTime'";
-      }
-
-      // Ordenar por fecha descendente por defecto
-      sql += ' ORDER BY p.fecha DESC';
-
-      print('🔍 Intentando consulta directa: $sql');
+      print('📋 Ejecutando SQL: $sql');
 
       // Crear el objeto query para la consulta
       final query = {'query': sql};
@@ -133,6 +150,8 @@ class OrdersService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('📋 Respuesta de la consulta: $data');
+
         if (data['result'] != null && data['result'].isNotEmpty) {
           print(
             '✅ Se obtuvieron ${data['result'].length} pedidos mediante consulta directa',
@@ -141,15 +160,29 @@ class OrdersService {
           // Obtener los IDs de pedidos para la segunda consulta
           final pedidosIds =
               data['result'].map((row) => row['idpedido']).toList();
+          print('🔍 IDs de pedidos encontrados: $pedidosIds');
+
+          if (pedidosIds.isEmpty) {
+            print('⚠️ No se encontraron IDs de pedidos');
+            return [];
+          }
 
           // Consultar los detalles de los pedidos
           final detallesQuery = {
-            'query':
-                'SELECT pd.idpedido, pd.idplato, pd.cantidad, pd.precio_unitario, ' +
-                'm.nombre as nombre ' +
-                'FROM pedido_detalle pd ' +
-                'INNER JOIN menu m ON pd.idplato = m.idplato ' +
-                'WHERE pd.idpedido = ANY(ARRAY[${pedidosIds.join(',')}])',
+            'query': '''
+              SELECT 
+                pd.idpedido, 
+                pd.idplato, 
+                pd.cantidad, 
+                pd.precio_unitario, 
+                m.nombre as nombre 
+              FROM 
+                pedido_detalle pd 
+              INNER JOIN 
+                menu m ON pd.idplato = m.idplato 
+              WHERE 
+                pd.idpedido = ANY(ARRAY[${pedidosIds.join(',')}])
+            ''',
           };
 
           final detallesResponse = await http.post(
@@ -160,6 +193,8 @@ class OrdersService {
 
           if (detallesResponse.statusCode == 200) {
             final detallesData = json.decode(detallesResponse.body);
+            print('📋 Respuesta de detalles: $detallesData');
+
             final detalles = detallesData['result'] ?? [];
 
             // Transformar y combinar los datos
@@ -174,28 +209,39 @@ class OrdersService {
 
               // Calcular total
               double total = 0;
-              itemsPedido.forEach((item) {
-                total +=
-                    (item['cantidad'] ?? 1) * (item['precio_unitario'] ?? 0);
-              });
+              for (var item in itemsPedido) {
+                double cantidad =
+                    (item['cantidad'] is int)
+                        ? item['cantidad'].toDouble()
+                        : double.tryParse(item['cantidad'].toString()) ?? 1.0;
+
+                double precioUnitario =
+                    (item['precio_unitario'] is num)
+                        ? item['precio_unitario'] + 0.0
+                        : double.tryParse(item['precio_unitario'].toString()) ??
+                            0.0;
+
+                total += cantidad * precioUnitario;
+              }
 
               // Formatear los items
               final items =
-                  itemsPedido
-                      .map(
-                        (item) => {
-                          'nombre': item['nombre'],
-                          'cantidad': item['cantidad'],
-                          'precio_unitario':
-                              item['precio_unitario'] is num
-                                  ? item['precio_unitario']
-                                  : double.tryParse(
-                                        item['precio_unitario'].toString(),
-                                      ) ??
-                                      0.0,
-                        },
-                      )
-                      .toList();
+                  itemsPedido.map((item) {
+                    return {
+                      'nombre': item['nombre'],
+                      'cantidad':
+                          item['cantidad'] is int
+                              ? item['cantidad']
+                              : int.tryParse(item['cantidad'].toString()) ?? 1,
+                      'precio_unitario':
+                          item['precio_unitario'] is num
+                              ? (item['precio_unitario'] + 0.0)
+                              : double.tryParse(
+                                    item['precio_unitario'].toString(),
+                                  ) ??
+                                  0.0,
+                    };
+                  }).toList();
 
               orders.add({
                 'idpedido': pedido['idpedido'],
@@ -209,7 +255,14 @@ class OrdersService {
               });
             }
 
+            print(
+              '✅ Procesados ${orders.length} pedidos completos con sus detalles',
+            );
             return orders;
+          } else {
+            print(
+              '❌ Error al obtener detalles: ${detallesResponse.statusCode}',
+            );
           }
 
           // Si no se pudieron obtener los detalles, al menos retornar datos básicos
@@ -226,14 +279,20 @@ class OrdersService {
               },
             ),
           );
+        } else {
+          print('⚠️ La consulta SQL no devolvió resultados');
         }
+      } else {
+        print(
+          '❌ Error en consulta SQL: ${response.statusCode} - ${response.body}',
+        );
       }
 
       // Si la consulta falla, retornar una lista vacía
       print('⚠️ No se pudieron obtener pedidos, retornando lista vacía');
       return [];
     } catch (e) {
-      print('⚠️ Error en consulta directa: $e');
+      print('⚠️ Error en consulta directa simplificada: $e');
       return [];
     }
   }
