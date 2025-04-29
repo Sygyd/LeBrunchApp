@@ -178,9 +178,16 @@ class PopularDishesService {
               'yyyy-MM-dd',
             ).format(now.subtract(const Duration(days: 365)));
             break;
+          case 'all':
+            // No establecer fechas para incluir todos los datos
+            startDate = null;
+            endDate = null;
+            break;
         }
 
-        print('Período $period convertido a fechas: $startDate a $endDate');
+        if (startDate != null && endDate != null) {
+          print('Período $period convertido a fechas: $startDate a $endDate');
+        }
       }
 
       // Construir la consulta SQL optimizada para obtener platos populares
@@ -223,11 +230,11 @@ class PopularDishesService {
         m.categoria,
         m.precio,
         m.imagen_url,
-        COALESCE(vp.cantidad_vendida, 0) as cantidad_vendida,
-        COALESCE(vp.precio_promedio, m.precio) as precio_promedio
+        vp.cantidad_vendida,
+        vp.precio_promedio
       FROM 
         menu m
-      LEFT JOIN 
+      JOIN 
         ventas_platos vp ON m.idplato = vp.idplato
       ''';
 
@@ -235,12 +242,12 @@ class PopularDishesService {
       if (category != null &&
           category.isNotEmpty &&
           category.toLowerCase() != 'todas') {
-        sql += " WHERE LOWER(m.categoria) = LOWER('$category')";
+        sql += " AND LOWER(m.categoria) = LOWER('$category')";
       }
 
       // Ordenar y limitar resultados
       sql += '''
-      ORDER BY cantidad_vendida DESC, m.nombre ASC
+      ORDER BY vp.cantidad_vendida DESC, m.nombre ASC
       LIMIT $limit
       ''';
 
@@ -288,14 +295,8 @@ class PopularDishesService {
                   )
                   .toList();
 
-          // Filtrar: mostrar solo platos que tienen ventas mayores a cero
-          final dishesWithSales =
-              formattedDishes
-                  .where((dish) => dish['cantidad_vendida'] > 0)
-                  .toList();
-
-          // Si no hay platos con ventas en el período seleccionado
-          if (dishesWithSales.isEmpty) {
+          // Si la lista está vacía, mostrar mensaje de que no hay ventas
+          if (formattedDishes.isEmpty) {
             print(
               'No se encontraron platos con ventas en el período seleccionado',
             );
@@ -310,7 +311,7 @@ class PopularDishesService {
             }
           }
 
-          return dishesWithSales;
+          return formattedDishes;
         } else {
           print('No se encontraron platos populares en la consulta directa');
           return await _getTopMenuItems(limit);

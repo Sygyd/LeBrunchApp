@@ -710,20 +710,75 @@ class OrdersService {
   // Método alternativo para actualizar estado directamente en BD
   Future<bool> _updateOrderStatusFallback(int orderId, String newStatus) async {
     try {
-      final query = {
-        'query':
-            "UPDATE pedidos SET estado = '$newStatus' WHERE idpedido = $orderId RETURNING idpedido",
+      // Obtener el estado actual para verificar si necesitamos registrar tiempo
+      final estadoActualQuery = {
+        'query': "SELECT estado FROM pedidos WHERE idpedido = $orderId",
       };
 
       final baseUrl = await _getBaseUrl();
-      final uri = Uri.parse('$baseUrl/db/query');
+      final uriCheck = Uri.parse('$baseUrl/db/query');
+
+      final checkResponse = await http.post(
+        uriCheck,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(estadoActualQuery),
+      );
+
+      String query;
+
+      if (checkResponse.statusCode == 200) {
+        final data = json.decode(checkResponse.body);
+
+        if (data['result'] != null && data['result'].isNotEmpty) {
+          final estadoActual = data['result'][0]['estado'];
+
+          // Si está cambiando de pendiente a completado o cancelado, registrar tiempo
+          if (estadoActual == 'pendiente' &&
+              (newStatus == 'completado' || newStatus == 'cancelado')) {
+            print(
+              '⏱️ Registrando tiempo de procesamiento para pedido #$orderId',
+            );
+            query = """
+              UPDATE pedidos 
+              SET estado = '$newStatus', 
+                  tiempo_procesamiento = NOW() - fecha 
+              WHERE idpedido = $orderId 
+              RETURNING idpedido
+            """;
+          } else {
+            // Solo actualizar estado sin modificar tiempo
+            query = """
+              UPDATE pedidos 
+              SET estado = '$newStatus'
+              WHERE idpedido = $orderId 
+              RETURNING idpedido
+            """;
+          }
+        } else {
+          // No se encontró el pedido, usar consulta simple
+          query = """
+            UPDATE pedidos 
+            SET estado = '$newStatus'
+            WHERE idpedido = $orderId 
+            RETURNING idpedido
+          """;
+        }
+      } else {
+        // Error al verificar estado, usar consulta simple
+        query = """
+          UPDATE pedidos 
+          SET estado = '$newStatus'
+          WHERE idpedido = $orderId 
+          RETURNING idpedido
+        """;
+      }
 
       print('🔄 Intentando actualizar estado vía consulta directa');
 
       final response = await http.post(
-        uri,
+        Uri.parse('$baseUrl/db/query'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(query),
+        body: jsonEncode({'query': query}),
       );
 
       if (response.statusCode == 200) {
@@ -749,64 +804,76 @@ class OrdersService {
       print('⏱️ Obteniendo tiempo de procesamiento para pedido #$orderId');
 
       final baseUrl = await _getBaseUrl();
-      final query = {
-        'query': '''
-          SELECT 
-            pt.idpedido,
-            pt.estado_inicial,
-            pt.estado_final, 
-            pt.timestamp_inicial,
-            pt.timestamp_final,
-            EXTRACT(EPOCH FROM pt.tiempo_procesamiento) as tiempo_segundos
-          FROM 
-            pedido_tiempos pt
-          WHERE 
-            pt.idpedido = $orderId
-          LIMIT 1
-        ''',
-      };
 
-      final uri = Uri.parse('$baseUrl/db/query');
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(query),
-      );
+      // Usar el endpoint directo para obtener tiempo de procesamiento
+      final uri = Uri.parse('$baseUrl/pedidos/tiempo/$orderId');
+      final response = await http.get(uri);
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final processingData = json.decode(response.body);
+        print('⏱️ Datos de tiempo obtenidos vía endpoint: $processingData');
 
-        if (data['result'] != null && data['result'].isNotEmpty) {
-          final processingData = data['result'][0];
-          print('⏱️ Datos de tiempo obtenidos: $processingData');
+        return processingData;
+      } else if (response.statusCode == 404) {
+        // Si el endpoint no encuentra datos, intentar obtener de la tabla pedidos directamente
+        print('⏱️ No hay datos vía endpoint, intentando consulta directa...');
 
-          // Formatear el tiempo en formato legible
-          final tiempoSegundos =
-              (processingData['tiempo_segundos'] is num)
-                  ? processingData['tiempo_segundos']
-                  : double.tryParse(
-                        processingData['tiempo_segundos'].toString(),
-                      ) ??
-                      0.0;
+        final query = {
+          'query': '''
+            SELECT 
+              idpedido,
+              estado,
+              fecha as timestamp_inicial,
+              EXTRACT(EPOCH FROM tiempo_procesamiento) as tiempo_segundos
+            FROM 
+              pedidos
+            WHERE 
+              idpedido = $orderId AND
+              tiempo_procesamiento IS NOT NULL
+            LIMIT 1
+          ''',
+        };
 
-          final minutos = (tiempoSegundos / 60).floor();
-          final segundos = (tiempoSegundos % 60).round();
+        final dbQueryUri = Uri.parse('$baseUrl/db/query');
+        final dbResponse = await http.post(
+          dbQueryUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(query),
+        );
 
-          return {
-            'idpedido': processingData['idpedido'],
-            'estado_inicial': processingData['estado_inicial'],
-            'estado_final': processingData['estado_final'],
-            'timestamp_inicial': processingData['timestamp_inicial'],
-            'timestamp_final': processingData['timestamp_final'],
-            'tiempo_segundos': tiempoSegundos,
-            'tiempo_formato': '$minutos min $segundos seg',
-          };
-        } else {
-          print(
-            '⏱️ No se encontraron datos de tiempo para el pedido #$orderId',
-          );
-          return null;
+        if (dbResponse.statusCode == 200) {
+          final data = json.decode(dbResponse.body);
+
+          if (data['result'] != null && data['result'].isNotEmpty) {
+            final processingData = data['result'][0];
+            print('⏱️ Datos de tiempo obtenidos directamente: $processingData');
+
+            // Formatear el tiempo en formato legible
+            final tiempoSegundos =
+                (processingData['tiempo_segundos'] is num)
+                    ? processingData['tiempo_segundos']
+                    : double.tryParse(
+                          processingData['tiempo_segundos'].toString(),
+                        ) ??
+                        0.0;
+
+            final minutos = (tiempoSegundos / 60).floor();
+            final segundos = (tiempoSegundos % 60).round();
+
+            return {
+              'idpedido': processingData['idpedido'],
+              'estado_inicial': 'pendiente',
+              'estado_final': processingData['estado'],
+              'timestamp_inicial': processingData['timestamp_inicial'],
+              'tiempo_segundos': tiempoSegundos,
+              'tiempo_formato': '$minutos min $segundos seg',
+            };
+          }
         }
+
+        // Si no se encontraron datos en ninguna parte
+        print('⏱️ No se encontraron datos de tiempo para el pedido #$orderId');
+        return null;
       } else {
         print(
           '❌ Error al obtener tiempo de procesamiento: ${response.statusCode}',

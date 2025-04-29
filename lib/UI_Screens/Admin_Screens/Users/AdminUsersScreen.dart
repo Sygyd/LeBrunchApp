@@ -1155,155 +1155,401 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final apellidoController = TextEditingController(text: user.apellido);
     final cedulaController = TextEditingController(text: user.cedula);
     final emailController = TextEditingController(text: user.email);
+    final contrasenaController = TextEditingController();
 
     // Valor inicial para el rol
     int selectedRol = user.rol;
+    // Estado para controlar la visibilidad de la contraseña
+    bool obscurePassword = true;
 
+    // Usar un StatefulBuilder que está desacoplado del contexto original
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setState) => AlertDialog(
-                  title: Text(
-                    'Editar Usuario',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Información del usuario actual con estilo visual
-                        Container(
-                          padding: EdgeInsets.all(12),
-                          margin: EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Color(user.rolColor).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Color(user.rolColor).withOpacity(0.3),
-                            ),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder:
+              (builderContext, setStateLocal) => AlertDialog(
+                title: Text(
+                  'Editar Usuario',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Información del usuario actual con estilo visual
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        margin: EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Color(user.rolColor).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Color(user.rolColor).withOpacity(0.3),
                           ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: Color(user.rolColor),
-                                child: _getRoleIcon(user.rolIcono),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: Color(user.rolColor),
+                              child: _getRoleIcon(user.rolIcono),
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user.nombreCompleto,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    'ID: ${user.id}',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
                               ),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      user.nombreCompleto,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      'ID: ${user.id}',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Campos de formulario
+                      TextField(
+                        controller: nombreController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+
+                      TextField(
+                        controller: apellidoController,
+                        decoration: InputDecoration(
+                          labelText: 'Apellido',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+
+                      TextField(
+                        controller: cedulaController,
+                        decoration: InputDecoration(
+                          labelText: 'Cédula',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+
+                      TextField(
+                        controller: emailController,
+                        decoration: InputDecoration(
+                          labelText: 'Email',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      SizedBox(height: 12),
+
+                      // Campo de contraseña con botón para mostrar/ocultar
+                      TextField(
+                        controller: contrasenaController,
+                        obscureText: obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Nueva Contraseña',
+                          hintText: 'Dejar en blanco para no cambiar',
+                          border: OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                            ),
+                            onPressed: () {
+                              // Usar setState local del StatefulBuilder
+                              setStateLocal(() {
+                                obscurePassword = !obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 16),
+
+                      // Selector de rol
+                      DropdownButtonFormField<int>(
+                        value: selectedRol,
+                        decoration: InputDecoration(
+                          labelText: 'Rol',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                            value: 0,
+                            child: Text('Administrador'),
+                          ),
+                          DropdownMenuItem(value: 1, child: Text('Cliente')),
+                          DropdownMenuItem(value: 2, child: Text('Cocinero')),
+                          DropdownMenuItem(value: 3, child: Text('Barista')),
+                        ],
+                        onChanged: (value) {
+                          // Usar setState local del StatefulBuilder
+                          setStateLocal(() {
+                            selectedRol = value!;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      // Guardar los valores primero
+                      final nombre = nombreController.text;
+                      final apellido = apellidoController.text;
+                      final cedula = cedulaController.text;
+                      final email = emailController.text;
+                      final contrasena = contrasenaController.text;
+                      final rol = selectedRol;
+
+                      // Cerrar diálogo de edición
+                      Navigator.pop(dialogContext);
+
+                      // Mostrar diálogo de confirmación
+                      showDialog(
+                        context: context,
+                        builder:
+                            (confirmContext) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.surface,
+                              title: Text(
+                                '¿Confirmar cambios?',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '¿Estás seguro que deseas guardar los cambios para este usuario?',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                  SizedBox(height: 16),
+                                  Container(
+                                    padding: EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Color(
+                                        user.rolColor,
+                                      ).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Color(
+                                          user.rolColor,
+                                        ).withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            CircleAvatar(
+                                              backgroundColor: Color(
+                                                user.rolColor,
+                                              ),
+                                              child: _getRoleIcon(
+                                                user.rolIcono,
+                                              ),
+                                            ),
+                                            SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                user.nombreCompleto,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const Divider(height: 24),
+                                        Text(
+                                          'Nombre: $nombre $apellido',
+                                          style:
+                                              Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Cédula: $cedula',
+                                          style:
+                                              Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Email: $email',
+                                          style:
+                                              Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Rol: ${_getRoleName(rol)}',
+                                          style:
+                                              Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                        ),
+                                        if (contrasena.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Wrap(
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  Icons.key,
+                                                  size: 16,
+                                                  color:
+                                                      Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Flexible(
+                                                  child: Text(
+                                                    'Se cambiará la contraseña',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .primary,
+                                                        ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(confirmContext);
 
-                        // Campos de formulario
-                        TextField(
-                          controller: nombreController,
-                          decoration: InputDecoration(
-                            labelText: 'Nombre',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        SizedBox(height: 12),
+                                    // Liberar controladores
+                                    nombreController.dispose();
+                                    apellidoController.dispose();
+                                    cedulaController.dispose();
+                                    emailController.dispose();
+                                    contrasenaController.dispose();
+                                  },
+                                  child: Text(
+                                    'Cancelar',
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                      fontFamily: 'MADE TOMMY',
+                                    ),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.primary,
+                                    foregroundColor:
+                                        Theme.of(context).colorScheme.onPrimary,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(confirmContext);
 
-                        TextField(
-                          controller: apellidoController,
-                          decoration: InputDecoration(
-                            labelText: 'Apellido',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        SizedBox(height: 12),
+                                    // Liberar controladores
+                                    nombreController.dispose();
+                                    apellidoController.dispose();
+                                    cedulaController.dispose();
+                                    emailController.dispose();
+                                    contrasenaController.dispose();
 
-                        TextField(
-                          controller: cedulaController,
-                          decoration: InputDecoration(
-                            labelText: 'Cédula',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        SizedBox(height: 12),
-
-                        TextField(
-                          controller: emailController,
-                          decoration: InputDecoration(
-                            labelText: 'Email',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        SizedBox(height: 16),
-
-                        // Selector de rol
-                        DropdownButtonFormField<int>(
-                          value: selectedRol,
-                          decoration: InputDecoration(
-                            labelText: 'Rol',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            DropdownMenuItem(
-                              value: 0,
-                              child: Text('Administrador'),
+                                    // Realizar actualización
+                                    _updateUser(
+                                      user.id,
+                                      nombre,
+                                      apellido,
+                                      cedula,
+                                      email,
+                                      rol,
+                                      contrasena,
+                                    );
+                                  },
+                                  child: Text('Confirmar'),
+                                ),
+                              ],
                             ),
-                            DropdownMenuItem(value: 1, child: Text('Cliente')),
-                            DropdownMenuItem(value: 2, child: Text('Cocinero')),
-                            DropdownMenuItem(value: 3, child: Text('Barista')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              selectedRol = value!;
-                            });
-                          },
-                        ),
-                      ],
+                      );
+                    },
+                    child: Text(
+                      'Guardar',
+                      style: TextStyle(color: Colors.green),
                     ),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Cancelar'),
-                    ),
-                    TextButton(
-                      onPressed:
-                          () => _updateUser(
-                            user.id,
-                            nombreController.text,
-                            apellidoController.text,
-                            cedulaController.text,
-                            emailController.text,
-                            selectedRol,
-                          ),
-                      child: Text(
-                        'Guardar',
-                        style: TextStyle(color: Colors.green),
-                      ),
-                    ),
-                  ],
-                ),
-          ),
-    ).then((_) {
-      // Liberar los controladores cuando se cierre el diálogo
-      nombreController.dispose();
-      apellidoController.dispose();
-      cedulaController.dispose();
-      emailController.dispose();
-    });
+                ],
+              ),
+        );
+      },
+    );
+  }
+
+  // Obtener el nombre del rol basado en el valor entero
+  String _getRoleName(int rol) {
+    switch (rol) {
+      case 0:
+        return 'Administrador';
+      case 1:
+        return 'Cliente';
+      case 2:
+        return 'Cocinero';
+      case 3:
+        return 'Barista';
+      default:
+        return 'Cliente';
+    }
   }
 
   // Actualizar usuario en la base de datos
@@ -1314,6 +1560,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     String cedula,
     String email,
     int rol,
+    String contrasena,
   ) async {
     // Mostrar indicador de carga
     showDialog(
@@ -1345,19 +1592,87 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         'rol': rol.toString(), // Convertir a string para el API
       };
 
+      // Solo añadir contraseña si se ha proporcionado una nueva
+      if (contrasena.isNotEmpty) {
+        userData['contrasena'] = contrasena;
+      }
+
       // Llamar al servicio para actualizar el usuario
       await _userService.updateUser(userId.toString(), userData);
 
       // Cerrar el diálogo de carga
       Navigator.of(context, rootNavigator: true).pop();
-      // Cerrar el diálogo de edición
-      Navigator.of(context).pop();
 
       // Recargar la lista de usuarios
       await _loadUsers();
 
-      // Mostrar mensaje de éxito
-      _showSuccessSnackBar('Usuario actualizado con éxito');
+      // Mostrar diálogo de éxito
+      showDialog(
+        context: context,
+        builder:
+            (successContext) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              title: Text(
+                '¡Cambios Realizados!',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.check_circle_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 70,
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  Text(
+                    'Los cambios al usuario han sido realizados exitosamente.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+                Center(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      minimumSize: Size(120, 45),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(successContext);
+                    },
+                    child: Text(
+                      'Aceptar',
+                      style: TextStyle(fontFamily: 'MADE TOMMY'),
+                    ),
+                  ),
+                ),
+              ],
+              actionsAlignment: MainAxisAlignment.center,
+              actionsPadding: EdgeInsets.only(bottom: 16),
+            ),
+      );
     } catch (e) {
       // Cerrar el diálogo de carga
       Navigator.of(context, rootNavigator: true).pop();

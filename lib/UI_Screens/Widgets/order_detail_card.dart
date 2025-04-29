@@ -475,10 +475,25 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '${items.length} ${items.length == 1 ? 'ítem' : 'ítems'}',
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    Text(() {
+                      // Calcular el número total de platos sumando las cantidades
+                      int totalPlatos = 0;
+                      for (var item in items) {
+                        if (item['cantidad'] is int) {
+                          totalPlatos += item['cantidad'] as int;
+                        } else if (item['cantidad'] is double) {
+                          totalPlatos += (item['cantidad'] as double).toInt();
+                        } else if (item['cantidad'] != null) {
+                          totalPlatos +=
+                              int.tryParse(item['cantidad'].toString()) ?? 1;
+                        } else {
+                          totalPlatos +=
+                              1; // Valor por defecto si no hay cantidad
+                        }
+                      }
+
+                      return '${items.length} ${items.length == 1 ? 'ítem' : 'ítems'} · $totalPlatos ${totalPlatos == 1 ? 'plato' : 'platos'}';
+                    }(), style: theme.textTheme.bodyMedium),
                     Text(
                       _formatCurrency(total),
                       style: theme.textTheme.titleMedium?.copyWith(

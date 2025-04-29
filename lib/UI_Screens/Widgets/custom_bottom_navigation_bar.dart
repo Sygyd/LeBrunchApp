@@ -796,28 +796,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
                 title: const Text('Mi Perfil'),
                 onTap: () {
                   Navigator.pop(context);
-                  // Navegar a la última pestaña (perfil)
-                  setState(
-                    () =>
-                        _currentIndex =
-                            _getNavItemsForRole(
-                              _userRole,
-                              Colors.white,
-                            ).length -
-                            1,
-                  );
-                  _pageController.jumpToPage(_currentIndex);
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.settings_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('Configuración'),
-                onTap: () {
-                  Navigator.pop(context);
-                  // Aquí iría la navegación a configuración
+                  _showUserProfileModal(context);
                 },
               ),
               const Divider(),
@@ -880,6 +859,357 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           ),
         );
       },
+    );
+  }
+
+  // Mostrar los datos del perfil del usuario en un modal
+  Future<void> _showUserProfileModal(BuildContext context) async {
+    final theme = Theme.of(context);
+    final prefs = await SharedPreferences.getInstance();
+
+    // Obtener información del usuario desde SharedPreferences
+    final userId = prefs.getInt('user_id');
+    final userEmail = prefs.getString('user_email') ?? 'correo@ejemplo.com';
+    final userCedula = prefs.getString('user_cedula') ?? '';
+
+    // En una implementación real, estos datos vendrían del servidor
+    final Map<String, String> userInfo = {
+      'nombre': _userName?.split(' ').first ?? 'Usuario',
+      'apellido':
+          (_userName != null && _userName!.split(' ').length > 1)
+              ? _userName!.split(' ').last
+              : '',
+      'cedula': userCedula,
+      'email': userEmail,
+      'id': userId?.toString() ?? 'N/A',
+    };
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: SingleChildScrollView(
+                controller: scrollController,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Encabezado con avatar y nombre
+                    Center(
+                      child: Column(
+                        children: [
+                          CircleAvatar(
+                            radius: 60,
+                            backgroundColor: theme.colorScheme.primary,
+                            child: Text(
+                              _userName != null && _userName!.isNotEmpty
+                                  ? _userName!.substring(0, 1).toUpperCase()
+                                  : 'U',
+                              style: TextStyle(
+                                fontSize: 60,
+                                color: theme.colorScheme.onPrimary,
+                                fontFamily: 'LightHouse',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _userName ?? 'Usuario',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          Text(
+                            _getRoleName(),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+
+                    // Información personal
+                    _buildSectionHeader(context, 'Información Personal'),
+                    _buildInfoCard(context, [
+                      _buildInfoRow(context, 'ID', userInfo['id'] ?? ''),
+                      _buildInfoRow(
+                        context,
+                        'Nombre',
+                        userInfo['nombre'] ?? '',
+                      ),
+                      _buildInfoRow(
+                        context,
+                        'Apellido',
+                        userInfo['apellido'] ?? '',
+                      ),
+                      _buildInfoRow(
+                        context,
+                        'Cédula',
+                        userInfo['cedula'] ?? '',
+                      ),
+                      _buildInfoRow(context, 'Email', userInfo['email'] ?? ''),
+                    ]),
+
+                    const SizedBox(height: 20),
+
+                    // Botones de acción según el rol
+                    _userRole == 0
+                        ? _buildAdminActions(context)
+                        : _userRole == 1
+                        ? _buildClientActions(context)
+                        : _userRole == 2
+                        ? _buildCookActions(context)
+                        : _buildBaristaActions(context),
+
+                    const SizedBox(height: 20),
+
+                    // Botón para cerrar
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                      ),
+                      child: const Text('Cerrar'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Widgets auxiliares para construir la UI de perfil
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Divider(
+              color: theme.colorScheme.primary.withOpacity(0.5),
+              thickness: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(BuildContext context, List<Widget> children) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$label:',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface.withOpacity(0.7),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(value, style: theme.textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Secciones de acciones según el rol
+  Widget _buildAdminActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, 'Acciones de Administrador'),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            // Usar Future.delayed para evitar que se active el teclado automáticamente
+            Future.delayed(Duration.zero, () {
+              setState(() => _currentIndex = 3); // Ir a la pantalla de usuarios
+              _pageController.jumpToPage(3);
+              // Asegurar que ningún campo de texto obtiene el foco automáticamente
+              FocusManager.instance.primaryFocus?.unfocus();
+            });
+          },
+          icon: const Icon(Icons.people),
+          label: const Text('Gestionar Usuarios'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            // Usar Future.delayed para evitar que se active el teclado automáticamente
+            Future.delayed(Duration.zero, () {
+              setState(() => _currentIndex = 1); // Ir a la pantalla de menú
+              _pageController.jumpToPage(1);
+              // Asegurar que ningún campo de texto obtiene el foco automáticamente
+              FocusManager.instance.primaryFocus?.unfocus();
+            });
+          },
+          icon: const Icon(Icons.restaurant_menu),
+          label: const Text('Gestionar Menú'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClientActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, 'Mis Acciones'),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() => _currentIndex = 3); // Ir al carrito
+            _pageController.jumpToPage(3);
+          },
+          icon: const Icon(Icons.shopping_cart),
+          label: const Text('Ver mi Carrito'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            // Aquí iría la navegación a los pedidos anteriores
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Historial de pedidos no implementado'),
+              ),
+            );
+          },
+          icon: const Icon(Icons.history),
+          label: const Text('Mis Pedidos Anteriores'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCookActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, 'Acciones de Cocinero'),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() => _currentIndex = 1); // Ir a órdenes activas
+            _pageController.jumpToPage(1);
+          },
+          icon: const Icon(Icons.restaurant),
+          label: const Text('Ver Órdenes Activas'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() => _currentIndex = 2); // Ir al historial
+            _pageController.jumpToPage(2);
+          },
+          icon: const Icon(Icons.history),
+          label: const Text('Historial de Órdenes'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBaristaActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, 'Acciones de Barista'),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() => _currentIndex = 1); // Ir a órdenes activas
+            _pageController.jumpToPage(1);
+          },
+          icon: const Icon(Icons.coffee),
+          label: const Text('Ver Órdenes Activas'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() => _currentIndex = 2); // Ir al historial
+            _pageController.jumpToPage(2);
+          },
+          icon: const Icon(Icons.history),
+          label: const Text('Historial de Órdenes'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+        ),
+      ],
     );
   }
 

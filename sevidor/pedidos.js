@@ -172,70 +172,6 @@ router.post("/pedidos", async (req, res) => {
   }
 });
 
-// Obtener un pedido específico por ID
-router.get("/pedidos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // Obtener datos del pedido
-    const pedidoResult = await pool.query(
-      `SELECT p.idpedido, p.idpersona, p.estado, 
-              TO_CHAR(p.fecha, 'YYYY-MM-DD') as fecha, 
-              TO_CHAR(p.fecha, 'HH24:MI') as hora,
-              pe.nombre || ' ' || pe.apellido as cliente
-       FROM pedidos p
-       INNER JOIN personas pe ON p.idpersona = pe.idpersonas
-       WHERE p.idpedido = $1`,
-      [id]
-    );
-    
-    if (pedidoResult.rows.length === 0) {
-      return res.status(404).json({ error: "Pedido no encontrado" });
-    }
-    
-    const pedido = pedidoResult.rows[0];
-    
-    // Obtener detalles del pedido
-    const detallesResult = await pool.query(
-      `SELECT pd.idplato, pd.cantidad, pd.precio_unitario, pd.notas,
-              m.nombre as nombre, m.imagen_url
-       FROM pedido_detalle pd
-       INNER JOIN menu m ON pd.idplato = m.idplato
-       WHERE pd.idpedido = $1`,
-      [id]
-    );
-    
-    // Calcular total y formatear items
-    let total = 0;
-    const items = detallesResult.rows.map(item => {
-      const subtotal = item.cantidad * item.precio_unitario;
-      total += subtotal;
-      
-      return {
-        nombre: item.nombre,
-        cantidad: item.cantidad,
-        precio_unitario: parseFloat(item.precio_unitario),
-        notas: item.notas,
-        imagen_url: item.imagen_url,
-        subtotal: parseFloat(subtotal.toFixed(2))
-      };
-    });
-    
-    return res.status(200).json({
-      ...pedido,
-      total: parseFloat(total.toFixed(2)),
-      items
-    });
-    
-  } catch (error) {
-    console.error("❌ Error al obtener pedido:", error);
-    return res.status(500).json({
-      error: "Error al obtener pedido",
-      details: error.message
-    });
-  }
-});
-
 // Actualizar estado de un pedido
 router.patch("/pedidos/:id/estado", async (req, res) => {
   try {
@@ -258,7 +194,7 @@ router.patch("/pedidos/:id/estado", async (req, res) => {
     
     // Obtener el estado actual del pedido
     const currentStateResult = await pool.query(
-      "SELECT estado FROM pedidos WHERE idpedido = $1",
+      "SELECT estado, fecha FROM pedidos WHERE idpedido = $1",
       [id]
     );
     
@@ -268,64 +204,32 @@ router.patch("/pedidos/:id/estado", async (req, res) => {
     }
     
     const currentState = currentStateResult.rows[0].estado;
+    const fechaInicial = currentStateResult.rows[0].fecha;
     
-    // Actualizar el estado
-    const updateResult = await pool.query(
-      "UPDATE pedidos SET estado = $1 WHERE idpedido = $2 RETURNING *",
-      [estado, id]
-    );
+    let updateResult;
     
     // Si el pedido está cambiando de pendiente a completado o cancelado,
-    // añadir entrada en la tabla de tiempos de procesamiento
+    // registrar el tiempo de procesamiento
     if (currentState === 'pendiente' && (estado === 'completado' || estado === 'cancelado')) {
       console.log(`📝 Registrando tiempo de procesamiento para pedido #${id}: ${currentState} -> ${estado}`);
       
-      try {
-        // Verificar si la tabla pedido_tiempos existe, crearla si no
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS pedido_tiempos (
-            id SERIAL PRIMARY KEY,
-            idpedido INTEGER NOT NULL,
-            estado_inicial VARCHAR(50) NOT NULL,
-            estado_final VARCHAR(50) NOT NULL,
-            timestamp_inicial TIMESTAMP NOT NULL,
-            timestamp_final TIMESTAMP NOT NULL,
-            tiempo_procesamiento INTERVAL NOT NULL
-          );
-        `);
-        
-        // Obtener timestamp original del pedido
-        const timestampResult = await pool.query(
-          "SELECT fecha FROM pedidos WHERE idpedido = $1",
-          [id]
-        );
-        
-        if (timestampResult.rows.length > 0) {
-          const fechaInicial = timestampResult.rows[0].fecha;
-          const fechaFinal = new Date();
-          
-          // Calcular el tiempo de procesamiento
-          await pool.query(`
-            INSERT INTO pedido_tiempos (
-              idpedido, 
-              estado_inicial, 
-              estado_final, 
-              timestamp_inicial, 
-              timestamp_final, 
-              tiempo_procesamiento
-            ) VALUES (
-              $1, $2, $3, $4, $5, $5 - $4
-            )`,
-            [id, currentState, estado, fechaInicial, fechaFinal]
-          );
-          
-          console.log('✅ Tiempo de procesamiento registrado exitosamente');
-        }
-      } catch (timeError) {
-        console.error('❌ Error al registrar tiempo de procesamiento:', timeError);
-        // No hacemos rollback en caso de error aquí, ya que la actualización del estado
-        // es más importante que el registro del tiempo
-      }
+      // Actualizar estado y calcular tiempo de procesamiento en la misma consulta
+      updateResult = await pool.query(
+        `UPDATE pedidos SET 
+          estado = $1,
+          tiempo_procesamiento = NOW() - fecha::timestamp
+         WHERE idpedido = $2 
+         RETURNING *`,
+        [estado, id]
+      );
+      
+      console.log('✅ Estado actualizado y tiempo de procesamiento registrado');
+    } else {
+      // Para otros cambios de estado, solo actualizar el estado
+      updateResult = await pool.query(
+        "UPDATE pedidos SET estado = $1 WHERE idpedido = $2 RETURNING *",
+        [estado, id]
+      );
     }
     
     // Confirmar transacción
@@ -400,7 +304,7 @@ router.get("/pedidos/pendientes/count", async (req, res) => {
 router.get("/pedidos/ventas/hoy", async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE"
+      "SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"
     );
     
     return res.status(200).json({
@@ -504,10 +408,11 @@ router.delete("/pedidos/:id", async (req, res) => {
 // Obtener los platos más vendidos
 router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
   try {
-    const { limit = 5 } = req.query;
+    const { limit = 5, startDate, endDate, period, categoria } = req.query;
     
-    const { rows } = await pool.query(
-      `SELECT 
+    // Construir la consulta base
+    let query = `
+      SELECT 
         m.idplato, 
         m.nombre, 
         m.imagen_url,
@@ -521,13 +426,44 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
         pedidos p ON pd.idpedido = p.idpedido
       WHERE 
         p.estado = 'completado'
+    `;
+    
+    // Agregar filtros de fecha si se proporcionan
+    const queryParams = [limit];
+    let paramCounter = 1;
+    
+    if (startDate) {
+      paramCounter++;
+      queryParams.push(startDate);
+      query += ` AND DATE(p.fecha) >= $${paramCounter}::date`;
+    }
+    
+    if (endDate) {
+      paramCounter++;
+      queryParams.push(endDate);
+      query += ` AND DATE(p.fecha) <= $${paramCounter}::date`;
+    }
+    
+    // Agregar filtro de categoría si se proporciona
+    if (categoria) {
+      paramCounter++;
+      queryParams.push(categoria);
+      query += ` AND LOWER(m.categoria) = LOWER($${paramCounter})`;
+    }
+    
+    // Completar la consulta con el agrupamiento, ordenamiento y límite
+    query += `
       GROUP BY 
         m.idplato, m.nombre, m.imagen_url
       ORDER BY 
         cantidad_vendida DESC
-      LIMIT $1`,
-      [limit]
-    );
+      LIMIT $1
+    `;
+    
+    console.log('📊 Consulta de platos populares:', query);
+    console.log('📊 Parámetros:', queryParams);
+    
+    const { rows } = await pool.query(query, queryParams);
     
     // Formatear resultados
     const formattedRows = rows.map(row => ({
@@ -535,6 +471,8 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
       precio_promedio: parseFloat(row.precio_promedio),
       cantidad_vendida: parseInt(row.cantidad_vendida)
     }));
+    
+    console.log(`📊 Platos populares encontrados: ${formattedRows.length}`);
     
     return res.status(200).json(formattedRows);
   } catch (error) {
@@ -588,7 +526,7 @@ router.get("/pedidos/resumen", async (req, res) => {
   try {
     const { period, startDate, endDate } = req.query;
     
-    console.log(`📊 Solicitud de resumen de pedidos: período=${period}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
+    console.log(`📊 Solicitud de resumen de pedidos: período=${period || 'N/A'}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
 
     // Para pruebas, vamos a incluir todas las fechas a menos que se especifique un rango
     let fechaInicio, fechaFin;
@@ -599,14 +537,14 @@ router.get("/pedidos/resumen", async (req, res) => {
       fechaFin = new Date(`${endDate}T23:59:59`);
       console.log('📅 Usando rango de fechas proporcionado');
     } else {
-      // Si no, usar un rango amplio (1 año anterior hasta hoy) para incluir todos los datos de prueba
+      // Si no, determinar fechas según el periodo
       const hoy = new Date();
       
-      // Para datos de prueba: fecha suficientemente en el futuro para incluir todos los datos
-      if (process.env.NODE_ENV === 'development' || true) { // Siempre usar fechas amplias por ahora
+      if (!period || period === 'all') {
+        // Si no se especifica periodo o es 'all', usar rango amplio
         fechaInicio = new Date('2020-01-01');
         fechaFin = new Date('2030-12-31');
-        console.log('📅 Usando rango amplio para datos de desarrollo/prueba');
+        console.log('📅 Usando rango amplio para datos');
       } else {
         // En producción, usar el período solicitado
         switch (period) {
@@ -638,7 +576,10 @@ router.get("/pedidos/resumen", async (req, res) => {
               error: "Se requieren fechas de inicio y fin para el período personalizado" 
             });
           default:
-            return res.status(400).json({ error: "Período no válido" });
+            // Fallback a día actual si el periodo no es reconocido
+            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+            fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
+            console.log(`⚠️ Periodo no reconocido: "${period}", usando día actual como fallback`);
         }
       }
     }
@@ -666,27 +607,16 @@ router.get("/pedidos/resumen", async (req, res) => {
     const resumenResult = await pool.query(resumenQuery, [fechaInicio, fechaFin]);
     console.log(`📊 Resultado resumen: ${JSON.stringify(resumenResult.rows[0])}`);
     
-    // 2. Consultar todos los pedidos para registrar en logs
-    const pedidosQuery = `
-      SELECT 
-        p.idpedido, p.estado, TO_CHAR(p.fecha, 'YYYY-MM-DD HH24:MI:SS') as fecha
-      FROM 
-        pedidos p
-      ORDER BY 
-        p.fecha DESC
-    `;
-    
-    const pedidosResult = await pool.query(pedidosQuery);
-    console.log(`🧾 Pedidos en la base de datos: ${pedidosResult.rows.length}`);
-    pedidosResult.rows.forEach(row => {
-      console.log(`   - #${row.idpedido} | ${row.estado} | ${row.fecha}`);
-    });
-    
     // 3. Inicializar el objeto de respuesta
     const resumen = {
       totalPedidos: parseInt(resumenResult.rows[0].total_pedidos) || 0,
       totalVentas: parseFloat(resumenResult.rows[0].total_ventas) || 0,
-      ticketPromedio: 0
+      ticketPromedio: 0,
+      periodo: {
+        inicio: formatoFecha(fechaInicio),
+        fin: formatoFecha(fechaFin),
+        tipo: period || 'custom'
+      }
     };
     
     // Calcular ticket promedio si hay pedidos
@@ -695,11 +625,14 @@ router.get("/pedidos/resumen", async (req, res) => {
     }
     
     // 4. Añadir distribución específica según el período
+    let distribucionQuery = '';
+    
     if (period === 'day') {
       // Distribución por horas del día
-      const horasQuery = `
+      distribucionQuery = `
         SELECT 
-          EXTRACT(HOUR FROM p.fecha) as hora,
+          EXTRACT(HOUR FROM p.fecha) as grupo,
+          TO_CHAR(p.fecha, 'HH24:00') as etiqueta,
           COUNT(DISTINCT p.idpedido) as pedidos
         FROM 
           pedidos p
@@ -707,22 +640,17 @@ router.get("/pedidos/resumen", async (req, res) => {
           p.fecha >= $1 AND p.fecha <= $2
           AND p.estado = 'completado'
         GROUP BY 
-          hora
+          grupo, etiqueta
         ORDER BY 
-          hora
+          grupo
       `;
-      
-      const horasResult = await pool.query(horasQuery, [fechaInicio, fechaFin]);
-      
-      resumen.horasPico = horasResult.rows.map(row => ({
-        hora: `${Math.floor(row.hora).toString().padStart(2, '0')}:00`,
-        pedidos: parseInt(row.pedidos)
-      }));
+      resumen.distribucionLabel = 'horasPico';
     } 
     else if (period === 'week') {
       // Distribución por días de la semana
-      const diasQuery = `
+      distribucionQuery = `
         SELECT 
+          EXTRACT(DOW FROM p.fecha) as grupo,
           CASE 
             WHEN EXTRACT(DOW FROM p.fecha) = 0 THEN 'Domingo'
             WHEN EXTRACT(DOW FROM p.fecha) = 1 THEN 'Lunes'
@@ -731,7 +659,7 @@ router.get("/pedidos/resumen", async (req, res) => {
             WHEN EXTRACT(DOW FROM p.fecha) = 4 THEN 'Jueves'
             WHEN EXTRACT(DOW FROM p.fecha) = 5 THEN 'Viernes'
             WHEN EXTRACT(DOW FROM p.fecha) = 6 THEN 'Sábado'
-          END as dia,
+          END as etiqueta,
           COUNT(DISTINCT p.idpedido) as pedidos
         FROM 
           pedidos p
@@ -739,30 +667,28 @@ router.get("/pedidos/resumen", async (req, res) => {
           p.fecha >= $1 AND p.fecha <= $2
           AND p.estado = 'completado'
         GROUP BY 
-          EXTRACT(DOW FROM p.fecha)
+          grupo, etiqueta
         ORDER BY 
-          EXTRACT(DOW FROM p.fecha)
+          grupo
       `;
-      
-      const diasResult = await pool.query(diasQuery, [fechaInicio, fechaFin]);
-      
-      resumen.diasPico = diasResult.rows.map(row => ({
-        dia: row.dia,
-        pedidos: parseInt(row.pedidos)
-      }));
-
-      console.log(`🗓️ Distribución por días:`, resumen.diasPico);
+      resumen.distribucionLabel = 'diasPico';
     }
     else if (period === 'month') {
       // Distribución por semanas del mes
-      const semanasQuery = `
+      distribucionQuery = `
         SELECT 
+          CASE 
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 1 AND 7 THEN 1
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 8 AND 14 THEN 2
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 15 AND 21 THEN 3
+            ELSE 4
+          END as grupo,
           CASE 
             WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 1 AND 7 THEN '1-7'
             WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 8 AND 14 THEN '8-14'
             WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 15 AND 21 THEN '15-21'
             ELSE '22-31'
-          END as semana,
+          END as etiqueta,
           COUNT(DISTINCT p.idpedido) as pedidos
         FROM 
           pedidos p
@@ -770,24 +696,17 @@ router.get("/pedidos/resumen", async (req, res) => {
           p.fecha >= $1 AND p.fecha <= $2
           AND p.estado = 'completado'
         GROUP BY 
-          semana
+          grupo, etiqueta
         ORDER BY 
-          semana
+          grupo
       `;
-      
-      const semanasResult = await pool.query(semanasQuery, [fechaInicio, fechaFin]);
-      
-      resumen.semanasPico = semanasResult.rows.map(row => ({
-        semana: row.semana,
-        pedidos: parseInt(row.pedidos)
-      }));
-
-      console.log(`📅 Distribución por semanas:`, resumen.semanasPico);
+      resumen.distribucionLabel = 'semanasPico';
     }
     else if (period === 'year') {
       // Distribución por meses del año
-      const mesesQuery = `
+      distribucionQuery = `
         SELECT 
+          EXTRACT(MONTH FROM p.fecha) as grupo,
           CASE 
             WHEN EXTRACT(MONTH FROM p.fecha) = 1 THEN 'Enero'
             WHEN EXTRACT(MONTH FROM p.fecha) = 2 THEN 'Febrero'
@@ -801,7 +720,7 @@ router.get("/pedidos/resumen", async (req, res) => {
             WHEN EXTRACT(MONTH FROM p.fecha) = 10 THEN 'Octubre'
             WHEN EXTRACT(MONTH FROM p.fecha) = 11 THEN 'Noviembre'
             WHEN EXTRACT(MONTH FROM p.fecha) = 12 THEN 'Diciembre'
-          END as mes,
+          END as etiqueta,
           COUNT(DISTINCT p.idpedido) as pedidos
         FROM 
           pedidos p
@@ -809,20 +728,33 @@ router.get("/pedidos/resumen", async (req, res) => {
           p.fecha >= $1 AND p.fecha <= $2
           AND p.estado = 'completado'
         GROUP BY 
-          EXTRACT(MONTH FROM p.fecha)
+          grupo, etiqueta
         ORDER BY 
-          EXTRACT(MONTH FROM p.fecha)
+          grupo
       `;
-      
-      const mesesResult = await pool.query(mesesQuery, [fechaInicio, fechaFin]);
-      
-      resumen.mesesPico = mesesResult.rows.map(row => ({
-        mes: row.mes,
-        pedidos: parseInt(row.pedidos)
-      }));
-
-      console.log(`📆 Distribución por meses:`, resumen.mesesPico);
+      resumen.distribucionLabel = 'mesesPico';
     }
+    
+    // Ejecutar la consulta de distribución si existe
+    if (distribucionQuery) {
+      try {
+        const distribucionResult = await pool.query(distribucionQuery, [fechaInicio, fechaFin]);
+        
+        resumen[resumen.distribucionLabel] = distribucionResult.rows.map(row => ({
+          etiqueta: row.etiqueta,
+          pedidos: parseInt(row.pedidos)
+        }));
+        
+        console.log(`📊 Distribución por ${resumen.distribucionLabel}:`, resumen[resumen.distribucionLabel]);
+      } catch (distError) {
+        console.error(`❌ Error al obtener distribución: ${distError.message}`);
+        // No detener todo el proceso por un error en la distribución
+        resumen.errorDistribucion = distError.message;
+      }
+    }
+    
+    // Eliminar la etiqueta de distribución del resultado final
+    delete resumen.distribucionLabel;
     
     console.log(`✅ Resumen generado con éxito: ${resumen.totalPedidos} pedidos por valor de ${resumen.totalVentas}`);
     return res.status(200).json(resumen);
@@ -836,169 +768,142 @@ router.get("/pedidos/resumen", async (req, res) => {
   }
 });
 
-// Obtener estadísticas de tiempo de procesamiento de pedidos
+// Obtener estadísticas de tiempo de procesamiento
 router.get("/pedidos/tiempo-procesamiento", async (req, res) => {
   try {
     const { period, startDate, endDate } = req.query;
     
-    console.log(`⏱️ Solicitud de estadísticas de tiempo de procesamiento: período=${period}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
-
-    // Para pruebas, vamos a incluir todas las fechas a menos que se especifique un rango
+    // Determinar las fechas de inicio y fin para el período solicitado
     let fechaInicio, fechaFin;
-    let whereClause = "";
-
-    if (startDate && endDate) {
-      // Si se proporcionan fechas específicas, usarlas
-      fechaInicio = new Date(`${startDate}T00:00:00`);
-      fechaFin = new Date(`${endDate}T23:59:59`);
-      whereClause = `pt.timestamp_inicial >= '${fechaInicio.toISOString()}' AND pt.timestamp_final <= '${fechaFin.toISOString()}'`;
-      console.log('📅 Usando rango de fechas proporcionado');
+    if (period === 'day') {
+      // Hoy
+      fechaInicio = new Date();
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFin = new Date();
+    } else if (period === 'week') {
+      // Esta semana
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0 = Domingo, 1 = Lunes, etc.
+      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Ajuste para iniciar en lunes
+      fechaInicio = new Date(today.setDate(diff));
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFin = new Date();
+    } else if (period === 'month') {
+      // Este mes
+      fechaInicio = new Date();
+      fechaInicio.setDate(1);
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFin = new Date();
+    } else if (period === 'year') {
+      // Este año
+      fechaInicio = new Date();
+      fechaInicio.setMonth(0, 1);
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFin = new Date();
+    } else if (period === 'all') {
+      // Todo el tiempo
+      fechaInicio = new Date(0); // 1970-01-01
+      fechaFin = new Date();
+    } else if (startDate && endDate) {
+      // Período personalizado
+      fechaInicio = new Date(startDate);
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFin = new Date(endDate);
+      fechaFin.setHours(23, 59, 59, 999);
     } else {
-      // Si no, usar un período según se indique
-      const hoy = new Date();
-      
-      switch (period) {
-        case 'day':
-          fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-          fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
-          break;
-        case 'week':
-          const diaSemana = hoy.getDay() || 7;
-          const diasAtras = diaSemana - 1;
-          fechaInicio = new Date(hoy);
-          fechaInicio.setDate(hoy.getDate() - diasAtras);
-          fechaInicio.setHours(0, 0, 0, 0);
-          fechaFin = new Date(hoy);
-          break;
-        case 'month':
-          fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-          fechaFin = new Date(hoy);
-          break;
-        case 'year':
-          fechaInicio = new Date(hoy.getFullYear(), 0, 1);
-          fechaFin = new Date(hoy);
-          break;
-        default:
-          // Por defecto, usar todo el rango de datos
-          fechaInicio = new Date('2020-01-01');
-          fechaFin = new Date('2030-12-31');
-      }
-      
-      whereClause = `pt.timestamp_inicial >= '${fechaInicio.toISOString()}' AND pt.timestamp_final <= '${fechaFin.toISOString()}'`;
+      // Por defecto, último mes
+      fechaInicio = new Date();
+      fechaInicio.setMonth(fechaInicio.getMonth() - 1);
+      fechaFin = new Date();
     }
-
-    // Comprobar si la tabla pedido_tiempos existe
-    const tableExistsQuery = `
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'pedido_tiempos'
-      );
-    `;
     
-    const tableExists = await pool.query(tableExistsQuery);
+    console.log(`📊 Obteniendo estadísticas de tiempo de procesamiento para el período: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`);
     
-    if (!tableExists.rows[0].exists) {
-      return res.status(200).json({
-        mensaje: "No hay datos de tiempos de procesamiento disponibles aún",
-        datos_disponibles: false,
-        tiempo_promedio: null,
-        tiempo_minimo: null,
-        tiempo_maximo: null,
-        total_pedidos_analizados: 0
-      });
-    }
-
-    // Consulta para obtener estadísticas de tiempo de procesamiento
-    const query = `
+    // Consultar estadísticas generales utilizando el nuevo campo tiempo_procesamiento de la tabla pedidos
+    const statsResult = await pool.query(`
       SELECT 
         COUNT(*) as total_pedidos,
         AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos,
         MIN(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_minimo_segundos,
         MAX(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_maximo_segundos
       FROM 
-        pedido_tiempos pt
+        pedidos
       WHERE 
-        ${whereClause}
-    `;
+        fecha BETWEEN $1 AND $2
+        AND tiempo_procesamiento IS NOT NULL
+        AND estado IN ('completado', 'cancelado')
+    `, [fechaInicio, fechaFin]);
     
-    console.log("⏱️ Ejecutando consulta:", query);
+    const stats = statsResult.rows[0];
     
-    const result = await pool.query(query);
-    
-    if (result.rows.length === 0 || result.rows[0].total_pedidos === 0) {
+    // Si no hay datos, devolver respuesta vacía
+    if (stats.total_pedidos === '0') {
       return res.status(200).json({
-        mensaje: "No hay datos de tiempos de procesamiento para el período seleccionado",
-        datos_disponibles: true,
-        tiempo_promedio: null,
-        tiempo_minimo: null,
-        tiempo_maximo: null,
-        total_pedidos_analizados: 0
+        mensaje: "No hay datos de tiempo de procesamiento para el período solicitado",
+        datos_disponibles: false,
+        periodo: {
+          desde: fechaInicio.toISOString(),
+          hasta: fechaFin.toISOString(),
+          nombre: period || 'personalizado'
+        }
       });
     }
     
-    // Formatear minutos y segundos para mejor legibilidad
+    // Función para formatear tiempo en formato legible
     const formatTiempo = (segundos) => {
-      if (segundos === null) return null;
+      if (!segundos || isNaN(segundos)) return "No disponible";
       
       const minutos = Math.floor(segundos / 60);
-      const segundosRestantes = Math.round(segundos % 60);
+      const segs = Math.round(segundos % 60);
       
-      return {
-        segundos: segundos,
-        formato: `${minutos}m ${segundosRestantes}s`
-      };
+      if (minutos < 1) {
+        return `${segs} segundos`;
+      } else {
+        return `${minutos} min ${segs} seg`;
+      }
     };
     
-    const stats = result.rows[0];
-    
-    // Obtener distribución por estado final
-    const distribucionQuery = `
+    // Consultar distribución por estado final
+    const distribucionResult = await pool.query(`
       SELECT 
-        estado_final, 
+        estado as estado_final,
         COUNT(*) as cantidad,
         AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos
       FROM 
-        pedido_tiempos pt
+        pedidos
       WHERE 
-        ${whereClause}
+        fecha BETWEEN $1 AND $2
+        AND tiempo_procesamiento IS NOT NULL
+        AND estado IN ('completado', 'cancelado')
       GROUP BY 
-        estado_final
+        estado
       ORDER BY 
         cantidad DESC
-    `;
+    `, [fechaInicio, fechaFin]);
     
-    const distribucionResult = await pool.query(distribucionQuery);
-    
-    // Consulta para obtener la distribución por rango de tiempo
-    const rangosTiempoQuery = `
-      SELECT
+    // Consultar distribución por rangos de tiempo
+    const rangosTiempoResult = await pool.query(`
+      SELECT 
         CASE
           WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 300 THEN 'menos_5min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 600 THEN '5_10min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 900 THEN '10_15min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 1200 THEN '15_20min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 1800 THEN '20_30min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 300 AND 600 THEN '5_10min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 600 AND 900 THEN '10_15min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 900 AND 1200 THEN '15_20min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 1200 AND 1800 THEN '20_30min'
           ELSE 'mas_30min'
         END as rango_tiempo,
         COUNT(*) as cantidad
-      FROM
-        pedido_tiempos pt
-      WHERE
-        ${whereClause}
-      GROUP BY
+      FROM 
+        pedidos
+      WHERE 
+        fecha BETWEEN $1 AND $2
+        AND tiempo_procesamiento IS NOT NULL
+        AND estado IN ('completado', 'cancelado')
+      GROUP BY 
         rango_tiempo
-      ORDER BY
-        CASE
-          WHEN rango_tiempo = 'menos_5min' THEN 1
-          WHEN rango_tiempo = '5_10min' THEN 2
-          WHEN rango_tiempo = '10_15min' THEN 3
-          WHEN rango_tiempo = '15_20min' THEN 4
-          WHEN rango_tiempo = '20_30min' THEN 5
-          WHEN rango_tiempo = 'mas_30min' THEN 6
-        END
-    `;
-    
-    const rangosTiempoResult = await pool.query(rangosTiempoQuery);
+      ORDER BY 
+        rango_tiempo
+    `, [fechaInicio, fechaFin]);
     
     // Construir respuesta
     return res.status(200).json({
@@ -1032,6 +937,77 @@ router.get("/pedidos/tiempo-procesamiento", async (req, res) => {
     console.error("❌ Error al obtener estadísticas de tiempo de procesamiento:", error);
     return res.status(500).json({
       error: "Error al obtener estadísticas de tiempo de procesamiento",
+      details: error.message
+    });
+  }
+});
+
+// Obtener un pedido específico por ID - ESTA RUTA DEBE IR AL FINAL DE TODAS LAS DEMÁS RUTAS DE PEDIDOS
+router.get("/pedidos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Intentar convertir el ID a un número entero
+    if (isNaN(parseInt(id))) {
+      return res.status(400).json({ 
+        error: `ID de pedido inválido: "${id}". Se esperaba un número entero.`
+      });
+    }
+    
+    // Obtener datos del pedido
+    const pedidoResult = await pool.query(
+      `SELECT p.idpedido, p.idpersona, p.estado, 
+              TO_CHAR(p.fecha, 'YYYY-MM-DD') as fecha, 
+              TO_CHAR(p.fecha, 'HH24:MI') as hora,
+              pe.nombre || ' ' || pe.apellido as cliente
+       FROM pedidos p
+       INNER JOIN personas pe ON p.idpersona = pe.idpersonas
+       WHERE p.idpedido = $1`,
+      [id]
+    );
+    
+    if (pedidoResult.rows.length === 0) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+    
+    const pedido = pedidoResult.rows[0];
+    
+    // Obtener detalles del pedido
+    const detallesResult = await pool.query(
+      `SELECT pd.idplato, pd.cantidad, pd.precio_unitario, pd.notas,
+              m.nombre as nombre, m.imagen_url
+       FROM pedido_detalle pd
+       INNER JOIN menu m ON pd.idplato = m.idplato
+       WHERE pd.idpedido = $1`,
+      [id]
+    );
+    
+    // Calcular total y formatear items
+    let total = 0;
+    const items = detallesResult.rows.map(item => {
+      const subtotal = item.cantidad * item.precio_unitario;
+      total += subtotal;
+      
+      return {
+        nombre: item.nombre,
+        cantidad: item.cantidad,
+        precio_unitario: parseFloat(item.precio_unitario),
+        notas: item.notas,
+        imagen_url: item.imagen_url,
+        subtotal: parseFloat(subtotal.toFixed(2))
+      };
+    });
+    
+    return res.status(200).json({
+      ...pedido,
+      total: parseFloat(total.toFixed(2)),
+      items
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al obtener pedido:", error);
+    return res.status(500).json({
+      error: "Error al obtener pedido",
       details: error.message
     });
   }

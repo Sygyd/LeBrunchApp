@@ -381,13 +381,13 @@ router.delete("/users/:id", async (req, res) => {
 router.put("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, cedula, email, rol } = req.body;
+    const { nombre, apellido, cedula, email, rol, contrasena } = req.body;
     
     console.log(`📝 Solicitud para actualizar usuario con ID: ${id}`);
     console.log(`Datos recibidos:`, req.body);
     
     // Validación básica
-    if (!nombre && !apellido && !cedula && !email && !rol) {
+    if (!nombre && !apellido && !cedula && !email && !rol && !contrasena) {
       return res.status(400).json({ 
         success: false,
         message: "No se proporcionaron datos para actualizar"
@@ -445,22 +445,43 @@ router.put("/users/:id", async (req, res) => {
       console.log(`✅ Información personal actualizada:`, updatePersonaResult.rows[0]);
     }
     
-    // Actualizar el rol si se proporcionó
-    if (rol) {
-      // Validar que el rol sea válido
-      let rolToSave = rol;
-      // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
-      if (!["0", "1", "2", "3"].includes(rol.toString())) {
-        console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
-        rolToSave = "1";
+    // Actualizar el rol y/o la contraseña si se proporcionaron
+    if (rol || contrasena) {
+      let updateUserQuery = 'UPDATE usuario SET';
+      const updateValues = [];
+      const queryParams = [];
+      
+      if (rol) {
+        // Validar que el rol sea válido
+        let rolToSave = rol;
+        // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
+        if (!["0", "1", "2", "3"].includes(rol.toString())) {
+          console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
+          rolToSave = "1";
+        }
+        
+        updateValues.push(` rol = $${updateValues.length + 1}`);
+        queryParams.push(rolToSave);
+        console.log(`✅ Rol actualizado a: ${rolToSave}`);
       }
       
-      const updateRolResult = await pool.query(
-        'UPDATE usuario SET rol = $1 WHERE idpersona = $2 RETURNING *',
-        [rolToSave, id]
-      );
+      if (contrasena) {
+        // Hashear la contraseña antes de guardarla
+        const bcrypt = require("bcrypt");
+        const hashedPassword = await bcrypt.hash(contrasena, 10);
+        
+        updateValues.push(` contrasena = $${updateValues.length + 1}`);
+        queryParams.push(hashedPassword);
+        console.log(`🔐 Contraseña actualizada para el usuario ID: ${id}`);
+      }
       
-      console.log(`✅ Rol actualizado a: ${rolToSave}`);
+      if (updateValues.length > 0) {
+        updateUserQuery += updateValues.join(',');
+        updateUserQuery += ` WHERE idpersona = $${queryParams.length + 1} RETURNING *`;
+        queryParams.push(id);
+        
+        const updateUserResult = await pool.query(updateUserQuery, queryParams);
+      }
     }
     
     // Confirmar la transacción

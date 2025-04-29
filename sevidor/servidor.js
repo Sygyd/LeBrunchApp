@@ -385,6 +385,22 @@ app.post('/db/query', async (req, res) => {
     
     console.log(`📊 Ejecutando consulta SQL: ${query}`);
     
+    // Manejar consultas a tablas que no existen
+    if (query.toLowerCase().includes('pedido_tiempos')) {
+      console.log('⚠️ Interceptando consulta a la tabla pedido_tiempos que no existe');
+      
+      // Verificar si es una consulta SELECT
+      if (query.toLowerCase().trim().startsWith('select')) {
+        // Si es una consulta a pedido_tiempos, enviar un resultado vacío
+        return res.status(200).json({
+          success: true,
+          result: [],
+          rowCount: 0,
+          message: 'La tabla pedido_tiempos no existe. Use tiempo_procesamiento en la tabla pedidos.'
+        });
+      }
+    }
+    
     // Ejecutar la consulta
     const result = await pool.query(query);
     
@@ -428,7 +444,7 @@ app.get('/pedidos/pendientes/count', async (req, res) => {
 app.get('/pedidos/ventas/hoy', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE"
+      "SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"
     );
     
     return res.status(200).json({
@@ -543,7 +559,7 @@ app.get('/admin/metrics', async (req, res) => {
       pool.query("SELECT COUNT(*) as count FROM menu WHERE disponibilidad = true"),
       pool.query("SELECT COUNT(*) as count FROM usuario"),
       pool.query("SELECT COUNT(*) as count FROM pedidos WHERE estado = 'pendiente'"),
-      pool.query("SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE")
+      pool.query("SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'")
     ]);
     
     return res.status(200).json({
@@ -693,6 +709,62 @@ app.get('/mcp/status', async (req, res) => {
       status: 'degraded',
       error: error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint directo para obtener tiempos de procesamiento de un pedido
+app.get('/pedidos/tiempo/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ error: "ID de pedido inválido" });
+    }
+    
+    const pedidoId = parseInt(id);
+    
+    // Consultar directamente desde la tabla pedidos (método simplificado)
+    const result = await pool.query(`
+      SELECT 
+        idpedido,
+        estado,
+        fecha as timestamp_inicial,
+        EXTRACT(EPOCH FROM tiempo_procesamiento) as tiempo_segundos
+      FROM 
+        pedidos
+      WHERE 
+        idpedido = $1 AND
+        tiempo_procesamiento IS NOT NULL
+      LIMIT 1
+    `, [pedidoId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "No se encontraron datos de tiempo para este pedido" 
+      });
+    }
+    
+    const processingData = result.rows[0];
+    
+    // Formatear el tiempo en formato legible
+    const tiempoSegundos = parseFloat(processingData.tiempo_segundos) || 0;
+    const minutos = Math.floor(tiempoSegundos / 60);
+    const segundos = Math.round(tiempoSegundos % 60);
+    
+    return res.status(200).json({
+      idpedido: processingData.idpedido,
+      estado_inicial: 'pendiente', // Asumimos que el estado inicial siempre es pendiente
+      estado_final: processingData.estado,
+      timestamp_inicial: processingData.timestamp_inicial,
+      tiempo_segundos: tiempoSegundos,
+      tiempo_formato: `${minutos} min ${segundos} seg`
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al obtener tiempo de procesamiento:", error);
+    return res.status(500).json({
+      error: "Error al obtener tiempo de procesamiento",
+      details: error.message
     });
   }
 });
