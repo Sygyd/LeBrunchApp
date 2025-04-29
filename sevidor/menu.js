@@ -1,18 +1,17 @@
 const express = require("express");
 const pool = require("./db");
 const multer = require("multer");
-const path = require("path");  // Conexión a PostgreSQL desde db.js
+const path = require("path");
 const router = express.Router();
 
-
+// Configuración de multer para guardar archivos en la carpeta "uploads"
 const storage = multer.diskStorage({
   destination: "./uploads",
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, Date.now() + path.extname(file.originalname)); // Nombre único para el archivo
   },
 });
 const upload = multer({ storage: storage });
-
 
 // Obtener todos los platos del menú
 router.get("/menu", async (req, res) => {
@@ -34,7 +33,7 @@ router.post("/menu", upload.single("imagen"), async (req, res) => {
       "INSERT INTO menu (nombre, categoria, precio, disponibilidad, ingredientes, imagen_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
       [nombre, categoria, precio, disponibilidad, ingredientes, imagen_url]
     );
-    res.json(result.rows[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -42,6 +41,5 @@ router.post("/menu", upload.single("imagen"), async (req, res) => {
 
 // Servir archivos de imagen
 router.use("/uploads", express.static("uploads"));
-
 
 module.exports = router;
