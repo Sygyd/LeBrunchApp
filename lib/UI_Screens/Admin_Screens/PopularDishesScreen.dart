@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Widgets/background_scaffold.dart';
+import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import '../../Api_services/menu/menu_service.dart';
 
@@ -17,12 +18,14 @@ class PopularDishesScreen extends StatefulWidget {
 class _PopularDishesScreenState extends State<PopularDishesScreen> {
   final PopularDishesService _popularDishesService = PopularDishesService();
   final MenuService _menuService = MenuService();
+  // Clave global para acceder al DateFilterBar
+  final GlobalKey<DateFilterBarState> _dateFilterKey = GlobalKey();
   bool _isLoading = true;
   String? _error; // Definición de variable de error
   List<Map<String, dynamic>> _popularDishes = [];
   List<Map<String, dynamic>> _filteredDishes = [];
   String _selectedPeriod =
-      'week'; // Período seleccionado: day, week, month, year
+      'all'; // Período seleccionado: day, week, month, year
   List<Map<String, dynamic>> _categories = []; // Lista de categorías
   Map<String, bool> _selectedCategories =
       {}; // Categorías seleccionadas como Map
@@ -37,7 +40,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     // Inicializar estados
     _isLoading = true;
     _selectedCategories = {};
-    _selectedPeriod = 'week';
+    _selectedPeriod = 'all';
     _categories = [];
     _startDate = DateTime.now().subtract(const Duration(days: 7));
     _endDate = DateTime.now();
@@ -131,6 +134,9 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         startDateStr = DateFormat('yyyy-MM-dd').format(_startDate!);
         endDateStr = DateFormat('yyyy-MM-dd').format(_endDate!);
         period = null; // No enviar período si es personalizado
+      } else if (_selectedPeriod == 'all') {
+        // Si el filtro es "todos", no enviar período específico
+        period = null;
       }
 
       // Obtener la categoría seleccionada, si hay alguna
@@ -150,30 +156,6 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
             endDate: endDateStr,
             category: selectedCategory,
           );
-
-      // Si no hay resultados y se aplicaron filtros, intentar sin filtros
-      if (result.isEmpty &&
-          (selectedCategory != null || startDateStr != null)) {
-        // Mostrar mensaje informativo
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No se encontraron platos con los filtros seleccionados. Mostrando todos los platos populares.',
-              ),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-
-        // Limpiar filtros de categoría
-        setState(() {
-          _selectedCategories.clear();
-        });
-
-        // Intentar obtener todos los platos sin filtros
-        result = await popularDishesService.getPopularDishesDirect();
-      }
 
       if (mounted) {
         setState(() {
@@ -498,11 +480,9 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         centerTitle: false,
         elevation: 0,
         toolbarHeight: 70.0,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: Colors.white, width: 1.5),
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(30),
-          ),
+        shape: const RoundedRectangleBorder(
+          side: BorderSide(color: Colors.white, width: 1.5),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
         ),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
@@ -518,132 +498,80 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Selector de período con scroll horizontal
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Período de análisis',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'MADE TOMMY',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      _buildPeriodFilter('day', 'Hoy'),
-                      const SizedBox(width: 8),
-                      _buildPeriodFilter('week', 'Esta semana'),
-                      const SizedBox(width: 8),
-                      _buildPeriodFilter('month', 'Este mes'),
-                      const SizedBox(width: 8),
-                      _buildPeriodFilter('year', 'Este año'),
-                      const SizedBox(width: 8),
-                      ActionChip(
-                        avatar: const Icon(Icons.date_range),
-                        label: Text(
-                          _selectedPeriod == 'custom' && _startDate != null
-                              ? _formatDateRange()
-                              : 'Personalizado',
-                        ),
-                        backgroundColor:
-                            _selectedPeriod == 'custom'
-                                ? theme.colorScheme.primary.withOpacity(0.2)
-                                : null,
-                        onPressed: _selectDateRange,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          // Agregar DateFilterBar
+          DateFilterBar(
+            key: _dateFilterKey,
+            initialFilter: _mapPeriodToFilter(_selectedPeriod),
+            onFilterChanged: (String filter) {
+              setState(() {
+                _selectedPeriod = _mapFilterToPeriod(filter);
+                // Si se cambia el filtro de período, mantener las categorías seleccionadas
+                // para permitir una combinación de ambos filtros
+              });
+              _loadPopularDishes();
+            },
+            onCustomDateRangeSelected: (String startDate, String endDate) {
+              setState(() {
+                _startDate = DateFormat('yyyy-MM-dd').parse(startDate);
+                _endDate = DateFormat('yyyy-MM-dd').parse(endDate);
+                _selectedPeriod = 'custom';
+                // No limpiar categorías al seleccionar un rango de fechas personalizado
+              });
+              _loadPopularDishes();
+            },
           ),
 
-          // Filtro por categorías
+          // Filtros de categoría
           if (_categories.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Filtrar por categoría',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'MADE TOMMY',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
+            Card(
+              margin: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
+              elevation: 1,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // Opción para mostrar todas las categorías
-                        FilterChip(
-                          label: const Text('Todas'),
-                          selected: _selectedCategories.isEmpty,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedCategories = {};
-                              });
-                              // Cargar los datos nuevamente al quitar los filtros
-                              _loadPopularDishes();
-                            }
-                          },
-                          selectedColor: theme.colorScheme.primary,
-                          labelStyle: TextStyle(
-                            color:
-                                _selectedCategories.isEmpty
-                                    ? Colors.white
-                                    : theme.colorScheme.onSurface,
-                            fontFamily: 'MADE TOMMY',
+                        Text(
+                          'Categorías:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.secondary,
                           ),
                         ),
-                        ..._categories.map((category) {
-                          final categoryId = category['id'] as String;
-                          final isSelected = _selectedCategories.containsKey(
-                            categoryId,
-                          );
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: FilterChip(
-                              label: Text(category['name'] as String),
-                              selected: isSelected,
-                              onSelected: (_) {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedCategories.remove(categoryId);
-                                  } else {
-                                    _selectedCategories.clear();
-                                    _selectedCategories[categoryId] = true;
-                                  }
-                                });
-                                // Cargar datos nuevamente con el filtro actualizado
-                                _loadPopularDishes();
-                              },
-                              selectedColor: theme.colorScheme.primary,
-                              labelStyle: TextStyle(
-                                color:
-                                    isSelected
-                                        ? Colors.white
-                                        : theme.colorScheme.onSurface,
-                                fontFamily: 'MADE TOMMY',
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                        if (_selectedCategories.isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedCategories.clear();
+                              });
+                              _applyFilters();
+                            },
+                            child: const Text('Limpiar filtros'),
+                          ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8.0,
+                      runSpacing: 8.0,
+                      children:
+                          _categories
+                              .map(
+                                (category) => _buildCategoryFilter(
+                                  category['name'] as String,
+                                ),
+                              )
+                              .toList(),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -658,11 +586,6 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface.withOpacity(0.7),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _loadPopularDishes,
-                  tooltip: 'Actualizar datos',
                 ),
               ],
             ),
@@ -689,16 +612,39 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'No hay datos disponibles',
+                            'No hay ventas disponibles',
                             style: theme.textTheme.titleMedium,
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Prueba con otros filtros o período',
+                            _selectedPeriod == 'custom'
+                                ? 'No hay ventas en el rango de fechas seleccionado'
+                                : 'No hay ventas para el período seleccionado',
+                            textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurface.withOpacity(
                                 0.6,
                               ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _selectedPeriod = 'all';
+                                _selectedCategories.clear();
+                              });
+                              // Intentar actualizar el filtro en el DateFilterBar
+                              _dateFilterKey.currentState?.updateFilter(
+                                'todos',
+                              );
+                              _loadPopularDishes();
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Mostrar todos los platos'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: Colors.white,
                             ),
                           ),
                         ],
@@ -829,14 +775,22 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      'Vendidos: ${dish['cantidad_vendida'] ?? 0}',
+                                      dish['cantidad_vendida'] == 0
+                                          ? 'Sin ventas en este período'
+                                          : 'Vendidos: ${dish['cantidad_vendida']}',
                                       style: theme.textTheme.bodyMedium
-                                          ?.copyWith(fontFamily: 'MADE TOMMY'),
+                                          ?.copyWith(
+                                            fontFamily: 'MADE TOMMY',
+                                            color:
+                                                dish['cantidad_vendida'] == 0
+                                                    ? Colors.grey
+                                                    : null,
+                                          ),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                // Precio promedio
+                                // Precio del plato
                                 Row(
                                   children: [
                                     Icon(
@@ -846,7 +800,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      'Precio: ${_formatCurrency(dish['precio_promedio'] ?? 0.0)}',
+                                      'Precio: ${_formatCurrency(dish['precio'] ?? dish['precio_promedio'] ?? 0.0)}',
                                       style: theme.textTheme.bodyMedium
                                           ?.copyWith(fontFamily: 'MADE TOMMY'),
                                     ),
@@ -859,13 +813,20 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  _formatCurrency(
-                                    (dish['cantidad_vendida'] ?? 0) *
-                                        (dish['precio_promedio'] ?? 0),
-                                  ),
+                                  dish['cantidad_vendida'] == 0
+                                      ? 'N/A'
+                                      : _formatCurrency(
+                                        (dish['cantidad_vendida'] ?? 0) *
+                                            (dish['precio_promedio'] ??
+                                                dish['precio'] ??
+                                                0),
+                                      ),
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.green.shade700,
+                                    color:
+                                        dish['cantidad_vendida'] == 0
+                                            ? Colors.grey
+                                            : Colors.green.shade700,
                                     fontFamily: 'MADE TOMMY',
                                   ),
                                 ),
@@ -914,5 +875,45 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     if (rank == 2) return Colors.blueGrey.shade300; // Plata
     if (rank == 3) return Colors.brown.shade300; // Bronce
     return theme.colorScheme.primary; // Color por defecto
+  }
+
+  // Mapea el período interno (week, day, etc.) al filtro del DateFilterBar (semana, hoy, etc.)
+  String _mapPeriodToFilter(String period) {
+    switch (period) {
+      case 'day':
+        return 'hoy';
+      case 'week':
+        return 'semana';
+      case 'month':
+        return 'mes';
+      case 'year':
+        return 'año';
+      case 'custom':
+        return 'personalizado';
+      case 'all':
+        return 'todos';
+      default:
+        return 'todos';
+    }
+  }
+
+  // Mapea el filtro del DateFilterBar al período interno
+  String _mapFilterToPeriod(String filter) {
+    switch (filter) {
+      case 'hoy':
+        return 'day';
+      case 'semana':
+        return 'week';
+      case 'mes':
+        return 'month';
+      case 'año':
+        return 'year';
+      case 'personalizado':
+        return 'custom';
+      case 'todos':
+        return 'all';
+      default:
+        return 'all';
+    }
   }
 }

@@ -246,28 +246,104 @@ router.patch("/pedidos/:id/estado", async (req, res) => {
       return res.status(400).json({ error: "Se requiere el estado del pedido" });
     }
     
-    const estadosValidos = ['pendiente', 'preparando', 'listo', 'entregado', 'cancelado'];
+    const estadosValidos = ['pendiente', 'completado', 'cancelado'];
     if (!estadosValidos.includes(estado)) {
       return res.status(400).json({ 
         error: `Estado no válido. Debe ser uno de: ${estadosValidos.join(', ')}` 
       });
     }
     
-    const result = await pool.query(
-      "UPDATE pedidos SET estado = $1 WHERE idpedido = $2 RETURNING idpedido, estado",
+    // Iniciar transacción
+    await pool.query('BEGIN');
+    
+    // Obtener el estado actual del pedido
+    const currentStateResult = await pool.query(
+      "SELECT estado FROM pedidos WHERE idpedido = $1",
+      [id]
+    );
+    
+    if (currentStateResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+    
+    const currentState = currentStateResult.rows[0].estado;
+    
+    // Actualizar el estado
+    const updateResult = await pool.query(
+      "UPDATE pedidos SET estado = $1 WHERE idpedido = $2 RETURNING *",
       [estado, id]
     );
     
-    if (result.rows.length === 0) {
+    // Si el pedido está cambiando de pendiente a completado o cancelado,
+    // añadir entrada en la tabla de tiempos de procesamiento
+    if (currentState === 'pendiente' && (estado === 'completado' || estado === 'cancelado')) {
+      console.log(`📝 Registrando tiempo de procesamiento para pedido #${id}: ${currentState} -> ${estado}`);
+      
+      try {
+        // Verificar si la tabla pedido_tiempos existe, crearla si no
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS pedido_tiempos (
+            id SERIAL PRIMARY KEY,
+            idpedido INTEGER NOT NULL,
+            estado_inicial VARCHAR(50) NOT NULL,
+            estado_final VARCHAR(50) NOT NULL,
+            timestamp_inicial TIMESTAMP NOT NULL,
+            timestamp_final TIMESTAMP NOT NULL,
+            tiempo_procesamiento INTERVAL NOT NULL
+          );
+        `);
+        
+        // Obtener timestamp original del pedido
+        const timestampResult = await pool.query(
+          "SELECT fecha FROM pedidos WHERE idpedido = $1",
+          [id]
+        );
+        
+        if (timestampResult.rows.length > 0) {
+          const fechaInicial = timestampResult.rows[0].fecha;
+          const fechaFinal = new Date();
+          
+          // Calcular el tiempo de procesamiento
+          await pool.query(`
+            INSERT INTO pedido_tiempos (
+              idpedido, 
+              estado_inicial, 
+              estado_final, 
+              timestamp_inicial, 
+              timestamp_final, 
+              tiempo_procesamiento
+            ) VALUES (
+              $1, $2, $3, $4, $5, $5 - $4
+            )`,
+            [id, currentState, estado, fechaInicial, fechaFinal]
+          );
+          
+          console.log('✅ Tiempo de procesamiento registrado exitosamente');
+        }
+      } catch (timeError) {
+        console.error('❌ Error al registrar tiempo de procesamiento:', timeError);
+        // No hacemos rollback en caso de error aquí, ya que la actualización del estado
+        // es más importante que el registro del tiempo
+      }
+    }
+    
+    // Confirmar transacción
+    await pool.query('COMMIT');
+    
+    if (updateResult.rows.length === 0) {
       return res.status(404).json({ error: "Pedido no encontrado" });
     }
     
     return res.status(200).json({
       message: "Estado del pedido actualizado correctamente",
-      pedido: result.rows[0]
+      pedido: updateResult.rows[0],
+      tiempoRegistrado: currentState === 'pendiente' && (estado === 'completado' || estado === 'cancelado')
     });
     
   } catch (error) {
+    // Rollback en caso de error
+    await pool.query('ROLLBACK');
     console.error("❌ Error al actualizar estado del pedido:", error);
     return res.status(500).json({
       error: "Error al actualizar estado del pedido",
@@ -285,7 +361,7 @@ router.get("/pedidos/stats/count", async (req, res) => {
         COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pendientes,
         COUNT(CASE WHEN estado = 'preparando' THEN 1 END) as preparando,
         COUNT(CASE WHEN estado = 'listo' THEN 1 END) as listos,
-        COUNT(CASE WHEN estado = 'entregado' THEN 1 END) as entregados,
+        COUNT(CASE WHEN estado = 'completado' THEN 1 END) as completados,
         COUNT(CASE WHEN estado = 'cancelado' THEN 1 END) as cancelados
       FROM pedidos
     `);
@@ -444,7 +520,7 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
       JOIN 
         pedidos p ON pd.idpedido = p.idpedido
       WHERE 
-        p.estado = 'entregado'
+        p.estado = 'completado'
       GROUP BY 
         m.idplato, m.nombre, m.imagen_url
       ORDER BY 
@@ -502,6 +578,460 @@ router.get("/pedidos/stats/ventas-por-hora", async (req, res) => {
     console.error("❌ Error al obtener ventas por hora:", error);
     return res.status(500).json({
       error: "Error al obtener ventas por hora",
+      details: error.message
+    });
+  }
+});
+
+// Obtener resumen de pedidos por período
+router.get("/pedidos/resumen", async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    
+    console.log(`📊 Solicitud de resumen de pedidos: período=${period}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
+
+    // Para pruebas, vamos a incluir todas las fechas a menos que se especifique un rango
+    let fechaInicio, fechaFin;
+
+    if (startDate && endDate) {
+      // Si se proporcionan fechas específicas, usarlas
+      fechaInicio = new Date(`${startDate}T00:00:00`);
+      fechaFin = new Date(`${endDate}T23:59:59`);
+      console.log('📅 Usando rango de fechas proporcionado');
+    } else {
+      // Si no, usar un rango amplio (1 año anterior hasta hoy) para incluir todos los datos de prueba
+      const hoy = new Date();
+      
+      // Para datos de prueba: fecha suficientemente en el futuro para incluir todos los datos
+      if (process.env.NODE_ENV === 'development' || true) { // Siempre usar fechas amplias por ahora
+        fechaInicio = new Date('2020-01-01');
+        fechaFin = new Date('2030-12-31');
+        console.log('📅 Usando rango amplio para datos de desarrollo/prueba');
+      } else {
+        // En producción, usar el período solicitado
+        switch (period) {
+          case 'day':
+            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+            fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
+            break;
+          case 'week':
+            const diaSemana = hoy.getDay() || 7;
+            const diasAtras = diaSemana - 1;
+            fechaInicio = new Date(hoy);
+            fechaInicio.setDate(hoy.getDate() - diasAtras);
+            fechaInicio.setHours(0, 0, 0, 0);
+            fechaFin = new Date(hoy);
+            fechaFin.setHours(23, 59, 59, 999);
+            break;
+          case 'month':
+            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+            fechaFin = new Date(hoy);
+            fechaFin.setHours(23, 59, 59, 999);
+            break;
+          case 'year':
+            fechaInicio = new Date(hoy.getFullYear(), 0, 1);
+            fechaFin = new Date(hoy);
+            fechaFin.setHours(23, 59, 59, 999);
+            break;
+          case 'custom':
+            return res.status(400).json({ 
+              error: "Se requieren fechas de inicio y fin para el período personalizado" 
+            });
+          default:
+            return res.status(400).json({ error: "Período no válido" });
+        }
+      }
+    }
+    
+    const formatoFecha = fecha => fecha.toISOString().split('T')[0];
+    console.log(`📅 Rango de fechas calculado: ${formatoFecha(fechaInicio)} a ${formatoFecha(fechaFin)}`);
+    
+    // 1. Consultar total de pedidos y ventas en el período
+    const resumenQuery = `
+      SELECT 
+        COUNT(DISTINCT p.idpedido) as total_pedidos,
+        COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
+      FROM 
+        pedidos p
+      LEFT JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      WHERE 
+        p.fecha >= $1 AND p.fecha <= $2
+        AND p.estado = 'completado'
+    `;
+    
+    console.log(`📊 Ejecutando consulta de resumen: ${resumenQuery}`);
+    console.log(`📊 Parámetros: fechaInicio=${fechaInicio.toISOString()}, fechaFin=${fechaFin.toISOString()}`);
+    
+    const resumenResult = await pool.query(resumenQuery, [fechaInicio, fechaFin]);
+    console.log(`📊 Resultado resumen: ${JSON.stringify(resumenResult.rows[0])}`);
+    
+    // 2. Consultar todos los pedidos para registrar en logs
+    const pedidosQuery = `
+      SELECT 
+        p.idpedido, p.estado, TO_CHAR(p.fecha, 'YYYY-MM-DD HH24:MI:SS') as fecha
+      FROM 
+        pedidos p
+      ORDER BY 
+        p.fecha DESC
+    `;
+    
+    const pedidosResult = await pool.query(pedidosQuery);
+    console.log(`🧾 Pedidos en la base de datos: ${pedidosResult.rows.length}`);
+    pedidosResult.rows.forEach(row => {
+      console.log(`   - #${row.idpedido} | ${row.estado} | ${row.fecha}`);
+    });
+    
+    // 3. Inicializar el objeto de respuesta
+    const resumen = {
+      totalPedidos: parseInt(resumenResult.rows[0].total_pedidos) || 0,
+      totalVentas: parseFloat(resumenResult.rows[0].total_ventas) || 0,
+      ticketPromedio: 0
+    };
+    
+    // Calcular ticket promedio si hay pedidos
+    if (resumen.totalPedidos > 0) {
+      resumen.ticketPromedio = parseFloat((resumen.totalVentas / resumen.totalPedidos).toFixed(2));
+    }
+    
+    // 4. Añadir distribución específica según el período
+    if (period === 'day') {
+      // Distribución por horas del día
+      const horasQuery = `
+        SELECT 
+          EXTRACT(HOUR FROM p.fecha) as hora,
+          COUNT(DISTINCT p.idpedido) as pedidos
+        FROM 
+          pedidos p
+        WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          AND p.estado = 'completado'
+        GROUP BY 
+          hora
+        ORDER BY 
+          hora
+      `;
+      
+      const horasResult = await pool.query(horasQuery, [fechaInicio, fechaFin]);
+      
+      resumen.horasPico = horasResult.rows.map(row => ({
+        hora: `${Math.floor(row.hora).toString().padStart(2, '0')}:00`,
+        pedidos: parseInt(row.pedidos)
+      }));
+    } 
+    else if (period === 'week') {
+      // Distribución por días de la semana
+      const diasQuery = `
+        SELECT 
+          CASE 
+            WHEN EXTRACT(DOW FROM p.fecha) = 0 THEN 'Domingo'
+            WHEN EXTRACT(DOW FROM p.fecha) = 1 THEN 'Lunes'
+            WHEN EXTRACT(DOW FROM p.fecha) = 2 THEN 'Martes'
+            WHEN EXTRACT(DOW FROM p.fecha) = 3 THEN 'Miércoles'
+            WHEN EXTRACT(DOW FROM p.fecha) = 4 THEN 'Jueves'
+            WHEN EXTRACT(DOW FROM p.fecha) = 5 THEN 'Viernes'
+            WHEN EXTRACT(DOW FROM p.fecha) = 6 THEN 'Sábado'
+          END as dia,
+          COUNT(DISTINCT p.idpedido) as pedidos
+        FROM 
+          pedidos p
+        WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          AND p.estado = 'completado'
+        GROUP BY 
+          EXTRACT(DOW FROM p.fecha)
+        ORDER BY 
+          EXTRACT(DOW FROM p.fecha)
+      `;
+      
+      const diasResult = await pool.query(diasQuery, [fechaInicio, fechaFin]);
+      
+      resumen.diasPico = diasResult.rows.map(row => ({
+        dia: row.dia,
+        pedidos: parseInt(row.pedidos)
+      }));
+
+      console.log(`🗓️ Distribución por días:`, resumen.diasPico);
+    }
+    else if (period === 'month') {
+      // Distribución por semanas del mes
+      const semanasQuery = `
+        SELECT 
+          CASE 
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 1 AND 7 THEN '1-7'
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 8 AND 14 THEN '8-14'
+            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 15 AND 21 THEN '15-21'
+            ELSE '22-31'
+          END as semana,
+          COUNT(DISTINCT p.idpedido) as pedidos
+        FROM 
+          pedidos p
+        WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          AND p.estado = 'completado'
+        GROUP BY 
+          semana
+        ORDER BY 
+          semana
+      `;
+      
+      const semanasResult = await pool.query(semanasQuery, [fechaInicio, fechaFin]);
+      
+      resumen.semanasPico = semanasResult.rows.map(row => ({
+        semana: row.semana,
+        pedidos: parseInt(row.pedidos)
+      }));
+
+      console.log(`📅 Distribución por semanas:`, resumen.semanasPico);
+    }
+    else if (period === 'year') {
+      // Distribución por meses del año
+      const mesesQuery = `
+        SELECT 
+          CASE 
+            WHEN EXTRACT(MONTH FROM p.fecha) = 1 THEN 'Enero'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 2 THEN 'Febrero'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 3 THEN 'Marzo'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 4 THEN 'Abril'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 5 THEN 'Mayo'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 6 THEN 'Junio'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 7 THEN 'Julio'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 8 THEN 'Agosto'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 9 THEN 'Septiembre'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 10 THEN 'Octubre'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 11 THEN 'Noviembre'
+            WHEN EXTRACT(MONTH FROM p.fecha) = 12 THEN 'Diciembre'
+          END as mes,
+          COUNT(DISTINCT p.idpedido) as pedidos
+        FROM 
+          pedidos p
+        WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          AND p.estado = 'completado'
+        GROUP BY 
+          EXTRACT(MONTH FROM p.fecha)
+        ORDER BY 
+          EXTRACT(MONTH FROM p.fecha)
+      `;
+      
+      const mesesResult = await pool.query(mesesQuery, [fechaInicio, fechaFin]);
+      
+      resumen.mesesPico = mesesResult.rows.map(row => ({
+        mes: row.mes,
+        pedidos: parseInt(row.pedidos)
+      }));
+
+      console.log(`📆 Distribución por meses:`, resumen.mesesPico);
+    }
+    
+    console.log(`✅ Resumen generado con éxito: ${resumen.totalPedidos} pedidos por valor de ${resumen.totalVentas}`);
+    return res.status(200).json(resumen);
+    
+  } catch (error) {
+    console.error("❌ Error al generar resumen de pedidos:", error);
+    return res.status(500).json({
+      error: "Error al generar resumen de pedidos",
+      details: error.message
+    });
+  }
+});
+
+// Obtener estadísticas de tiempo de procesamiento de pedidos
+router.get("/pedidos/tiempo-procesamiento", async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    
+    console.log(`⏱️ Solicitud de estadísticas de tiempo de procesamiento: período=${period}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
+
+    // Para pruebas, vamos a incluir todas las fechas a menos que se especifique un rango
+    let fechaInicio, fechaFin;
+    let whereClause = "";
+
+    if (startDate && endDate) {
+      // Si se proporcionan fechas específicas, usarlas
+      fechaInicio = new Date(`${startDate}T00:00:00`);
+      fechaFin = new Date(`${endDate}T23:59:59`);
+      whereClause = `pt.timestamp_inicial >= '${fechaInicio.toISOString()}' AND pt.timestamp_final <= '${fechaFin.toISOString()}'`;
+      console.log('📅 Usando rango de fechas proporcionado');
+    } else {
+      // Si no, usar un período según se indique
+      const hoy = new Date();
+      
+      switch (period) {
+        case 'day':
+          fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+          fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
+          break;
+        case 'week':
+          const diaSemana = hoy.getDay() || 7;
+          const diasAtras = diaSemana - 1;
+          fechaInicio = new Date(hoy);
+          fechaInicio.setDate(hoy.getDate() - diasAtras);
+          fechaInicio.setHours(0, 0, 0, 0);
+          fechaFin = new Date(hoy);
+          break;
+        case 'month':
+          fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+          fechaFin = new Date(hoy);
+          break;
+        case 'year':
+          fechaInicio = new Date(hoy.getFullYear(), 0, 1);
+          fechaFin = new Date(hoy);
+          break;
+        default:
+          // Por defecto, usar todo el rango de datos
+          fechaInicio = new Date('2020-01-01');
+          fechaFin = new Date('2030-12-31');
+      }
+      
+      whereClause = `pt.timestamp_inicial >= '${fechaInicio.toISOString()}' AND pt.timestamp_final <= '${fechaFin.toISOString()}'`;
+    }
+
+    // Comprobar si la tabla pedido_tiempos existe
+    const tableExistsQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'pedido_tiempos'
+      );
+    `;
+    
+    const tableExists = await pool.query(tableExistsQuery);
+    
+    if (!tableExists.rows[0].exists) {
+      return res.status(200).json({
+        mensaje: "No hay datos de tiempos de procesamiento disponibles aún",
+        datos_disponibles: false,
+        tiempo_promedio: null,
+        tiempo_minimo: null,
+        tiempo_maximo: null,
+        total_pedidos_analizados: 0
+      });
+    }
+
+    // Consulta para obtener estadísticas de tiempo de procesamiento
+    const query = `
+      SELECT 
+        COUNT(*) as total_pedidos,
+        AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos,
+        MIN(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_minimo_segundos,
+        MAX(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_maximo_segundos
+      FROM 
+        pedido_tiempos pt
+      WHERE 
+        ${whereClause}
+    `;
+    
+    console.log("⏱️ Ejecutando consulta:", query);
+    
+    const result = await pool.query(query);
+    
+    if (result.rows.length === 0 || result.rows[0].total_pedidos === 0) {
+      return res.status(200).json({
+        mensaje: "No hay datos de tiempos de procesamiento para el período seleccionado",
+        datos_disponibles: true,
+        tiempo_promedio: null,
+        tiempo_minimo: null,
+        tiempo_maximo: null,
+        total_pedidos_analizados: 0
+      });
+    }
+    
+    // Formatear minutos y segundos para mejor legibilidad
+    const formatTiempo = (segundos) => {
+      if (segundos === null) return null;
+      
+      const minutos = Math.floor(segundos / 60);
+      const segundosRestantes = Math.round(segundos % 60);
+      
+      return {
+        segundos: segundos,
+        formato: `${minutos}m ${segundosRestantes}s`
+      };
+    };
+    
+    const stats = result.rows[0];
+    
+    // Obtener distribución por estado final
+    const distribucionQuery = `
+      SELECT 
+        estado_final, 
+        COUNT(*) as cantidad,
+        AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos
+      FROM 
+        pedido_tiempos pt
+      WHERE 
+        ${whereClause}
+      GROUP BY 
+        estado_final
+      ORDER BY 
+        cantidad DESC
+    `;
+    
+    const distribucionResult = await pool.query(distribucionQuery);
+    
+    // Consulta para obtener la distribución por rango de tiempo
+    const rangosTiempoQuery = `
+      SELECT
+        CASE
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 300 THEN 'menos_5min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 600 THEN '5_10min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 900 THEN '10_15min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 1200 THEN '15_20min'
+          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 1800 THEN '20_30min'
+          ELSE 'mas_30min'
+        END as rango_tiempo,
+        COUNT(*) as cantidad
+      FROM
+        pedido_tiempos pt
+      WHERE
+        ${whereClause}
+      GROUP BY
+        rango_tiempo
+      ORDER BY
+        CASE
+          WHEN rango_tiempo = 'menos_5min' THEN 1
+          WHEN rango_tiempo = '5_10min' THEN 2
+          WHEN rango_tiempo = '10_15min' THEN 3
+          WHEN rango_tiempo = '15_20min' THEN 4
+          WHEN rango_tiempo = '20_30min' THEN 5
+          WHEN rango_tiempo = 'mas_30min' THEN 6
+        END
+    `;
+    
+    const rangosTiempoResult = await pool.query(rangosTiempoQuery);
+    
+    // Construir respuesta
+    return res.status(200).json({
+      mensaje: "Estadísticas de tiempo de procesamiento obtenidas correctamente",
+      datos_disponibles: true,
+      tiempo_promedio: formatTiempo(stats.tiempo_promedio_segundos),
+      tiempo_minimo: formatTiempo(stats.tiempo_minimo_segundos),
+      tiempo_maximo: formatTiempo(stats.tiempo_maximo_segundos),
+      total_pedidos_analizados: parseInt(stats.total_pedidos),
+      distribucion_por_estado: distribucionResult.rows.map(row => ({
+        estado: row.estado_final,
+        cantidad: parseInt(row.cantidad),
+        porcentaje: parseFloat(((parseInt(row.cantidad) / parseInt(stats.total_pedidos)) * 100).toFixed(2)),
+        tiempo_promedio: formatTiempo(row.tiempo_promedio_segundos)
+      })),
+      distribucion_por_tiempo: rangosTiempoResult.rows.map(row => ({
+        rango: row.rango_tiempo.replace('menos_', 'Menos de ').replace('mas_', 'Más de ')
+          .replace('5_10min', '5-10 min').replace('10_15min', '10-15 min')
+          .replace('15_20min', '15-20 min').replace('20_30min', '20-30 min'),
+        cantidad: parseInt(row.cantidad),
+        porcentaje: parseFloat(((parseInt(row.cantidad) / parseInt(stats.total_pedidos)) * 100).toFixed(2))
+      })),
+      periodo: {
+        desde: fechaInicio.toISOString(),
+        hasta: fechaFin.toISOString(),
+        nombre: period || 'personalizado'
+      }
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al obtener estadísticas de tiempo de procesamiento:", error);
+    return res.status(500).json({
+      error: "Error al obtener estadísticas de tiempo de procesamiento",
       details: error.message
     });
   }

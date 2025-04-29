@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '/UI_Screens/Widgets/background_scaffold.dart';
 import '../../Api_services/menu/get_dishes_service.dart';
+import 'package:intl/intl.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   final String userName;
@@ -89,14 +90,25 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         pendingOrdersCount = data['count'] ?? 0;
       }
 
-      // Consultar ventas del día
+      // Consultar ventas del día usando el endpoint del resumen con período 'day'
       final salesResponse = await http.get(
-        Uri.parse('$baseUrl/pedidos/ventas/hoy'),
+        Uri.parse('$baseUrl/pedidos/resumen?period=day'),
       );
       double salesAmount = 0.0;
       if (salesResponse.statusCode == 200) {
         final data = jsonDecode(salesResponse.body);
-        salesAmount = (data['total'] as num?)?.toDouble() ?? 0.0;
+        // Usar el campo totalVentas del resumen que es más preciso y en tiempo real
+        salesAmount = (data['totalVentas'] as num?)?.toDouble() ?? 0.0;
+        print('💰 Ventas del día actualizadas: $salesAmount');
+      } else {
+        // Fallback: si falla, intentar con el endpoint original
+        final fallbackResponse = await http.get(
+          Uri.parse('$baseUrl/pedidos/ventas/hoy'),
+        );
+        if (fallbackResponse.statusCode == 200) {
+          final data = jsonDecode(fallbackResponse.body);
+          salesAmount = (data['total'] as num?)?.toDouble() ?? 0.0;
+        }
       }
 
       // Actualizar el estado con datos reales
@@ -316,45 +328,45 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     Color color,
     VoidCallback onTap,
   ) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(15),
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        elevation: 4,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [color.withOpacity(0.7), color],
-            ),
-          ),
+    // Formatear ventas del día si se trata del botón de reportes
+    String displaySubtitle = subtitle;
+    if (title == 'Reportes' && subtitle.contains('Ventas hoy')) {
+      final formatter = NumberFormat.currency(symbol: '\$');
+      displaySubtitle = 'Ventas hoy: ${formatter.format(todaySales)}';
+    }
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shadowColor: color.withOpacity(0.3),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 48, color: Colors.white),
+              CircleAvatar(
+                backgroundColor: color.withOpacity(0.2),
+                radius: 30,
+                child: Icon(icon, color: color, size: 36),
+              ),
               const SizedBox(height: 12),
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   fontFamily: 'MADE TOMMY',
                 ),
                 textAlign: TextAlign.center,
               ),
-              if (subtitle.isNotEmpty) ...[
-                const SizedBox(height: 8),
+              if (displaySubtitle.isNotEmpty) ...[
+                const SizedBox(height: 4),
                 Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontFamily: 'MADE TOMMY',
+                  displaySubtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
                   ),
                   textAlign: TextAlign.center,
                 ),

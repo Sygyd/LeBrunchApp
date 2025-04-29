@@ -5,6 +5,7 @@ import 'dart:async';
 import 'Api_services/gemini_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'UI_Screens/Widgets/routes.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 // ScaffoldMessengerState global para mostrar SnackBars desde cualquier parte
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
@@ -23,7 +24,9 @@ Future<void> main() async {
   // Verificar conexión con el servidor (en segundo plano)
   unawaited(
     geminiService.checkServerConnection().then((isConnected) {
-      print('Conexión con el servidor: ${isConnected ? 'EXITOSA' : 'FALLIDA'}');
+      print(
+        'Conexión con el servidor: [32m${isConnected ? 'EXITOSA' : 'FALLIDA'}[0m',
+      );
 
       if (isConnected) {
         // Intentar cargar el menú para tenerlo precargado
@@ -83,6 +86,13 @@ class MainApp extends StatelessWidget {
       scaffoldMessengerKey: rootScaffoldMessengerKey,
       initialRoute: '/splash',
       onGenerateRoute: AppRoutes.generateRoute,
+      locale: const Locale('es'),
+      supportedLocales: const [Locale('es')],
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
     );
   }
 }

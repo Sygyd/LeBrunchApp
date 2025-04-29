@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async'; // Importar dart:async para TimeoutException
 
 class OrdersService {
   // Método para obtener la URL base del servidor
@@ -299,13 +300,22 @@ class OrdersService {
 
   // Obtener resumen de pedidos por período
   Future<Map<String, dynamic>> getOrdersSummary({
-    required String period, // 'day', 'week', 'month', 'year'
+    String? period, // 'day', 'week', 'month', 'year', 'all'
     String? customStartDate,
     String? customEndDate,
   }) async {
     try {
+      // Si period es null o 'all', vamos a obtener todos los datos sin filtros de fecha
+      final bool obtenerTodo = period == null || period == 'all';
+
       // Construir la URL con parámetros de consulta
-      final queryParams = <String, String>{'period': period};
+      final queryParams = <String, String>{};
+
+      if (!obtenerTodo) {
+        // Solo agregar el periodo si no estamos buscando todos los datos
+        queryParams['period'] = period!;
+      }
+
       if (customStartDate != null) queryParams['startDate'] = customStartDate;
       if (customEndDate != null) queryParams['endDate'] = customEndDate;
 
@@ -314,110 +324,355 @@ class OrdersService {
         '$baseUrl/pedidos/resumen',
       ).replace(queryParameters: queryParams);
 
-      final response = await http.get(uri);
+      print('📊 Solicitando resumen de pedidos: $uri');
+
+      // Intentar obtener datos reales del servidor
+      final response = await http
+          .get(uri)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              print('⚠️ Timeout al conectar con el servidor');
+              throw TimeoutException('No se pudo conectar con el servidor');
+            },
+          );
+
+      print('📊 Código de respuesta: ${response.statusCode}');
+      print('📊 Cuerpo de respuesta: ${response.body}');
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        print('✅ Datos de resumen obtenidos correctamente de la base de datos');
+
+        // Verificar la estructura del objeto
+        if (data is Map) {
+          // Asegurar que todas las claves necesarias existan
+          final validKeys = ['totalPedidos', 'totalVentas', 'ticketPromedio'];
+          for (var key in validKeys) {
+            if (!data.containsKey(key)) {
+              print('⚠️ Falta la clave $key en la respuesta');
+              data[key] = 0;
+            }
+          }
+
+          // Realizar verificaciones adicionales
+          print('📊 Total de pedidos: ${data['totalPedidos']}');
+          print('📊 Total de ventas: ${data['totalVentas']}');
+          print('📊 Ticket promedio: ${data['ticketPromedio']}');
+
+          // Para debuggear datos de distribución
+          if (data.containsKey('horasPico')) {
+            print('⏰ Horas pico: ${data['horasPico']}');
+          }
+          if (data.containsKey('diasPico')) {
+            print('📅 Días pico: ${data['diasPico']}');
+          }
+          if (data.containsKey('semanasPico')) {
+            print('🗓️ Semanas pico: ${data['semanasPico']}');
+          }
+          if (data.containsKey('mesesPico')) {
+            print('📆 Meses pico: ${data['mesesPico']}');
+          }
+        }
+
+        return data;
       } else {
-        throw Exception(
-          'Error al obtener resumen: ${response.statusCode} - ${response.body}',
+        print(
+          '❌ Error al obtener resumen: ${response.statusCode} - ${response.body}',
+        );
+        // En caso de error, intentar generar datos directamente de la base de datos
+        return await _fetchSummaryUsingDirectSQL(
+          obtenerTodo ? 'all' : period!,
+          customStartDate,
+          customEndDate,
         );
       }
     } catch (e) {
-      // Para desarrollo, podemos retornar datos simulados
-      return _getMockSummary(period);
+      print('⚠️ Excepción al obtener resumen: $e');
+      // Intentar generar datos directamente de la base de datos
+      return await _fetchSummaryUsingDirectSQL(
+        period ?? 'all',
+        customStartDate,
+        customEndDate,
+      );
     }
   }
 
-  // Resumen simulado para desarrollo
-  Map<String, dynamic> _getMockSummary(String period) {
-    switch (period) {
-      case 'day':
-        return {
-          'totalPedidos': 12,
-          'totalVentas': 285.50,
-          'ticketPromedio': 23.79,
-          'platosPopulares': [
-            {'nombre': 'Panquecas con frutos rojos', 'cantidad': 8},
-            {'nombre': 'Tostadas francesas', 'cantidad': 6},
-            {'nombre': 'Café americano', 'cantidad': 15},
-          ],
-          'horasPico': [
-            {'hora': '09:00', 'pedidos': 3},
-            {'hora': '10:00', 'pedidos': 5},
-            {'hora': '11:00', 'pedidos': 4},
-          ],
-        };
-      case 'week':
-        return {
-          'totalPedidos': 65,
-          'totalVentas': 1580.75,
-          'ticketPromedio': 24.32,
-          'platosPopulares': [
-            {'nombre': 'Avocado Toast', 'cantidad': 28},
-            {'nombre': 'Panquecas con frutos rojos', 'cantidad': 22},
-            {'nombre': 'Café americano', 'cantidad': 45},
-          ],
-          'diasPico': [
-            {'dia': 'Sábado', 'pedidos': 18},
-            {'dia': 'Domingo', 'pedidos': 20},
-            {'dia': 'Viernes', 'pedidos': 12},
-          ],
-        };
-      case 'month':
-        return {
-          'totalPedidos': 245,
-          'totalVentas': 6120.50,
-          'ticketPromedio': 24.98,
-          'platosPopulares': [
-            {'nombre': 'Avocado Toast', 'cantidad': 105},
-            {'nombre': 'Tabla de desayuno', 'cantidad': 85},
-            {'nombre': 'Café americano', 'cantidad': 180},
-          ],
-          'semanasPico': [
-            {'semana': '1-7', 'pedidos': 58},
-            {'semana': '8-14', 'pedidos': 67},
-            {'semana': '15-21', 'pedidos': 72},
-            {'semana': '22-28', 'pedidos': 48},
-          ],
-        };
-      case 'year':
-        return {
-          'totalPedidos': 2850,
-          'totalVentas': 73450.25,
-          'ticketPromedio': 25.77,
-          'platosPopulares': [
-            {'nombre': 'Avocado Toast', 'cantidad': 950},
-            {'nombre': 'Tabla de desayuno', 'cantidad': 780},
-            {'nombre': 'Café americano', 'cantidad': 1850},
-          ],
-          'mesesPico': [
-            {'mes': 'Enero', 'pedidos': 210},
-            {'mes': 'Febrero', 'pedidos': 195},
-            {'mes': 'Marzo', 'pedidos': 225},
-            {'mes': 'Abril', 'pedidos': 240},
-            {'mes': 'Mayo', 'pedidos': 260},
-            {'mes': 'Junio', 'pedidos': 280},
-          ],
-        };
-      case 'custom':
-        return {
-          'totalPedidos': 85,
-          'totalVentas': 2150.30,
-          'ticketPromedio': 25.30,
-          'platosPopulares': [
-            {'nombre': 'Avocado Toast', 'cantidad': 32},
-            {'nombre': 'Panquecas con frutos rojos', 'cantidad': 25},
-            {'nombre': 'Café americano', 'cantidad': 58},
-          ],
-        };
-      default:
-        return {
-          'totalPedidos': 0,
-          'totalVentas': 0,
-          'ticketPromedio': 0,
-          'platosPopulares': [],
-        };
+  // Método para generar resumen usando SQL directo cuando falla el endpoint principal
+  Future<Map<String, dynamic>> _fetchSummaryUsingDirectSQL(
+    String period,
+    String? customStartDate,
+    String? customEndDate,
+  ) async {
+    print('🔍 Generando resumen usando SQL directo, periodo: $period');
+    try {
+      // Determinar rango de fechas basado en el período
+      String whereClause;
+
+      if (customStartDate != null && customEndDate != null) {
+        // Usar fechas personalizadas
+        whereClause =
+            "p.fecha >= '$customStartDate'::date AND p.fecha <= '$customEndDate'::date + interval '1 day'";
+        print(
+          '📅 Usando rango personalizado: $customStartDate a $customEndDate',
+        );
+      } else if (period == 'all') {
+        // No aplicar filtro de fechas para obtener todo
+        whereClause = "1=1"; // Condición siempre verdadera
+        print('📅 Obteniendo TODOS los datos sin filtro de fechas');
+      } else {
+        // Calcular cláusula where basada en período
+        switch (period) {
+          case 'day':
+            whereClause =
+                "p.fecha >= CURRENT_DATE AND p.fecha < CURRENT_DATE + interval '1 day'";
+            break;
+          case 'week':
+            whereClause =
+                "p.fecha >= CURRENT_DATE - INTERVAL '7 days' AND p.fecha < CURRENT_TIMESTAMP";
+            break;
+          case 'month':
+            whereClause =
+                "p.fecha >= DATE_TRUNC('month', CURRENT_DATE) AND p.fecha < CURRENT_TIMESTAMP";
+            break;
+          case 'year':
+            whereClause =
+                "p.fecha >= DATE_TRUNC('year', CURRENT_DATE) AND p.fecha < CURRENT_TIMESTAMP";
+            break;
+          default:
+            whereClause =
+                "p.fecha >= CURRENT_DATE AND p.fecha < CURRENT_DATE + interval '1 day'";
+        }
+        print('📅 Usando período predeterminado: $period');
+      }
+
+      // Consulta SQL para obtener resumen básico
+      String sql = '''
+        SELECT 
+          COUNT(DISTINCT p.idpedido) as total_pedidos,
+          COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
+        FROM 
+          pedidos p
+        LEFT JOIN 
+          pedido_detalle pd ON p.idpedido = pd.idpedido
+        WHERE 
+          $whereClause
+          AND p.estado = 'completado'
+      ''';
+
+      print('🔍 Ejecutando SQL: $sql');
+
+      final baseUrl = await _getBaseUrl();
+      final uri = Uri.parse('$baseUrl/db/query');
+
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'query': sql}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('✅ Respuesta de la consulta: $data');
+
+        if (data['result'] != null && data['result'].isNotEmpty) {
+          final result = data['result'][0];
+
+          // Convertir datos a tipos adecuados
+          int totalPedidos =
+              int.tryParse(result['total_pedidos'].toString()) ?? 0;
+          double totalVentas =
+              double.tryParse(result['total_ventas'].toString()) ?? 0.0;
+          double ticketPromedio =
+              totalPedidos > 0 ? totalVentas / totalPedidos : 0.0;
+
+          // Preparar el resumen
+          final summary = {
+            'totalPedidos': totalPedidos,
+            'totalVentas': totalVentas,
+            'ticketPromedio': ticketPromedio,
+          };
+
+          // Para 'all', no intentamos agregar datos de distribución específicos
+          if (period != 'all') {
+            // Consultar datos de distribución según el período
+            await _addDistributionData(summary, period, whereClause);
+          } else {
+            // Para 'all', obtener datos generales de distribución por meses
+            await _addAllTimeDistribution(summary);
+          }
+
+          print('✅ Resumen generado exitosamente mediante SQL directo');
+          return summary;
+        }
+      }
+
+      print('❌ Error al generar resumen usando SQL directo');
+      return {'totalPedidos': 0, 'totalVentas': 0.0, 'ticketPromedio': 0.0};
+    } catch (e) {
+      print('❌ Error al generar resumen usando SQL directo: $e');
+      return {'totalPedidos': 0, 'totalVentas': 0.0, 'ticketPromedio': 0.0};
+    }
+  }
+
+  // Método para agregar datos de distribución al resumen
+  Future<void> _addDistributionData(
+    Map<String, dynamic> summary,
+    String period,
+    String whereClause,
+  ) async {
+    try {
+      String distributionSQL;
+      String resultKey;
+
+      // Consulta diferente según el período
+      switch (period) {
+        case 'day':
+          distributionSQL = '''
+            SELECT 
+              TO_CHAR(p.fecha, 'HH24:MI') as hora,
+              COUNT(DISTINCT p.idpedido) as pedidos
+            FROM 
+              pedidos p
+            WHERE 
+              $whereClause
+              AND p.estado = 'completado'
+            GROUP BY 
+              TO_CHAR(p.fecha, 'HH24:MI')
+            ORDER BY 
+              pedidos DESC
+            LIMIT 10
+          ''';
+          resultKey = 'horasPico';
+          break;
+
+        case 'week':
+          distributionSQL = '''
+            SELECT 
+              TO_CHAR(p.fecha, 'Day') as dia,
+              COUNT(DISTINCT p.idpedido) as pedidos
+            FROM 
+              pedidos p
+            WHERE 
+              $whereClause
+              AND p.estado = 'completado'
+            GROUP BY 
+              TO_CHAR(p.fecha, 'Day')
+            ORDER BY 
+              pedidos DESC
+          ''';
+          resultKey = 'diasPico';
+          break;
+
+        case 'month':
+          distributionSQL = '''
+            SELECT 
+              CONCAT('Semana ', TO_CHAR(p.fecha, 'W')) as semana,
+              COUNT(DISTINCT p.idpedido) as pedidos
+            FROM 
+              pedidos p
+            WHERE 
+              $whereClause
+              AND p.estado = 'completado'
+            GROUP BY 
+              TO_CHAR(p.fecha, 'W')
+            ORDER BY 
+              TO_CHAR(p.fecha, 'W')::integer
+          ''';
+          resultKey = 'semanasPico';
+          break;
+
+        case 'year':
+          distributionSQL = '''
+            SELECT 
+              TO_CHAR(p.fecha, 'Month') as mes,
+              COUNT(DISTINCT p.idpedido) as pedidos
+            FROM 
+              pedidos p
+            WHERE 
+              $whereClause
+              AND p.estado = 'completado'
+            GROUP BY 
+              TO_CHAR(p.fecha, 'Month')
+            ORDER BY 
+              MIN(DATE_TRUNC('month', p.fecha))
+          ''';
+          resultKey = 'mesesPico';
+          break;
+
+        default:
+          return; // No agregar distribución
+      }
+
+      print('🔍 Ejecutando consulta de distribución para $period');
+
+      // Ejecutar la consulta
+      final baseUrl = await _getBaseUrl();
+      final uri = Uri.parse('$baseUrl/db/query');
+
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'query': distributionSQL}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['result'] != null && data['result'].isNotEmpty) {
+          summary[resultKey] = data['result'];
+          print(
+            '✅ Datos de distribución agregados: ${data['result'].length} registros',
+          );
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error al obtener datos de distribución: $e');
+    }
+  }
+
+  // Método para agregar distribución para "all"
+  Future<void> _addAllTimeDistribution(Map<String, dynamic> summary) async {
+    try {
+      // Obtener distribución por meses de todo el tiempo
+      String sql = '''
+        SELECT 
+          TO_CHAR(p.fecha, 'YYYY-MM') as periodo,
+          COUNT(DISTINCT p.idpedido) as pedidos
+        FROM 
+          pedidos p
+        WHERE 
+          p.estado = 'completado'
+        GROUP BY 
+          TO_CHAR(p.fecha, 'YYYY-MM')
+        ORDER BY 
+          periodo DESC
+        LIMIT 12
+      ''';
+
+      print('🔍 Ejecutando consulta de distribución para todo el tiempo');
+
+      final baseUrl = await _getBaseUrl();
+      final uri = Uri.parse('$baseUrl/db/query');
+
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'query': sql}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['result'] != null && data['result'].isNotEmpty) {
+          summary['periodosPico'] = data['result'];
+          print(
+            '✅ Datos de distribución general agregados: ${data['result'].length} registros',
+          );
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error al obtener datos de distribución general: $e');
     }
   }
 
@@ -429,20 +684,10 @@ class OrdersService {
 
       print('🔄 Actualizando estado de pedido #$orderId a $newStatus');
 
-      // Convertir estado si es necesario (completado/cancelado → entregado/cancelado para el servidor)
-      String serverStatus = newStatus;
-      if (newStatus == 'completado') {
-        // El servidor usa 'entregado' en lugar de 'completado'
-        serverStatus = 'entregado';
-        print(
-          'ℹ️ Convertido "completado" a "entregado" para comunicación con servidor',
-        );
-      }
-
       final response = await http.patch(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'estado': serverStatus}),
+        body: jsonEncode({'estado': newStatus}),
       );
 
       if (response.statusCode == 200) {
@@ -453,15 +698,12 @@ class OrdersService {
           '❌ Error al actualizar estado: ${response.statusCode} - ${response.body}',
         );
         // Intentar método alternativo
-        return await _updateOrderStatusFallback(orderId, serverStatus);
+        return await _updateOrderStatusFallback(orderId, newStatus);
       }
     } catch (e) {
       print('⚠️ Excepción al actualizar estado: $e');
       // Intentar método alternativo
-      return await _updateOrderStatusFallback(
-        orderId,
-        newStatus == 'completado' ? 'entregado' : newStatus,
-      );
+      return await _updateOrderStatusFallback(orderId, newStatus);
     }
   }
 
@@ -498,6 +740,82 @@ class OrdersService {
     } catch (e) {
       print('⚠️ Error en método alternativo de actualización: $e');
       return false;
+    }
+  }
+
+  // Obtener el tiempo de procesamiento de un pedido
+  Future<Map<String, dynamic>?> getOrderProcessingTime(int orderId) async {
+    try {
+      print('⏱️ Obteniendo tiempo de procesamiento para pedido #$orderId');
+
+      final baseUrl = await _getBaseUrl();
+      final query = {
+        'query': '''
+          SELECT 
+            pt.idpedido,
+            pt.estado_inicial,
+            pt.estado_final, 
+            pt.timestamp_inicial,
+            pt.timestamp_final,
+            EXTRACT(EPOCH FROM pt.tiempo_procesamiento) as tiempo_segundos
+          FROM 
+            pedido_tiempos pt
+          WHERE 
+            pt.idpedido = $orderId
+          LIMIT 1
+        ''',
+      };
+
+      final uri = Uri.parse('$baseUrl/db/query');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(query),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['result'] != null && data['result'].isNotEmpty) {
+          final processingData = data['result'][0];
+          print('⏱️ Datos de tiempo obtenidos: $processingData');
+
+          // Formatear el tiempo en formato legible
+          final tiempoSegundos =
+              (processingData['tiempo_segundos'] is num)
+                  ? processingData['tiempo_segundos']
+                  : double.tryParse(
+                        processingData['tiempo_segundos'].toString(),
+                      ) ??
+                      0.0;
+
+          final minutos = (tiempoSegundos / 60).floor();
+          final segundos = (tiempoSegundos % 60).round();
+
+          return {
+            'idpedido': processingData['idpedido'],
+            'estado_inicial': processingData['estado_inicial'],
+            'estado_final': processingData['estado_final'],
+            'timestamp_inicial': processingData['timestamp_inicial'],
+            'timestamp_final': processingData['timestamp_final'],
+            'tiempo_segundos': tiempoSegundos,
+            'tiempo_formato': '$minutos min $segundos seg',
+          };
+        } else {
+          print(
+            '⏱️ No se encontraron datos de tiempo para el pedido #$orderId',
+          );
+          return null;
+        }
+      } else {
+        print(
+          '❌ Error al obtener tiempo de procesamiento: ${response.statusCode}',
+        );
+        return null;
+      }
+    } catch (e) {
+      print('⚠️ Error al obtener tiempo de procesamiento: $e');
+      return null;
     }
   }
 }

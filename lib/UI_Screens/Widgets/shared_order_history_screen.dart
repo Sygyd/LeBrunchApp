@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'date_filter_bar.dart';
 
 /// Widget compartido para mostrar el historial de pedidos
 /// Puede ser utilizado por administradores, cocineros y baristas
@@ -55,6 +56,11 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
   String _selectedFilter = 'todos';
   bool _hasTriedWithMultipleFormats = false;
   int _debugCounter = 0;
+
+  // Variables para los nuevos filtros
+  String _statusFilter = 'todos'; // 'completados', 'cancelados', 'todos'
+  bool _sortAscending =
+      false; // true = más antiguos primero, false = más recientes primero
 
   @override
   void initState() {
@@ -205,6 +211,12 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
         '📋 Pedidos recibidos con filtro: ${orders.length}',
         name: 'OrderHistory',
       );
+
+      // Mantener el estado de filtro y ordenamiento al cargar nuevos datos
+      setState(() {
+        _selectedFilter = filter;
+      });
+
       _processOrdersResponse(orders);
     } catch (e) {
       _handleLoadError(e);
@@ -431,21 +443,50 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
       name: 'OrderHistory',
     );
 
-    final filteredOrders =
-        orders
-            .where(
-              (order) =>
-                  order['estado'] != null &&
-                  _validOrderStates.contains(
-                    order['estado'].toString().toLowerCase(),
-                  ),
-            )
-            .toList();
+    // Filtrar por estado si corresponde
+    var filteredOrders = orders;
+
+    if (_statusFilter != 'todos') {
+      filteredOrders =
+          orders
+              .where(
+                (order) =>
+                    order['estado'] != null &&
+                    order['estado'].toString().toLowerCase() ==
+                        (_statusFilter == 'completados'
+                            ? 'completado'
+                            : 'cancelado'),
+              )
+              .toList();
+    } else {
+      filteredOrders =
+          orders
+              .where(
+                (order) =>
+                    order['estado'] != null &&
+                    _validOrderStates.contains(
+                      order['estado'].toString().toLowerCase(),
+                    ),
+              )
+              .toList();
+    }
 
     developer.log(
       '✅ Filtrado completado: ${filteredOrders.length} pedidos válidos',
       name: 'OrderHistory',
     );
+
+    // Ordenar por fecha
+    filteredOrders.sort((a, b) {
+      // Combinamos fecha y hora para tener un DateTime completo
+      final aDate = _parseDateTime('${a['fecha']} ${a['hora']}');
+      final bDate = _parseDateTime('${b['fecha']} ${b['hora']}');
+
+      // Ordenamos según corresponda
+      return _sortAscending
+          ? aDate.compareTo(bDate) // Ascendente (más antiguos primero)
+          : bDate.compareTo(aDate); // Descendente (más recientes primero)
+    });
 
     // Depurar datos de pedidos
     if (filteredOrders.isNotEmpty) {
@@ -459,15 +500,16 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
       _orders = filteredOrders;
       _isLoading = false;
     });
+  }
 
-    // Mostrar alerta si no hay datos
-    if (filteredOrders.isEmpty && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se encontraron pedidos completados o cancelados'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+  // Método auxiliar para convertir strings de fecha a DateTime
+  DateTime _parseDateTime(String dateTimeStr) {
+    try {
+      // Formato esperado: "YYYY-MM-DD HH:MM"
+      return DateFormat('yyyy-MM-dd HH:mm').parse(dateTimeStr);
+    } catch (e) {
+      // Si hay error, devolver fecha actual
+      return DateTime.now();
     }
   }
 
@@ -675,17 +717,6 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
               color: theme.colorScheme.onSurface.withOpacity(0.5),
             ),
           ),
-          const SizedBox(height: 24),
-          // Añadir un botón para intentar carga directa
-          ElevatedButton.icon(
-            onPressed: _loadAllOrdersDirect,
-            icon: const Icon(Icons.sync_problem),
-            label: const Text('Probar carga directa'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: Colors.white,
-            ),
-          ),
         ],
       ),
     );
@@ -719,22 +750,27 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.title,
-          style: TextStyle(
-            fontFamily: 'Lighthouse',
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.3),
-                offset: const Offset(1, 1),
-                blurRadius: 3,
-              ),
-            ],
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            widget.title,
+            style: TextStyle(
+              fontFamily: 'Lighthouse',
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withOpacity(0.3),
+                  offset: const Offset(1, 1),
+                  blurRadius: 3,
+                ),
+              ],
+            ),
           ),
         ),
+        titleSpacing: 10, // Reducir el espacio a la izquierda del título
         automaticallyImplyLeading: true,
         backgroundColor: const Color(0xFF3ea69b),
         foregroundColor: Colors.white,
@@ -756,39 +792,355 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
           ),
         ),
         actions: [
-          // Botón para cargar directamente
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Carga directa',
-            onPressed: _loadAllOrdersDirect,
+          // Filtro de estado (completados, cancelados, todos)
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero, // Sin padding
+            offset: const Offset(
+              0,
+              40,
+            ), // Desplazar el menú hacia abajo para evitar solapamiento
+            icon: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 3,
+              ), // Ajustar padding
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _statusFilter == 'todos'
+                        ? Icons.all_inclusive
+                        : _statusFilter == 'completados'
+                        ? Icons.check_circle_outline
+                        : Icons.cancel_outlined,
+                    color:
+                        _statusFilter == 'todos'
+                            ? Colors.white
+                            : _statusFilter == 'completados'
+                            ? Colors.green.shade200
+                            : Colors.red.shade200,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    _statusFilter == 'todos'
+                        ? 'Todos'
+                        : _statusFilter == 'completados'
+                        ? 'Comp.'
+                        : 'Canc.',
+                    style: const TextStyle(fontSize: 10, color: Colors.white),
+                  ),
+                  const Icon(
+                    Icons.arrow_drop_down,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ],
+              ),
+            ),
+            onSelected: (String value) {
+              setState(() {
+                _statusFilter = value;
+                // Aplicar todos los filtros en conjunto
+                _applyAllFilters();
+              });
+            },
+            itemBuilder:
+                (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'todos',
+                    height: 42, // Altura más grande
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ), // Más padding
+                    child: Row(
+                      children: [
+                        Icon(Icons.all_inclusive, color: Colors.grey, size: 20),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Todos los pedidos',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(height: 1), // Separador
+                  PopupMenuItem<String>(
+                    value: 'completados',
+                    height: 42, // Altura más grande
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ), // Más padding
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.green,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Completados',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(height: 1), // Separador
+                  PopupMenuItem<String>(
+                    value: 'cancelados',
+                    height: 42, // Altura más grande
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ), // Más padding
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.cancel_outlined,
+                          color: Colors.red,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Cancelados',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+            tooltip: 'Filtrar por estado', // Tooltip informativo
+          ),
+
+          // Filtro de ordenamiento (ascendente/descendente)
+          Container(
+            margin: const EdgeInsets.only(
+              right: 6,
+              left: 2,
+            ), // Reducir los márgenes
+            padding: const EdgeInsets.all(2), // Reducir padding
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: InkWell(
+              // Usar InkWell en lugar de IconButton para ahorrar espacio
+              onTap: () {
+                setState(() {
+                  _sortAscending = !_sortAscending;
+                  // Aplicar todos los filtros en conjunto
+                  _applyAllFilters();
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                  color: Colors.white,
+                  size: 16, // Reducir tamaño del icono
+                ),
+              ),
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
-          if (widget.showFilters)
+          // Banner de filtros activos
+          if (_statusFilter != 'todos' || _sortAscending)
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Card(
-                elevation: 1,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterChip('Todos', 'todos'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Hoy', 'hoy'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Esta semana', 'semana'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Este mes', 'mes'),
-                      ],
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              child: Wrap(
+                spacing: 8, // Espacio horizontal entre widgets
+                runSpacing: 8, // Espacio vertical entre filas
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.filter_alt_outlined,
+                        size: 16,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Filtros:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (_statusFilter != 'todos')
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            _statusFilter == 'completados'
+                                ? Colors.green.withOpacity(0.2)
+                                : Colors.red.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color:
+                              _statusFilter == 'completados'
+                                  ? Colors.green.withOpacity(0.5)
+                                  : Colors.red.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Text(
+                        _statusFilter == 'completados'
+                            ? 'Completados'
+                            : 'Cancelados',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _statusFilter == 'completados'
+                                  ? Colors.green.shade800
+                                  : Colors.red.shade800,
+                        ),
+                      ),
+                    ),
+
+                  if (_sortAscending)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_upward,
+                            size: 10,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Más antiguos primero',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  if (_selectedFilter != 'todos')
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Text(
+                        _selectedFilter == 'hoy'
+                            ? 'Hoy'
+                            : _selectedFilter == 'semana'
+                            ? 'Esta semana'
+                            : _selectedFilter == 'mes'
+                            ? 'Este mes'
+                            : 'Rango personalizado',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+
+                  // Botón para quitar filtros
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _statusFilter = 'todos';
+                        _sortAscending = false;
+                        _selectedFilter = 'todos';
+                        _loadAllOrders();
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.clear,
+                            size: 12,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Quitar filtros',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
+            ),
+
+          // Implementar DateFilterBar cuando showFilters es true
+          if (widget.showFilters)
+            DateFilterBar(
+              initialFilter: _selectedFilter,
+              onFilterChanged: _handleFilterChange,
+              onCustomDateRangeSelected: _handleCustomDateRangeSelected,
+              showFilterLabel: true,
             ),
 
           Padding(
@@ -820,12 +1172,6 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
                   ),
                   const SizedBox(width: 16),
                 ],
-
-                IconButton(
-                  icon: Icon(Icons.refresh, color: theme.colorScheme.primary),
-                  onPressed: _loadAllOrders,
-                  tooltip: 'Actualizar',
-                ),
               ],
             ),
           ),
@@ -868,6 +1214,67 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
     } catch (e) {
       // Si falla, usamos la dirección IP predeterminada
       return 'http://192.168.1.121:3000';
+    }
+  }
+
+  // Método para manejar el cambio de filtro desde DateFilterBar
+  void _handleFilterChange(String filter) {
+    setState(() {
+      _selectedFilter = filter;
+    });
+
+    if (filter == 'todos') {
+      _loadAllOrders();
+    } else {
+      _loadOrdersWithFilter(filter);
+    }
+  }
+
+  // Método para manejar la selección de rango de fechas desde DateFilterBar
+  void _handleCustomDateRangeSelected(String startDate, String endDate) {
+    _loadOrdersWithDateRange(startDate, endDate);
+  }
+
+  // Método para cargar pedidos con un rango de fechas específico
+  Future<void> _loadOrdersWithDateRange(
+    String startDate,
+    String endDate,
+  ) async {
+    _setLoading(true);
+    developer.log(
+      '📅 Cargando pedidos con rango de fechas: $startDate a $endDate',
+      name: 'OrderHistory',
+    );
+
+    try {
+      // Construir la cláusula WHERE para el rango de fechas
+      final whereClause =
+          "AND p.fecha >= '$startDate'::date AND p.fecha <= '$endDate'::date + interval '1 day'";
+
+      // Ejecutar consulta SQL directa con el filtro de fecha
+      final orders = await _queryOrdersWithCustomFilter(whereClause);
+
+      developer.log(
+        '📋 Pedidos recibidos con rango de fechas: ${orders.length}',
+        name: 'OrderHistory',
+      );
+
+      _processOrdersResponse(orders);
+    } catch (e) {
+      _handleLoadError(e);
+    }
+  }
+
+  // Método para aplicar todos los filtros y recargar los datos
+  void _applyAllFilters() {
+    // Si hay un filtro de estado o de ordenamiento, pero no hay filtro de fecha,
+    // necesitamos recargar los datos con el filtro actual
+    if (_selectedFilter == 'todos') {
+      _loadAllOrders();
+    } else if (_selectedFilter == 'personalizado') {
+      // No hacemos nada porque el método handleCustomDateRangeSelected ya fue llamado
+    } else {
+      _loadOrdersWithFilter(_selectedFilter);
     }
   }
 }

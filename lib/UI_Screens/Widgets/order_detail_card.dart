@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../Api_services/pedidos/orders_service.dart';
 
 class OrderDetailCard extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -24,6 +25,9 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
   Timer? _timer;
   Duration _elapsedTime = Duration.zero;
   late DateTime _orderTime;
+  final OrdersService _ordersService = OrdersService();
+  Map<String, dynamic>? _processingTimeData;
+  bool _loadingProcessingTime = false;
   // Definir el offset para la zona horaria de Venezuela (GMT-4)
   static const int _venezuelaOffsetHours = -4;
   static const bool _debugMode = false; // Activa/desactiva logs de depuración
@@ -35,6 +39,8 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     _initializeOrderTime();
     // Iniciar temporizador si el pedido está pendiente
     _startTimerIfPending();
+    // Cargar tiempo de procesamiento si es completado o cancelado
+    _loadProcessingTimeIfNeeded();
   }
 
   @override
@@ -47,11 +53,15 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
         oldWidget.order['hora'] != widget.order['hora']) {
       // Reinicializar la hora del pedido si es un pedido diferente
       _initializeOrderTime();
+      // Reiniciar datos de tiempo de procesamiento
+      _processingTimeData = null;
+      _loadProcessingTimeIfNeeded();
     }
 
     // Actualizar el temporizador si el estado cambió
     if (oldWidget.order['estado'] != widget.order['estado']) {
       _startTimerIfPending();
+      _loadProcessingTimeIfNeeded();
     }
   }
 
@@ -99,6 +109,42 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
         const Duration(hours: _venezuelaOffsetHours, minutes: -5),
       );
       _elapsedTime = const Duration(minutes: 5);
+    }
+  }
+
+  Future<void> _loadProcessingTimeIfNeeded() async {
+    final estado = widget.order['estado']?.toString().toLowerCase() ?? '';
+
+    // Solo cargar tiempo para pedidos completados o cancelados
+    if (estado == 'completado' || estado == 'cancelado') {
+      if (_processingTimeData == null && !_loadingProcessingTime) {
+        setState(() {
+          _loadingProcessingTime = true;
+        });
+
+        try {
+          final orderId = widget.order['idpedido'];
+          if (orderId != null) {
+            final timeData = await _ordersService.getOrderProcessingTime(
+              orderId,
+            );
+
+            if (mounted) {
+              setState(() {
+                _processingTimeData = timeData;
+                _loadingProcessingTime = false;
+              });
+            }
+          }
+        } catch (e) {
+          print('❌ Error al cargar tiempo de procesamiento: $e');
+          if (mounted) {
+            setState(() {
+              _loadingProcessingTime = false;
+            });
+          }
+        }
+      }
     }
   }
 
@@ -256,6 +302,50 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ],
+                ),
+              ],
+
+              // Mostrar tiempo de procesamiento para pedidos completados o cancelados
+              if ((estado.toLowerCase() == 'completado' ||
+                  estado.toLowerCase() == 'cancelado')) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.timelapse,
+                      size: 18,
+                      color:
+                          estado.toLowerCase() == 'completado'
+                              ? Colors.green
+                              : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    if (_loadingProcessingTime)
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (_processingTimeData != null)
+                      Text(
+                        'Tiempo de procesamiento: ${_processingTimeData!['tiempo_formato']}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color:
+                              estado.toLowerCase() == 'completado'
+                                  ? Colors.green
+                                  : Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    else
+                      Text(
+                        'Tiempo de procesamiento: No disponible',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          color: Colors.grey,
+                        ),
+                      ),
                   ],
                 ),
               ],
