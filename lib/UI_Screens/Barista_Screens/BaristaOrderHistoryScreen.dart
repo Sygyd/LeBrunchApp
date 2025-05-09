@@ -7,10 +7,13 @@ class BaristaOrderHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SharedOrderHistoryScreen(
-      title: 'Historial de Bebidas',
+      title: 'Historial de Pedidos',
       isAdminView: false,
       showFilters: true,
+      showDatePicker: true,
       showTotal: false,
+      hideAppBar: true,
+      role: 'barista',
     );
   }
 }

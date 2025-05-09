@@ -110,7 +110,39 @@ class _LoginModalContentState extends State<_LoginModalContent> {
   Future<void> _saveAuthData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', data['token']);
-    await prefs.setInt('user_rol', int.parse(data['rol'].toString()));
+
+    // Manejo mejorado del rol para manejar tanto string como int
+    int userRol = 1; // Valor predeterminado: cliente
+
+    if (data['rol'] != null) {
+      // Intentar parsear como int si es string, o usar directamente si ya es int
+      if (data['rol'] is String) {
+        // Primero intentar hacer un parse directo si es número
+        userRol = int.tryParse(data['rol']) ?? 1;
+
+        // Si no es un número, intentar mapear el string del rol
+        if (userRol == 1 && data['rol'].toString().isNotEmpty) {
+          final rolStr = data['rol'].toString().toLowerCase();
+          if (rolStr == 'admin' || rolStr == 'administrador')
+            userRol = 0;
+          else if (rolStr == 'cliente' || rolStr == 'client')
+            userRol = 1;
+          else if (rolStr == 'cocinero' || rolStr == 'cook')
+            userRol = 2;
+          else if (rolStr == 'barista')
+            userRol = 3;
+        }
+      } else if (data['rol'] is int) {
+        userRol = data['rol'];
+      }
+    }
+
+    print(
+      '🔑 Iniciando sesión - Rol recibido: ${data['rol']} (${data['rol'].runtimeType})',
+    );
+    print('🔑 Rol procesado y guardado: $userRol');
+
+    await prefs.setInt('user_rol', userRol);
     await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
     await prefs.setString('user_cedula', data['cedula'] ?? '');
 

@@ -23,6 +23,7 @@ class SharedOrderHistoryScreen extends StatefulWidget {
   final Function? onBackPressed;
   final bool showTotal;
   final String role;
+  final bool hideAppBar; // Nueva propiedad para ocultar la AppBar duplicada
 
   const SharedOrderHistoryScreen({
     super.key,
@@ -36,6 +37,7 @@ class SharedOrderHistoryScreen extends StatefulWidget {
     this.onBackPressed,
     this.showTotal = false,
     this.role = '',
+    this.hideAppBar = false, // Por defecto se muestra la AppBar
   });
 
   @override
@@ -738,6 +740,7 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
                 widget.isAdminView
                     ? (newStatus) => _updateOrderStatus(index, newStatus)
                     : null,
+            role: widget.isAdminView ? 'admin' : widget.role,
           ),
         );
       },
@@ -749,219 +752,395 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            widget.title,
-            style: TextStyle(
-              fontFamily: 'Lighthouse',
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              shadows: [
-                Shadow(
-                  color: Colors.black.withOpacity(0.3),
-                  offset: const Offset(1, 1),
-                  blurRadius: 3,
+      appBar:
+          widget.hideAppBar
+              ? null
+              : AppBar(
+                title: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.title,
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withOpacity(0.3),
+                          offset: const Offset(1, 1),
+                          blurRadius: 3,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-          ),
-        ),
-        titleSpacing: 10, // Reducir el espacio a la izquierda del título
-        automaticallyImplyLeading: true,
-        backgroundColor: const Color(0xFF3ea69b),
-        foregroundColor: Colors.white,
-        centerTitle: false,
-        elevation: 0,
-        toolbarHeight: 70.0,
-        shape: const RoundedRectangleBorder(
-          side: BorderSide(color: Colors.white, width: 1.5),
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-        ),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF3ea69b),
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-            image: DecorationImage(
-              image: AssetImage('assets/images/fondo-flores-2.png'),
-              fit: BoxFit.cover,
-            ),
-          ),
-        ),
-        actions: [
-          // Filtro de estado (completados, cancelados, todos)
-          PopupMenuButton<String>(
-            padding: EdgeInsets.zero, // Sin padding
-            offset: const Offset(
-              0,
-              40,
-            ), // Desplazar el menú hacia abajo para evitar solapamiento
-            icon: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 3,
-              ), // Ajustar padding
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _statusFilter == 'todos'
-                        ? Icons.all_inclusive
-                        : _statusFilter == 'completados'
-                        ? Icons.check_circle_outline
-                        : Icons.cancel_outlined,
-                    color:
-                        _statusFilter == 'todos'
-                            ? Colors.white
-                            : _statusFilter == 'completados'
-                            ? Colors.green.shade200
-                            : Colors.red.shade200,
-                    size: 14,
+                backgroundColor: const Color(0xFF3ea69b),
+                foregroundColor: Colors.white,
+                centerTitle: false,
+                elevation: 0,
+                toolbarHeight: 70.0, // Altura fija para la AppBar
+                shape: RoundedRectangleBorder(
+                  side: const BorderSide(color: Colors.white, width: 1.5),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(30),
                   ),
-                  const SizedBox(width: 2),
-                  Text(
-                    _statusFilter == 'todos'
-                        ? 'Todos'
-                        : _statusFilter == 'completados'
-                        ? 'Comp.'
-                        : 'Canc.',
-                    style: const TextStyle(fontSize: 10, color: Colors.white),
-                  ),
-                  const Icon(
-                    Icons.arrow_drop_down,
-                    color: Colors.white,
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
-            onSelected: (String value) {
-              setState(() {
-                _statusFilter = value;
-                // Aplicar todos los filtros en conjunto
-                _applyAllFilters();
-              });
-            },
-            itemBuilder:
-                (BuildContext context) => <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'todos',
-                    height: 42, // Altura más grande
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ), // Más padding
-                    child: Row(
-                      children: [
-                        Icon(Icons.all_inclusive, color: Colors.grey, size: 20),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Todos los pedidos',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.normal,
-                          ),
-                        ),
-                      ],
+                ),
+                flexibleSpace: Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF3ea69b),
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(30),
+                    ),
+                    image: DecorationImage(
+                      image: AssetImage('assets/images/fondo-flores-2.png'),
+                      fit: BoxFit.cover,
                     ),
                   ),
-                  const PopupMenuDivider(height: 1), // Separador
-                  PopupMenuItem<String>(
-                    value: 'completados',
-                    height: 42, // Altura más grande
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ), // Más padding
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          color: Colors.green,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Completados',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.normal,
+                ),
+                actions: <Widget>[
+                  // Filtro de estado (completados/cancelados)
+                  PopupMenuButton<String>(
+                    icon: Container(
+                      padding: const EdgeInsets.all(
+                        6,
+                      ), // Agregar padding para área táctil
+                      child: Row(
+                        children: [
+                          Icon(
+                            _statusFilter == 'completados'
+                                ? Icons.check_circle_outline
+                                : _statusFilter == 'cancelados'
+                                ? Icons.cancel_outlined
+                                : Icons.filter_list,
+                            color: Colors.white,
+                            size: 16,
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(height: 1), // Separador
-                  PopupMenuItem<String>(
-                    value: 'cancelados',
-                    height: 42, // Altura más grande
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ), // Más padding
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.cancel_outlined,
-                          color: Colors.red,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Cancelados',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.normal,
+                          const Icon(
+                            Icons.arrow_drop_down,
+                            color: Colors.white,
+                            size: 14,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    onSelected: (String value) {
+                      setState(() {
+                        _statusFilter = value;
+                        // Aplicar todos los filtros en conjunto
+                        _applyAllFilters();
+                      });
+                    },
+                    itemBuilder:
+                        (BuildContext context) => <PopupMenuEntry<String>>[
+                          PopupMenuItem<String>(
+                            value: 'completados',
+                            height: 42, // Altura más grande
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ), // Más padding
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline,
+                                  color: Colors.green,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Completados',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuDivider(height: 1), // Separador
+                          PopupMenuItem<String>(
+                            value: 'cancelados',
+                            height: 42, // Altura más grande
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ), // Más padding
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.cancel_outlined,
+                                  color: Colors.red,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Cancelados',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'todos',
+                            height: 42,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.all_inclusive,
+                                  color: theme.colorScheme.primary,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Todos',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                   ),
-                ],
-            tooltip: 'Filtrar por estado', // Tooltip informativo
-          ),
 
-          // Filtro de ordenamiento (ascendente/descendente)
-          Container(
-            margin: const EdgeInsets.only(
-              right: 6,
-              left: 2,
-            ), // Reducir los márgenes
-            padding: const EdgeInsets.all(2), // Reducir padding
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: InkWell(
-              // Usar InkWell en lugar de IconButton para ahorrar espacio
-              onTap: () {
-                setState(() {
-                  _sortAscending = !_sortAscending;
-                  // Aplicar todos los filtros en conjunto
-                  _applyAllFilters();
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                  color: Colors.white,
-                  size: 16, // Reducir tamaño del icono
-                ),
+                  // Filtro de ordenamiento (ascendente/descendente)
+                  Container(
+                    margin: const EdgeInsets.only(
+                      right: 6,
+                      left: 2,
+                    ), // Reducir los márgenes
+                    padding: const EdgeInsets.all(2), // Reducir padding
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: InkWell(
+                      // Usar InkWell en lugar de IconButton para ahorrar espacio
+                      onTap: () {
+                        setState(() {
+                          _sortAscending = !_sortAscending;
+                          // Aplicar todos los filtros en conjunto
+                          _applyAllFilters();
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          _sortAscending
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          color: Colors.white,
+                          size: 16, // Reducir tamaño del icono
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
-      ),
       body: Column(
         children: [
+          // Barra de filtros adicional cuando AppBar está oculta
+          if (widget.hideAppBar)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Filtro de estado
+                  Expanded(
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withOpacity(0.5),
+                        ),
+                      ),
+                      child: PopupMenuButton<String>(
+                        padding: EdgeInsets.zero,
+                        offset: const Offset(0, 40),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    _statusFilter == 'completados'
+                                        ? Icons.check_circle_outline
+                                        : _statusFilter == 'cancelados'
+                                        ? Icons.cancel_outlined
+                                        : Icons.filter_list,
+                                    color:
+                                        _statusFilter == 'completados'
+                                            ? Colors.green
+                                            : _statusFilter == 'cancelados'
+                                            ? Colors.red
+                                            : theme.colorScheme.primary,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _statusFilter == 'completados'
+                                        ? 'Completados'
+                                        : _statusFilter == 'cancelados'
+                                        ? 'Cancelados'
+                                        : 'Todos',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Icon(Icons.arrow_drop_down, size: 20),
+                            ],
+                          ),
+                        ),
+                        onSelected: (String value) {
+                          setState(() {
+                            _statusFilter = value;
+                            _applyAllFilters();
+                          });
+                        },
+                        itemBuilder:
+                            (BuildContext context) => <PopupMenuEntry<String>>[
+                              PopupMenuItem<String>(
+                                value: 'completados',
+                                height: 42,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_outline,
+                                      color: Colors.green,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Text(
+                                      'Completados',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuDivider(height: 1),
+                              PopupMenuItem<String>(
+                                value: 'cancelados',
+                                height: 42,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.cancel_outlined,
+                                      color: Colors.red,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Text(
+                                      'Cancelados',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'todos',
+                                height: 42,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.all_inclusive,
+                                      color: theme.colorScheme.primary,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Text(
+                                      'Todos',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Botón de orden ascendente/descendente
+                  Container(
+                    height: 40,
+                    width: 40,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withOpacity(0.5),
+                      ),
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        _sortAscending
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 20,
+                        color: theme.colorScheme.primary,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _sortAscending = !_sortAscending;
+                          _applyAllFilters();
+                        });
+                      },
+                      tooltip:
+                          _sortAscending
+                              ? 'Más antiguos primero'
+                              : 'Más recientes primero',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Banner de filtros activos
           if (_statusFilter != 'todos' || _sortAscending)
             Container(
@@ -1135,7 +1314,7 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
             ),
 
           // Implementar DateFilterBar cuando showFilters es true
-          if (widget.showFilters)
+          if (widget.showFilters && widget.showDatePicker)
             DateFilterBar(
               initialFilter: _selectedFilter,
               onFilterChanged: _handleFilterChange,

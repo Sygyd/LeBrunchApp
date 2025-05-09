@@ -191,7 +191,7 @@ class CreateOrderService {
 
         final detailQuery = {
           'query':
-              "INSERT INTO pedido_detalle (idpedido, idplato, cantidad, precio_unitario, notas) VALUES ($orderId, $itemId, ${item.quantity}, ${item.price}, '${item.notes ?? ''}')",
+              "INSERT INTO pedido_detalle (idpedido, idplato, cantidad, precio_unitario, notas, completado_cocinero, completado_barista, fecha_completado_cocinero, fecha_completado_barista) VALUES ($orderId, $itemId, ${item.quantity}, ${item.price}, '${item.notes ?? ''}', false, false, NULL, NULL)",
         };
 
         print(

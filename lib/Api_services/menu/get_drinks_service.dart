@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-class GetDishesService {
-  Future<List<Map<String, dynamic>>> getDishes() async {
+class GetDrinksService {
+  Future<List<Map<String, dynamic>>> getDrinks() async {
     try {
       final response = await http.get(
         Uri.parse('http://192.168.1.121:3000/menu'),
@@ -10,22 +10,21 @@ class GetDishesService {
 
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
-        // Filtrar sólo platos, excluyendo bebidas
+        // Filtrar solo bebidas
         final List<Map<String, dynamic>> allItems =
             List<Map<String, dynamic>>.from(data);
-        final List<Map<String, dynamic>> dishes =
+        final List<Map<String, dynamic>> drinks =
             allItems.where((item) {
               String categoria =
                   item['categoria']?.toString().toLowerCase() ?? '';
-              // Excluir categorías de bebidas
-              return categoria != 'expresos' &&
-                  categoria != 'frapuccinos' &&
-                  categoria != 'cold brew' &&
-                  categoria != 'jugos';
+              return categoria == 'expresos' ||
+                  categoria == 'frapuccinos' ||
+                  categoria == 'cold brew' ||
+                  categoria == 'jugos';
             }).toList();
-        return dishes;
+        return drinks;
       } else {
-        throw Exception('Error al obtener platos');
+        throw Exception('Error al obtener bebidas');
       }
     } catch (e) {
       throw Exception('Error de conexión: $e');

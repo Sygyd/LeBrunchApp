@@ -37,7 +37,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _loadReportData();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   Future<void> _loadReportData() async {
+    if (!mounted) return; // Guarda de seguridad inicial
+
     setState(() {
       _isLoading = true;
       _hasError = false;
@@ -74,8 +81,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
         '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod)',
       );
 
-      Map<String, dynamic> summary;
-      List<Map<String, dynamic>> popularDishes;
+      // Preparar para recibir datos
+      Map<String, dynamic> summary = {
+        'totalPedidos': 0,
+        'totalVentas': 0.0,
+        'ticketPromedio': 0.0,
+      };
+      List<Map<String, dynamic>> popularDishes = [];
+
+      // Verificar si el widget sigue montado
+      if (!mounted) return;
 
       // Si es un período personalizado, enviar fechas específicas
       if (_currentPeriod == 'personalizado' &&
@@ -83,41 +98,84 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _customEndDate != null) {
         print('📅 Rango personalizado: $_customStartDate a $_customEndDate');
 
-        summary = await _ordersService.getOrdersSummary(
-          period: servicePeriod,
-          customStartDate: _customStartDate,
-          customEndDate: _customEndDate,
-        );
+        try {
+          summary = await _ordersService.getOrdersSummary(
+            period: servicePeriod,
+            customStartDate: _customStartDate,
+            customEndDate: _customEndDate,
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo resumen personalizado: $e');
+          // Continuamos con valores por defecto
+        }
+
+        // Verificar si el widget sigue montado
+        if (!mounted) return;
 
         // Cargar platos populares para el mismo período
-        popularDishes = await _popularDishesService.getPopularDishesDirect(
-          period: null, // No usar período predefinido para rango personalizado
-          startDate: _customStartDate,
-          endDate: _customEndDate,
-          limit: 5,
-        );
+        try {
+          popularDishes = await _popularDishesService.getPopularDishesDirect(
+            period:
+                null, // No usar período predefinido para rango personalizado
+            startDate: _customStartDate,
+            endDate: _customEndDate,
+            limit: 5,
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo platos populares personalizados: $e');
+          // Continuamos con lista vacía
+        }
       } else if (_currentPeriod == 'todos') {
         // Para "todos", usamos el período 'all'
-        summary = await _ordersService.getOrdersSummary(
-          period: 'all', // Usar 'all' como período para incluir todo
-        );
+        try {
+          summary = await _ordersService.getOrdersSummary(
+            period: 'all', // Usar 'all' como período para incluir todo
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo resumen de todos los datos: $e');
+          // Continuamos con valores por defecto
+        }
+
+        // Verificar si el widget sigue montado
+        if (!mounted) return;
 
         // Cargar todos los platos populares sin filtros de fecha
-        popularDishes = await _popularDishesService.getPopularDishesDirect(
-          period: 'all', // Usar 'all' como período para incluir todo
-          limit: 5,
-        );
+        try {
+          popularDishes = await _popularDishesService.getPopularDishesDirect(
+            period: 'all', // Usar 'all' como período para incluir todo
+            limit: 5,
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo platos populares de todos los datos: $e');
+          // Continuamos con lista vacía
+        }
       } else {
         // Caso normal para períodos predefinidos
-        summary = await _ordersService.getOrdersSummary(period: servicePeriod);
+        try {
+          summary = await _ordersService.getOrdersSummary(
+            period: servicePeriod,
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo resumen predefinido: $e');
+          // Continuamos con valores por defecto
+        }
+
+        // Verificar si el widget sigue montado
+        if (!mounted) return;
 
         // Cargar platos populares para el mismo período
-        popularDishes = await _popularDishesService.getPopularDishesDirect(
-          period: servicePeriod,
-          limit: 5,
-        );
+        try {
+          popularDishes = await _popularDishesService.getPopularDishesDirect(
+            period: servicePeriod,
+            limit: 5,
+          );
+        } catch (e) {
+          print('⚠️ Error obteniendo platos populares predefinidos: $e');
+          // Continuamos con lista vacía
+        }
       }
 
+      // Verificación final antes de actualizar el estado
       if (mounted) {
         setState(() {
           _summaryData = summary;
@@ -143,12 +201,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _popularDishes = [];
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar los datos: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Evitar mostrar SnackBar si el contexto ya no está disponible
+        if (mounted && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al cargar los datos: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -377,14 +438,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _buildStatisticsCards(ThemeData theme) {
     // Asegurar que los valores son números válidos
     final totalPedidos = _summaryData['totalPedidos'] ?? 0;
+
+    // Forzar la conversión a double para evitar errores de tipo
     final totalVentas =
-        _summaryData['totalVentas'] is num
-            ? _summaryData['totalVentas']
-            : double.tryParse('${_summaryData['totalVentas']}') ?? 0.0;
+        _summaryData['totalVentas'] != null
+            ? double.parse(_summaryData['totalVentas'].toString())
+            : 0.0;
+
     final ticketPromedio =
-        _summaryData['ticketPromedio'] is num
-            ? _summaryData['ticketPromedio']
-            : double.tryParse('${_summaryData['ticketPromedio']}') ?? 0.0;
+        _summaryData['ticketPromedio'] != null
+            ? double.parse(_summaryData['ticketPromedio'].toString())
+            : 0.0;
 
     print(
       '💰 Valores para tarjetas: Pedidos=$totalPedidos, Ventas=$totalVentas, Ticket=$ticketPromedio',

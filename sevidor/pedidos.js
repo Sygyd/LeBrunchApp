@@ -362,49 +362,6 @@ router.get("/pedidos/ventas/rango", async (req, res) => {
   }
 });
 
-// Eliminar un pedido
-router.delete("/pedidos/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // Iniciar transacción
-    await pool.query('BEGIN');
-    
-    // Primero eliminar detalles del pedido
-    await pool.query(
-      "DELETE FROM pedido_detalle WHERE idpedido = $1",
-      [id]
-    );
-    
-    // Luego eliminar el pedido principal
-    const result = await pool.query(
-      "DELETE FROM pedidos WHERE idpedido = $1 RETURNING idpedido",
-      [id]
-    );
-    
-    // Confirmar transacción
-    await pool.query('COMMIT');
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Pedido no encontrado" });
-    }
-    
-    return res.status(200).json({
-      message: "Pedido eliminado correctamente",
-      idpedido: result.rows[0].idpedido
-    });
-    
-  } catch (error) {
-    // Rollback en caso de error
-    await pool.query('ROLLBACK');
-    console.error("❌ Error al eliminar pedido:", error);
-    return res.status(500).json({
-      error: "Error al eliminar el pedido",
-      details: error.message
-    });
-  }
-});
-
 // Obtener los platos más vendidos
 router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
   try {
@@ -734,23 +691,23 @@ router.get("/pedidos/resumen", async (req, res) => {
       `;
       resumen.distribucionLabel = 'mesesPico';
     }
-    
+      
     // Ejecutar la consulta de distribución si existe
     if (distribucionQuery) {
       try {
         const distribucionResult = await pool.query(distribucionQuery, [fechaInicio, fechaFin]);
-        
+      
         resumen[resumen.distribucionLabel] = distribucionResult.rows.map(row => ({
           etiqueta: row.etiqueta,
-          pedidos: parseInt(row.pedidos)
-        }));
-        
+        pedidos: parseInt(row.pedidos)
+      }));
+
         console.log(`📊 Distribución por ${resumen.distribucionLabel}:`, resumen[resumen.distribucionLabel]);
       } catch (distError) {
         console.error(`❌ Error al obtener distribución: ${distError.message}`);
         // No detener todo el proceso por un error en la distribución
         resumen.errorDistribucion = distError.message;
-      }
+    }
     }
     
     // Eliminar la etiqueta de distribución del resultado final
@@ -768,175 +725,54 @@ router.get("/pedidos/resumen", async (req, res) => {
   }
 });
 
-// Obtener estadísticas de tiempo de procesamiento
-router.get("/pedidos/tiempo-procesamiento", async (req, res) => {
+// Obtener tiempo promedio de procesamiento de pedidos por día
+router.get("/pedidos/tiempo/promedio", async (req, res) => {
   try {
-    const { period, startDate, endDate } = req.query;
+    console.log("⏱️ Solicitud de tiempo promedio de procesamiento recibida");
     
-    // Determinar las fechas de inicio y fin para el período solicitado
-    let fechaInicio, fechaFin;
-    if (period === 'day') {
-      // Hoy
-      fechaInicio = new Date();
-      fechaInicio.setHours(0, 0, 0, 0);
-      fechaFin = new Date();
-    } else if (period === 'week') {
-      // Esta semana
-      const today = new Date();
-      const dayOfWeek = today.getDay(); // 0 = Domingo, 1 = Lunes, etc.
-      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Ajuste para iniciar en lunes
-      fechaInicio = new Date(today.setDate(diff));
-      fechaInicio.setHours(0, 0, 0, 0);
-      fechaFin = new Date();
-    } else if (period === 'month') {
-      // Este mes
-      fechaInicio = new Date();
-      fechaInicio.setDate(1);
-      fechaInicio.setHours(0, 0, 0, 0);
-      fechaFin = new Date();
-    } else if (period === 'year') {
-      // Este año
-      fechaInicio = new Date();
-      fechaInicio.setMonth(0, 1);
-      fechaInicio.setHours(0, 0, 0, 0);
-      fechaFin = new Date();
-    } else if (period === 'all') {
-      // Todo el tiempo
-      fechaInicio = new Date(0); // 1970-01-01
-      fechaFin = new Date();
-    } else if (startDate && endDate) {
-      // Período personalizado
-      fechaInicio = new Date(startDate);
-      fechaInicio.setHours(0, 0, 0, 0);
-      fechaFin = new Date(endDate);
-      fechaFin.setHours(23, 59, 59, 999);
-    } else {
-      // Por defecto, último mes
-      fechaInicio = new Date();
-      fechaInicio.setMonth(fechaInicio.getMonth() - 1);
-      fechaFin = new Date();
-    }
-    
-    console.log(`📊 Obteniendo estadísticas de tiempo de procesamiento para el período: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`);
-    
-    // Consultar estadísticas generales utilizando el nuevo campo tiempo_procesamiento de la tabla pedidos
-    const statsResult = await pool.query(`
+    // Consulta optimizada para obtener el tiempo promedio de hoy
+    const { rows } = await pool.query(`
       SELECT 
-        COUNT(*) as total_pedidos,
-        AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos,
-        MIN(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_minimo_segundos,
-        MAX(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_maximo_segundos
+        COUNT(*) as count,
+        EXTRACT(EPOCH FROM AVG(
+          CASE 
+            WHEN tiempo_procesamiento IS NOT NULL THEN tiempo_procesamiento
+            ELSE interval '15 minutes'
+          END
+        )) as promedio_segundos
       FROM 
         pedidos
       WHERE 
-        fecha BETWEEN $1 AND $2
-        AND tiempo_procesamiento IS NOT NULL
-        AND estado IN ('completado', 'cancelado')
-    `, [fechaInicio, fechaFin]);
+        estado = 'completado' 
+        AND DATE(fecha) = CURRENT_DATE
+    `);
     
-    const stats = statsResult.rows[0];
-    
-    // Si no hay datos, devolver respuesta vacía
-    if (stats.total_pedidos === '0') {
+    if (rows.length > 0) {
+      const count = parseInt(rows[0].count, 10) || 0;
+      const promedioSegundos = parseFloat(rows[0].promedio_segundos) || 0;
+      const promedioMinutos = promedioSegundos / 60;
+      
+      console.log(`⏱️ Encontrados ${count} pedidos completados hoy`);
+      console.log(`⏱️ Tiempo promedio: ${promedioMinutos.toFixed(2)} minutos`);
+      
       return res.status(200).json({
-        mensaje: "No hay datos de tiempo de procesamiento para el período solicitado",
-        datos_disponibles: false,
-        periodo: {
-          desde: fechaInicio.toISOString(),
-          hasta: fechaFin.toISOString(),
-          nombre: period || 'personalizado'
-        }
+        count,
+        promedio_segundos: promedioSegundos,
+        promedio_minutos: promedioMinutos
       });
     }
     
-    // Función para formatear tiempo en formato legible
-    const formatTiempo = (segundos) => {
-      if (!segundos || isNaN(segundos)) return "No disponible";
-      
-      const minutos = Math.floor(segundos / 60);
-      const segs = Math.round(segundos % 60);
-      
-      if (minutos < 1) {
-        return `${segs} segundos`;
-      } else {
-        return `${minutos} min ${segs} seg`;
-      }
-    };
-    
-    // Consultar distribución por estado final
-    const distribucionResult = await pool.query(`
-      SELECT 
-        estado as estado_final,
-        COUNT(*) as cantidad,
-        AVG(EXTRACT(EPOCH FROM tiempo_procesamiento)) as tiempo_promedio_segundos
-      FROM 
-        pedidos
-      WHERE 
-        fecha BETWEEN $1 AND $2
-        AND tiempo_procesamiento IS NOT NULL
-        AND estado IN ('completado', 'cancelado')
-      GROUP BY 
-        estado
-      ORDER BY 
-        cantidad DESC
-    `, [fechaInicio, fechaFin]);
-    
-    // Consultar distribución por rangos de tiempo
-    const rangosTiempoResult = await pool.query(`
-      SELECT 
-        CASE
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) < 300 THEN 'menos_5min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 300 AND 600 THEN '5_10min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 600 AND 900 THEN '10_15min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 900 AND 1200 THEN '15_20min'
-          WHEN EXTRACT(EPOCH FROM tiempo_procesamiento) BETWEEN 1200 AND 1800 THEN '20_30min'
-          ELSE 'mas_30min'
-        END as rango_tiempo,
-        COUNT(*) as cantidad
-      FROM 
-        pedidos
-      WHERE 
-        fecha BETWEEN $1 AND $2
-        AND tiempo_procesamiento IS NOT NULL
-        AND estado IN ('completado', 'cancelado')
-      GROUP BY 
-        rango_tiempo
-      ORDER BY 
-        rango_tiempo
-    `, [fechaInicio, fechaFin]);
-    
-    // Construir respuesta
+    // Si no hay resultados, devolver valores por defecto
     return res.status(200).json({
-      mensaje: "Estadísticas de tiempo de procesamiento obtenidas correctamente",
-      datos_disponibles: true,
-      tiempo_promedio: formatTiempo(stats.tiempo_promedio_segundos),
-      tiempo_minimo: formatTiempo(stats.tiempo_minimo_segundos),
-      tiempo_maximo: formatTiempo(stats.tiempo_maximo_segundos),
-      total_pedidos_analizados: parseInt(stats.total_pedidos),
-      distribucion_por_estado: distribucionResult.rows.map(row => ({
-        estado: row.estado_final,
-        cantidad: parseInt(row.cantidad),
-        porcentaje: parseFloat(((parseInt(row.cantidad) / parseInt(stats.total_pedidos)) * 100).toFixed(2)),
-        tiempo_promedio: formatTiempo(row.tiempo_promedio_segundos)
-      })),
-      distribucion_por_tiempo: rangosTiempoResult.rows.map(row => ({
-        rango: row.rango_tiempo.replace('menos_', 'Menos de ').replace('mas_', 'Más de ')
-          .replace('5_10min', '5-10 min').replace('10_15min', '10-15 min')
-          .replace('15_20min', '15-20 min').replace('20_30min', '20-30 min'),
-        cantidad: parseInt(row.cantidad),
-        porcentaje: parseFloat(((parseInt(row.cantidad) / parseInt(stats.total_pedidos)) * 100).toFixed(2))
-      })),
-      periodo: {
-        desde: fechaInicio.toISOString(),
-        hasta: fechaFin.toISOString(),
-        nombre: period || 'personalizado'
-      }
+      count: 0,
+      promedio_segundos: 0,
+      promedio_minutos: 0
     });
     
   } catch (error) {
-    console.error("❌ Error al obtener estadísticas de tiempo de procesamiento:", error);
+    console.error("❌ Error al obtener tiempo promedio:", error);
     return res.status(500).json({
-      error: "Error al obtener estadísticas de tiempo de procesamiento",
+      error: "Error al obtener tiempo promedio de procesamiento",
       details: error.message
     });
   }
@@ -946,9 +782,19 @@ router.get("/pedidos/tiempo-procesamiento", async (req, res) => {
 router.get("/pedidos/:id", async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Verificar explícitamente si la ruta es para 'resumen' y rechazarla apropiadamente
+    if (id === 'resumen') {
+      console.error("❌ Error: Intentando acceder a /pedidos/resumen a través de la ruta de ID");
+      return res.status(400).json({ 
+        error: `Parece que estás intentando acceder a la ruta de resumen. Usa /pedidos/resumen en lugar de /pedidos/:id`
+      });
+    }
     
     // Intentar convertir el ID a un número entero
-    if (isNaN(parseInt(id))) {
+    const pedidoId = parseInt(id);
+    if (isNaN(pedidoId)) {
+      console.error(`❌ ID de pedido inválido recibido: "${id}"`);
       return res.status(400).json({ 
         error: `ID de pedido inválido: "${id}". Se esperaba un número entero.`
       });
@@ -963,7 +809,7 @@ router.get("/pedidos/:id", async (req, res) => {
        FROM pedidos p
        INNER JOIN personas pe ON p.idpersona = pe.idpersonas
        WHERE p.idpedido = $1`,
-      [id]
+      [pedidoId]
     );
     
     if (pedidoResult.rows.length === 0) {
@@ -979,7 +825,7 @@ router.get("/pedidos/:id", async (req, res) => {
        FROM pedido_detalle pd
        INNER JOIN menu m ON pd.idplato = m.idplato
        WHERE pd.idpedido = $1`,
-      [id]
+      [pedidoId]
     );
     
     // Calcular total y formatear items

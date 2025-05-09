@@ -26,6 +26,7 @@ class OrderHistoryScreen extends StatelessWidget {
       showFilters: true,
       showDatePicker: true,
       showTotal: true,
+      role: 'admin',
     );
   }
 }

@@ -161,6 +161,8 @@ router.post("/login", async (req, res) => {
   try {
     const { email, contrasena } = req.body;
 
+    console.log(`📧 Intento de login con email: ${email}`);
+
     // Validación de los datos de entrada
     if (!email || !contrasena) {
       return res.status(400).json({ error: "Por favor, ingrese ambos campos." });
@@ -168,7 +170,7 @@ router.post("/login", async (req, res) => {
 
     // Consulta en la base de datos
     const { rows } = await pool.query(
-      `SELECT u.contrasena, u.idpersona, u.rol, p.nombre, p.apellido, p.cedula
+      `SELECT u.contrasena, u.idpersona, u.rol, p.nombre, p.apellido, p.cedula, p.email
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
        WHERE p.email = $1`,
@@ -176,24 +178,61 @@ router.post("/login", async (req, res) => {
     );
 
     if (rows.length === 0) {
+      console.log(`❌ Login fallido: email no encontrado: ${email}`);
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
     const usuario = rows[0];
+    console.log(`👤 Usuario encontrado: ${usuario.nombre} ${usuario.apellido}, email: ${usuario.email}`);
+    console.log(`👤 Rol en la base de datos: ${usuario.rol} (tipo: ${typeof usuario.rol})`);
 
     // Comparación de la contraseña
+    console.log(`🔐 Contraseña encriptada en BD: ${usuario.contrasena.substring(0, 15)}...`);
+    console.log(`🔐 Contraseña ingresada: ${contrasena.slice(0, 3)}${'*'.repeat(contrasena.length - 3)}`);
+    
+    try {
     const passwordMatch = await bcrypt.compare(contrasena, usuario.contrasena);
+      console.log(`🔍 Resultado de comparación de contraseñas: ${passwordMatch ? '✅ Coincide' : '❌ No coincide'}`);
 
     if (!passwordMatch) {
+        console.log(`❌ Login fallido: contraseña incorrecta para ${email}`);
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
+    } catch (bcryptError) {
+      console.error(`❌ Error en la comparación de contraseñas: ${bcryptError}`);
+      return res.status(500).json({ error: "Error en la verificación de credenciales" });
+    }
+
+    // Asegurar que el rol esté en un formato válido
+    let rolProcessed = usuario.rol;
+    
+    // Si el rol es string, procesarlo apropiadamente
+    if (typeof rolProcessed === 'string') {
+      // Si es un número en formato string, convertirlo a entero
+      if (/^\d+$/.test(rolProcessed)) {
+        rolProcessed = parseInt(rolProcessed, 10);
+      } else {
+        // Si es texto, mapearlo a valores numéricos
+        switch(rolProcessed.toLowerCase()) {
+          case 'admin': rolProcessed = 0; break;
+          case 'client': case 'cliente': rolProcessed = 1; break;
+          case 'cook': case 'cocinero': rolProcessed = 2; break;
+          case 'barista': rolProcessed = 3; break;
+          default: rolProcessed = 1; // Por defecto, cliente
+        }
+      }
+    }
+
+    console.log(`👤 Rol procesado: ${rolProcessed} (tipo: ${typeof rolProcessed})`);
 
     // Generar el token JWT
     const token = jwt.sign(
-      { id: usuario.idpersona, rol: usuario.rol },
+      { id: usuario.idpersona, rol: rolProcessed },
       'monito',
       { expiresIn: '1h' }
     );
+
+    console.log(`✅ Login exitoso para: ${email}, rol: ${rolProcessed}`);
 
     // Respuesta con el token y los datos del usuario
     return res.json({
@@ -202,7 +241,7 @@ router.post("/login", async (req, res) => {
       nombre: usuario.nombre,
       apellido: usuario.apellido,
       cedula: usuario.cedula,
-      rol: usuario.rol, // Aquí devuelves el rol del usuario
+      rol: rolProcessed, // Enviar el rol procesado como número
     });
 
   } catch (error) {
@@ -451,15 +490,15 @@ router.put("/users/:id", async (req, res) => {
       const updateValues = [];
       const queryParams = [];
       
-      if (rol) {
-        // Validar que el rol sea válido
-        let rolToSave = rol;
-        // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
-        if (!["0", "1", "2", "3"].includes(rol.toString())) {
-          console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
-          rolToSave = "1";
-        }
-        
+    if (rol) {
+      // Validar que el rol sea válido
+      let rolToSave = rol;
+      // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
+      if (!["0", "1", "2", "3"].includes(rol.toString())) {
+        console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
+        rolToSave = "1";
+      }
+      
         updateValues.push(` rol = $${updateValues.length + 1}`);
         queryParams.push(rolToSave);
         console.log(`✅ Rol actualizado a: ${rolToSave}`);
@@ -479,7 +518,7 @@ router.put("/users/:id", async (req, res) => {
         updateUserQuery += updateValues.join(',');
         updateUserQuery += ` WHERE idpersona = $${queryParams.length + 1} RETURNING *`;
         queryParams.push(id);
-        
+      
         const updateUserResult = await pool.query(updateUserQuery, queryParams);
       }
     }

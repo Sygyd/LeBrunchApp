@@ -126,6 +126,7 @@ class UserService {
   Future<List<Map<String, dynamic>>> _getUsersFromLogin() async {
     try {
       final baseUrl = await _getApiBaseUrl();
+      print('🔄 Usando método alternativo para obtener usuarios...');
 
       // Intentar obtener al usuario administrador (sabemos que existe)
       final adminResponse = await http
@@ -140,7 +141,9 @@ class UserService {
           .timeout(const Duration(seconds: 5));
 
       if (adminResponse.statusCode == 200) {
+        print('✅ Login exitoso para admin@lebrunch.com');
         final adminData = json.decode(adminResponse.body);
+        print('🔑 Datos del admin: ${adminData.toString()}');
         int adminRol =
             adminData['rol'] is String
                 ? _getRolFromString(adminData['rol'])
@@ -160,19 +163,19 @@ class UserService {
 
         // Intentar obtener otros usuarios conocidos si es posible
         try {
+          print('🔄 Intentando obtener usuario cocinero...');
           final cookResponse = await http
               .post(
                 Uri.parse('$baseUrl/login'),
                 headers: {'Content-Type': 'application/json'},
-                body: json.encode({
-                  "email": "cocinero@lebrunch.com",
-                  "contrasena": "cocinero123",
-                }),
+                body: json.encode({"email": "cook", "contrasena": "cook123"}),
               )
               .timeout(const Duration(seconds: 3));
 
+          print('📝 Respuesta para cocinero: ${cookResponse.statusCode}');
           if (cookResponse.statusCode == 200) {
             final cookData = json.decode(cookResponse.body);
+            print('🔑 Datos del cocinero: ${cookData.toString()}');
             int cookRol =
                 cookData['rol'] is String
                     ? _getRolFromString(cookData['rol'])
@@ -183,28 +186,36 @@ class UserService {
               'nombre': cookData['nombre'],
               'apellido': cookData['apellido'],
               'cedula': cookData['cedula'],
-              'email': "cocinero@lebrunch.com",
+              'email': "cook",
               'rol': cookRol,
             });
+            print('✅ Usuario cocinero agregado correctamente');
+          } else {
+            print(
+              '❌ No se pudo obtener usuario cocinero: ${cookResponse.body}',
+            );
           }
-        } catch (_) {
-          // Ignorar error si no se puede obtener el cocinero
+        } catch (e) {
+          print('❌ Error al obtener cocinero: $e');
         }
 
         try {
+          print('🔄 Intentando obtener usuario barista...');
           final baristaResponse = await http
               .post(
                 Uri.parse('$baseUrl/login'),
                 headers: {'Content-Type': 'application/json'},
                 body: json.encode({
-                  "email": "barista@lebrunch.com",
+                  "email": "barista",
                   "contrasena": "barista123",
                 }),
               )
               .timeout(const Duration(seconds: 3));
 
+          print('📝 Respuesta para barista: ${baristaResponse.statusCode}');
           if (baristaResponse.statusCode == 200) {
             final baristaData = json.decode(baristaResponse.body);
+            print('🔑 Datos del barista: ${baristaData.toString()}');
             int baristaRol =
                 baristaData['rol'] is String
                     ? _getRolFromString(baristaData['rol'])
@@ -215,16 +226,25 @@ class UserService {
               'nombre': baristaData['nombre'],
               'apellido': baristaData['apellido'],
               'cedula': baristaData['cedula'],
-              'email': "barista@lebrunch.com",
+              'email': "barista",
               'rol': baristaRol,
             });
+            print('✅ Usuario barista agregado correctamente');
+          } else {
+            print(
+              '❌ No se pudo obtener usuario barista: ${baristaResponse.body}',
+            );
           }
-        } catch (_) {
-          // Ignorar error si no se puede obtener el barista
+        } catch (e) {
+          print('❌ Error al obtener barista: $e');
         }
 
+        print(
+          '📋 Total usuarios obtenidos por método alternativo: ${users.length}',
+        );
         return users;
       } else {
+        print('❌ No se pudo obtener usuario admin: ${adminResponse.body}');
         // Si no podemos obtener información del servidor, devolver lista vacía
         return [];
       }

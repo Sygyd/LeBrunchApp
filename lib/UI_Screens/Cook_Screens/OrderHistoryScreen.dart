@@ -10,7 +10,10 @@ class OrderHistoryScreen extends StatelessWidget {
       title: 'Historial de Pedidos',
       isAdminView: false,
       showFilters: true,
+      showDatePicker: true,
       showTotal: false,
+      hideAppBar: true,
+      role: 'cook',
     );
   }
 }

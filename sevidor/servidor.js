@@ -7,6 +7,10 @@ const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
 const pedidosRoutes = require("./pedidos");
 
+// Configuración de zona horaria Venezuela (GMT-4)
+process.env.TZ = 'America/Caracas';
+console.log(`🕒 Zona horaria configurada: ${process.env.TZ} - Hora actual: ${new Date().toLocaleString()}`);
+
 // Configuración del servidor
 const ip = '192.168.1.121';
 const port = 3000;
@@ -832,7 +836,8 @@ app.get('/db-status', async (req, res) => {
     res.status(200).json({ 
       status: 'ok',
       message: 'Conexión a PostgreSQL correcta',
-      timestamp: result.rows[0].now
+      timestamp: result.rows[0].now,
+      timezone: process.env.TZ || 'No configurada'
     });
   } catch (error) {
     res.status(500).json({ 

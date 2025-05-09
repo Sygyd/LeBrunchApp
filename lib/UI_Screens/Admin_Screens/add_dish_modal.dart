@@ -6,7 +6,7 @@ import '/Api_services/menu/add_dish_service.dart';
 
 class AddDishModal extends StatefulWidget {
   final Function onSuccess;
-  final Map<String, dynamic>? dish; // Plato opcional para edición
+  final Map<String, dynamic>? dish; // Plato/bebida opcional para edición
 
   const AddDishModal({super.key, required this.onSuccess, this.dish});
 
@@ -24,8 +24,12 @@ class _AddDishModalState extends State<AddDishModal> {
   File? _selectedImage;
   String? _selectedCategory;
   bool _isLoading = false;
+  bool _isNewItem = false;
+  bool _isDrink = false;
+  String _itemType = 'plato';
 
-  final List<String> _categories = [
+  // Categorías de platos
+  final List<String> _dishCategories = [
     'Tablas',
     'Panquecas',
     'Tostadas francesas',
@@ -33,17 +37,54 @@ class _AddDishModalState extends State<AddDishModal> {
     'Omelettes',
   ];
 
+  // Categorías de bebidas
+  final List<String> _drinkCategories = [
+    'Expresos',
+    'Frapuccinos',
+    'Cold Brew',
+    'Jugos',
+  ];
+
+  // Lista actual de categorías
+  List<String> _categories = [];
+
   @override
   void initState() {
     super.initState();
+
+    // Determinar si es una bebida basado en la categoría o el marcador especial
     if (widget.dish != null) {
-      // Si se está editando un plato, cargar sus datos
-      _nameController.text = widget.dish!['nombre'];
-      _priceController.text = widget.dish!['precio'].toString();
-      _ingredientsController.text = widget.dish!['ingredientes'];
-      _selectedCategory = widget.dish!['categoria'];
-      _isAvailable = widget.dish!['disponibilidad'];
+      final category = widget.dish!['categoria'] ?? '';
+      final isNewItem = widget.dish!['_isNewItem'] ?? false;
+      final itemType = widget.dish!['_itemType'] ?? 'plato';
+
+      _isNewItem = isNewItem;
+      _itemType = itemType;
+      _isDrink = _isDrinkCategory(category) || itemType == 'bebida';
+
+      // Establecer las categorías correctas según sea plato o bebida
+      _categories = _isDrink ? _drinkCategories : _dishCategories;
+
+      // Solo cargar datos si no es un nuevo ítem
+      if (!_isNewItem) {
+        _nameController.text = widget.dish!['nombre'] ?? '';
+        _priceController.text = widget.dish!['precio']?.toString() ?? '';
+        _ingredientsController.text = widget.dish!['ingredientes'] ?? '';
+        _selectedCategory = category;
+        _isAvailable = widget.dish!['disponibilidad'] ?? true;
+      } else {
+        // Para nuevos items, establecer la categoría inicial
+        _selectedCategory = category;
+      }
+    } else {
+      // Por defecto, mostrar categorías de platos
+      _categories = _dishCategories;
     }
+  }
+
+  // Función para determinar si una categoría corresponde a bebidas
+  bool _isDrinkCategory(String category) {
+    return _drinkCategories.contains(category);
   }
 
   Future<void> _pickImage() async {
@@ -75,8 +116,8 @@ class _AddDishModalState extends State<AddDishModal> {
     final addDishService = AddDishService();
     try {
       bool isSuccess;
-      if (widget.dish != null) {
-        // Si se está editando un plato, usar updateDish
+      if (widget.dish != null && !_isNewItem) {
+        // Si se está editando un plato existente, usar updateDish
         isSuccess = await addDishService.updateDish(
           id: widget.dish!['idplato'].toString(),
           nombre: _nameController.text,
@@ -87,7 +128,7 @@ class _AddDishModalState extends State<AddDishModal> {
           imagenFile: _selectedImage,
         );
       } else {
-        // Si se está agregando un plato, usar submitDish
+        // Si se está agregando un plato o bebida nuevo, usar submitDish
         isSuccess = await addDishService.submitDish(
           nombre: _nameController.text,
           categoria: _selectedCategory ?? '',
@@ -100,7 +141,7 @@ class _AddDishModalState extends State<AddDishModal> {
 
       if (isSuccess && mounted) {
         widget.onSuccess();
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -120,7 +161,7 @@ class _AddDishModalState extends State<AddDishModal> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isEditing = widget.dish != null;
+    final isEditing = widget.dish != null && !_isNewItem;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
@@ -155,7 +196,7 @@ class _AddDishModalState extends State<AddDishModal> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isEditing ? 'Editar Plato' : 'Nuevo Plato',
+                    isEditing ? 'Editar $_itemType' : 'Nueva $_itemType',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.primary,
@@ -163,7 +204,7 @@ class _AddDishModalState extends State<AddDishModal> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(false),
                   ),
                 ],
               ),
@@ -216,7 +257,9 @@ class _AddDishModalState extends State<AddDishModal> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                Icons.add_photo_alternate,
+                                _isDrink
+                                    ? Icons.local_cafe
+                                    : Icons.add_photo_alternate,
                                 size: 50,
                                 color: theme.colorScheme.primary,
                               ),
@@ -238,35 +281,27 @@ class _AddDishModalState extends State<AddDishModal> {
               TextFormField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Nombre del plato',
+                  labelText: 'Nombre de ${_isDrink ? 'la bebida' : 'l plato'}',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   prefixIcon: Icon(
-                    Icons.restaurant_menu,
+                    _isDrink ? Icons.local_cafe : Icons.restaurant_menu,
                     color: theme.colorScheme.primary,
                   ),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Por favor, ingresa el nombre del plato';
+                    return 'Por favor ingresa un nombre';
                   }
                   return null;
                 },
               ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 16),
 
               // Categoría
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
-                items:
-                    _categories.map((category) {
-                      return DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      );
-                    }).toList(),
-                onChanged: (value) => setState(() => _selectedCategory = value),
                 decoration: InputDecoration(
                   labelText: 'Categoría',
                   border: OutlineInputBorder(
@@ -277,21 +312,35 @@ class _AddDishModalState extends State<AddDishModal> {
                     color: theme.colorScheme.primary,
                   ),
                 ),
+                items:
+                    _categories.map((String category) {
+                      return DropdownMenuItem<String>(
+                        value: category,
+                        child: Text(category),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedCategory = newValue;
+                  });
+                },
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Por favor, selecciona una categoría';
+                    return 'Por favor selecciona una categoría';
                   }
                   return null;
                 },
               ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 16),
 
               // Precio
               TextFormField(
                 controller: _priceController,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
-                  labelText: 'Precio (\$)',
+                  labelText: 'Precio',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -302,88 +351,103 @@ class _AddDishModalState extends State<AddDishModal> {
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Por favor, ingresa el precio';
+                    return 'Por favor ingresa un precio';
+                  }
+                  try {
+                    double.parse(value);
+                  } catch (e) {
+                    return 'Ingresa un precio válido';
                   }
                   return null;
                 },
               ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 16),
 
               // Ingredientes
               TextFormField(
                 controller: _ingredientsController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Ingredientes',
+                  labelText: _isDrink ? 'Descripción' : 'Ingredientes',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  prefixIcon: Icon(
-                    Icons.list_alt,
-                    color: theme.colorScheme.primary,
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.only(bottom: 40),
+                    child: Icon(
+                      _isDrink ? Icons.description : Icons.list_alt,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                  alignLabelWithHint: true,
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Por favor, ingresa los ingredientes';
+                    return _isDrink
+                        ? 'Por favor ingresa una descripción'
+                        : 'Por favor ingresa los ingredientes';
                   }
                   return null;
                 },
               ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 16),
 
               // Disponibilidad
               SwitchListTile(
-                title: const Text('Disponible en el menú'),
-                subtitle: Text(
-                  _isAvailable
-                      ? 'El plato será visible para los clientes'
-                      : 'El plato no será visible para los clientes',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                title: const Text('Disponible'),
                 value: _isAvailable,
-                onChanged: (value) => setState(() => _isAvailable = value),
-                activeColor: theme.colorScheme.primary,
+                onChanged: (bool value) {
+                  setState(() {
+                    _isAvailable = value;
+                  });
+                },
                 secondary: Icon(
-                  _isAvailable ? Icons.check_circle : Icons.cancel,
-                  color: _isAvailable ? Colors.green : Colors.red,
+                  Icons.check_circle,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Botón de envío
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitDish,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+              // Botones de acción
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(
+                      'Cancelar',
+                      style: TextStyle(color: theme.colorScheme.error),
                     ),
                   ),
-                  child:
-                      _isLoading
-                          ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
+                  const SizedBox(width: 16),
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _submitDish,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                    child:
+                        _isLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                            : Text(
+                              isEditing ? 'Actualizar' : 'Guardar',
+                              style: const TextStyle(
+                                fontFamily: 'MADE TOMMY',
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          )
-                          : Text(
-                            isEditing ? 'Actualizar Plato' : 'Agregar Plato',
-                          ),
-                ),
+                  ),
+                ],
               ),
             ],
           ),

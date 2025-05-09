@@ -363,14 +363,30 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         ];
       case 2: // Cocinero
         return [
-          CookHomeScreen(userName: _userName ?? 'Cocinero'),
+          CookHomeScreen(
+            userName: _userName ?? 'Cocinero',
+            onNavigate: (index) {
+              setState(() {
+                _currentIndex = index;
+                _pageController.jumpToPage(index);
+              });
+            },
+          ),
           const ActiveOrdersScreen(),
           const OrderHistoryScreen(),
           const CookProfileScreen(),
         ];
       case 3: // Barista
         return [
-          BaristaHomeScreen(userName: _userName ?? 'Barista'),
+          BaristaHomeScreen(
+            userName: _userName ?? 'Barista',
+            onNavigate: (index) {
+              setState(() {
+                _currentIndex = index;
+                _pageController.jumpToPage(index);
+              });
+            },
+          ),
           const BaristaActiveOrdersScreen(),
           const BaristaOrderHistoryScreen(),
           const BaristaProfileScreen(),
