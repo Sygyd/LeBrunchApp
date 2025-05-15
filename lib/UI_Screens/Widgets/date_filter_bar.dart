@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'dart:developer' as developer;
+import 'dart:async'; // Para StreamSubscription
+import '../../services/order_status_service.dart'; // Importar el servicio
 
 // Exponer el tipo para uso con GlobalKey
 typedef DateFilterBarState = _DateFilterBarState;
@@ -27,11 +29,44 @@ class DateFilterBar extends StatefulWidget {
 class _DateFilterBarState extends State<DateFilterBar> {
   late String _selectedFilter;
   List<DateTime?> _selectedDates = [];
+  final OrderStatusService _statusService =
+      OrderStatusService(); // Instancia del servicio
+  StreamSubscription?
+  _orderCompletedSubscription; // Suscripción a cambios de estado
 
   @override
   void initState() {
     super.initState();
     _selectedFilter = widget.initialFilter;
+
+    // Suscribirse a cambios de estado de pendiente a completado
+    _orderCompletedSubscription = _statusService.onOrderCompleted.listen(
+      _handleOrderCompleted,
+    );
+  }
+
+  @override
+  void dispose() {
+    _orderCompletedSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Cuando un pedido se completa, actualizar si estamos en un filtro relevante
+  void _handleOrderCompleted(int orderId) {
+    developer.log(
+      '📣 DateFilterBar: Recibida notificación de pedido #$orderId completado',
+      name: 'DateFilterBar',
+    );
+
+    // Si estamos viendo pedidos pendientes, actualizamos para reflejar el cambio
+    if (_selectedFilter == 'pendientes') {
+      // Notificar al padre que debe actualizar los datos
+      widget.onFilterChanged(_selectedFilter);
+      developer.log(
+        '🔄 Solicitando recarga de pedidos pendientes debido a un cambio de estado',
+        name: 'DateFilterBar',
+      );
+    }
   }
 
   // Método para actualizar el filtro programáticamente

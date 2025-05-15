@@ -1,13 +1,27 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class MenuService {
+  // Método para obtener la URL base del servidor
+  Future<String> _getBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverIp =
+        prefs.getString('serverIp') ??
+        dotenv.env['NODE_SERVER_IP'] ??
+        '192.168.1.121';
+    final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
+    final baseUrl = 'http://$serverIp:$serverPort';
+    print('🌐 URL base del servidor: $baseUrl');
+    return baseUrl;
+  }
+
   Future<List<Map<String, dynamic>>> getDishes() async {
     try {
-      final response = await http.get(
-        Uri.parse('http://192.168.1.121:3000/menu'),
-      );
+      final baseUrl = await _getBaseUrl();
+      final response = await http.get(Uri.parse('$baseUrl/menu'));
 
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
@@ -29,10 +43,8 @@ class MenuService {
     required File? imagenFile,
   }) async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('http://192.168.1.121:3000/menu'),
-      );
+      final baseUrl = await _getBaseUrl();
+      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/menu'));
 
       request.fields['nombre'] = nombre;
       request.fields['categoria'] = categoria;

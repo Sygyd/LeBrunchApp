@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async'; // Importar dart:async para TimeoutException
+import 'package:http_parser/http_parser.dart';
+import 'package:flutter/foundation.dart';
+import '../../services/order_status_service.dart'; // Importar el servicio de notificación
 
 /// Servicio para la gestión de pedidos (órdenes)
 ///
@@ -22,6 +26,8 @@ class OrdersService {
   final Map<String, String> _defaultHeaders = {
     'Content-Type': 'application/json',
   };
+  final OrderStatusService _statusService =
+      OrderStatusService(); // Instancia del servicio de notificación
 
   // Constructor con inicialización de URL base
   OrdersService([this.baseUrl]) {
@@ -471,11 +477,9 @@ class OrdersService {
   // Método simplificado que consulta directamente completados y cancelados
   Future<List<Map<String, dynamic>>> _queryOrdersDirectSimple() async {
     try {
-      print(
-        '📊 Intentando consulta simplificada para pedidos completados y cancelados',
-      );
+      print('📊 Intentando consulta simplificada para todos los pedidos');
 
-      // Consulta SQL simplificada para obtener solo pedidos completados y cancelados
+      // Consulta SQL simplificada para obtener todos los pedidos
       final sql = '''
         SELECT 
           p.idpedido, 
@@ -677,330 +681,68 @@ class OrdersService {
 
   // Obtener resumen de pedidos por período
   Future<Map<String, dynamic>> getOrdersSummary({
-    String? period, // 'day', 'week', 'month', 'year', 'all'
+    String? period,
     String? customStartDate,
     String? customEndDate,
+    String? categoria,
   }) async {
     try {
-      print('📊 Solicitando resumen de pedidos. Periodo: ${period ?? 'all'}');
+      print(
+        '📊 Obteniendo resumen de pedidos: period=$period, startDate=$customStartDate, endDate=$customEndDate, categoria=$categoria',
+      );
 
-      // Si period es null o 'all', vamos a obtener todos los datos sin filtros de fecha
-      final bool obtenerTodo = period == null || period == 'all';
-
-      // Construir parámetros de consulta
       final queryParams = <String, String>{};
-      if (!obtenerTodo) queryParams['period'] = period!;
+      if (period != null && period != 'custom') queryParams['period'] = period;
       if (customStartDate != null) queryParams['startDate'] = customStartDate;
       if (customEndDate != null) queryParams['endDate'] = customEndDate;
-
-      try {
-        // Intentar obtener datos desde el endpoint específico
-        final response = await _get(
-          'pedidos/resumen',
-          queryParams: queryParams,
-        );
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          print('✅ Datos de resumen obtenidos correctamente de la API');
-
-          // Verificar y completar la estructura del objeto
-          if (data is Map) {
-            // Convertir Map<dynamic, dynamic> a Map<String, dynamic>
-            final Map<String, dynamic> typedData = Map<String, dynamic>.from(
-              data,
-            );
-            _completarDatosFaltantes(typedData);
-            _imprimirDetallesResumen(typedData);
-            return typedData;
-          }
-        }
-
-        print(
-          '⚠️ Error o respuesta vacía del endpoint de resumen, utilizando consulta directa',
-        );
-      } catch (e) {
-        print('⚠️ Error al obtener resumen desde API: $e');
+      if (categoria != null && categoria != 'todos') {
+        queryParams['categoria'] = categoria == 'comida' ? 'comida' : 'bebida';
       }
 
-      // Si falla el endpoint, generar datos directamente con SQL
-      return await _fetchSummaryUsingDirectSQL(
-        obtenerTodo ? 'all' : period!,
-        customStartDate,
-        customEndDate,
-      );
+      final baseUrl = await getBaseUrl;
+      final uri = Uri.parse(
+        '$baseUrl/pedidos/resumen',
+      ).replace(queryParameters: queryParams);
+      print('🔍 URL de consulta: $uri');
+
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('✅ Resumen obtenido: $data');
+        return data;
+      } else {
+        print(
+          '❌ Error al obtener resumen: ${response.statusCode} - ${response.body}',
+        );
+        return {
+          'totalPedidos': 0,
+          'totalVentas': 0.0,
+          'ticketPromedio': 0.0,
+          'minPedido': 0.0,
+          'maxPedido': 0.0,
+          'periodo': {
+            'inicio':
+                customStartDate ?? DateTime.now().toString().split(' ')[0],
+            'fin': customEndDate ?? DateTime.now().toString().split(' ')[0],
+            'tipo': period ?? 'custom',
+          },
+        };
+      }
     } catch (e) {
-      print('⚠️ Error global al obtener resumen: $e');
-      return <String, dynamic>{
+      print('❌ Error al obtener resumen de pedidos: $e');
+      return {
         'totalPedidos': 0,
         'totalVentas': 0.0,
         'ticketPromedio': 0.0,
-        'error': e.toString(),
+        'minPedido': 0.0,
+        'maxPedido': 0.0,
+        'periodo': {
+          'inicio': customStartDate ?? DateTime.now().toString().split(' ')[0],
+          'fin': customEndDate ?? DateTime.now().toString().split(' ')[0],
+          'tipo': period ?? 'custom',
+        },
       };
-    }
-  }
-
-  // Completar datos faltantes en el resumen
-  void _completarDatosFaltantes(Map<String, dynamic> data) {
-    final validKeys = ['totalPedidos', 'totalVentas', 'ticketPromedio'];
-    for (var key in validKeys) {
-      if (!data.containsKey(key)) {
-        print('⚠️ Falta la clave $key en la respuesta');
-        data[key] = 0;
-      }
-    }
-  }
-
-  // Imprimir detalles del resumen para debugging
-  void _imprimirDetallesResumen(Map<String, dynamic> data) {
-    print('📊 Total de pedidos: ${data['totalPedidos']}');
-    print('📊 Total de ventas: ${data['totalVentas']}');
-    print('📊 Ticket promedio: ${data['ticketPromedio']}');
-
-    // Datos de distribución
-    if (data.containsKey('horasPico'))
-      print('⏰ Horas pico: ${data['horasPico']}');
-    if (data.containsKey('diasPico'))
-      print('📅 Días pico: ${data['diasPico']}');
-    if (data.containsKey('semanasPico'))
-      print('🗓️ Semanas pico: ${data['semanasPico']}');
-    if (data.containsKey('mesesPico'))
-      print('📆 Meses pico: ${data['mesesPico']}');
-  }
-
-  // Método para generar resumen usando SQL directo
-  Future<Map<String, dynamic>> _fetchSummaryUsingDirectSQL(
-    String period,
-    String? customStartDate,
-    String? customEndDate,
-  ) async {
-    print('🔍 Generando resumen usando SQL directo, periodo: $period');
-
-    try {
-      // Determinar la cláusula WHERE basada en el período o fechas personalizadas
-      String whereClause = _generarClausulaWherePorPeriodo(
-        period,
-        customStartDate,
-        customEndDate,
-      );
-
-      // Consulta SQL para obtener resumen básico
-      String sql = '''
-        SELECT 
-          COUNT(DISTINCT p.idpedido) as total_pedidos,
-          COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
-        FROM 
-          pedidos p
-        LEFT JOIN 
-          pedido_detalle pd ON p.idpedido = pd.idpedido
-        WHERE 
-          $whereClause
-          AND p.estado = 'completado'
-      ''';
-
-      final result = await _executeQuery(sql);
-      final rows = _extractQueryResults(result);
-
-      if (rows.isNotEmpty) {
-        final row = rows[0];
-
-        // Convertir datos a tipos adecuados
-        int totalPedidos = int.tryParse(row['total_pedidos'].toString()) ?? 0;
-        double totalVentas =
-            double.tryParse(row['total_ventas'].toString()) ?? 0.0;
-        double ticketPromedio =
-            totalPedidos > 0 ? totalVentas / totalPedidos : 0.0;
-
-        // Preparar el resumen
-        final summary = {
-          'totalPedidos': totalPedidos,
-          'totalVentas': totalVentas,
-          'ticketPromedio': ticketPromedio,
-        };
-
-        // Agregar datos de distribución según el período
-        if (period != 'all') {
-          await _addDistributionData(summary, period, whereClause);
-        } else {
-          // Para 'all', obtener datos generales de distribución por meses
-          await _addAllTimeDistribution(summary);
-        }
-
-        print('✅ Resumen generado exitosamente mediante SQL directo');
-        return summary;
-      }
-
-      print('❌ Error al generar resumen usando SQL directo');
-      return {'totalPedidos': 0, 'totalVentas': 0.0, 'ticketPromedio': 0.0};
-    } catch (e) {
-      print('❌ Error al generar resumen usando SQL directo: $e');
-      return {'totalPedidos': 0, 'totalVentas': 0.0, 'ticketPromedio': 0.0};
-    }
-  }
-
-  // Generar cláusula WHERE según el período seleccionado
-  String _generarClausulaWherePorPeriodo(
-    String period,
-    String? customStartDate,
-    String? customEndDate,
-  ) {
-    if (customStartDate != null && customEndDate != null) {
-      // Usar fechas personalizadas
-      print('📅 Usando rango personalizado: $customStartDate a $customEndDate');
-      return "p.fecha >= '$customStartDate'::date AND p.fecha <= '$customEndDate'::date + interval '1 day'";
-    } else if (period == 'all') {
-      // No aplicar filtro de fechas para obtener todo
-      print('📅 Obteniendo TODOS los datos sin filtro de fechas');
-      return "1=1"; // Condición siempre verdadera
-    } else {
-      // Calcular cláusula where basada en período
-      switch (period) {
-        case 'day':
-          return "p.fecha >= CURRENT_DATE AND p.fecha < CURRENT_DATE + interval '1 day'";
-        case 'week':
-          return "p.fecha >= CURRENT_DATE - INTERVAL '7 days' AND p.fecha < CURRENT_TIMESTAMP";
-        case 'month':
-          return "p.fecha >= DATE_TRUNC('month', CURRENT_DATE) AND p.fecha < CURRENT_TIMESTAMP";
-        case 'year':
-          return "p.fecha >= DATE_TRUNC('year', CURRENT_DATE) AND p.fecha < CURRENT_TIMESTAMP";
-        default:
-          return "p.fecha >= CURRENT_DATE AND p.fecha < CURRENT_DATE + interval '1 day'";
-      }
-    }
-  }
-
-  // Método para agregar datos de distribución al resumen
-  Future<void> _addDistributionData(
-    Map<String, dynamic> summary,
-    String period,
-    String whereClause,
-  ) async {
-    try {
-      String distributionSQL;
-      String resultKey;
-
-      // Determinar la consulta SQL según el período
-      switch (period) {
-        case 'day':
-          distributionSQL = '''
-            SELECT 
-              TO_CHAR(p.fecha, 'HH24:MI') as hora,
-              COUNT(DISTINCT p.idpedido) as pedidos
-            FROM 
-              pedidos p
-            WHERE 
-              $whereClause
-              AND p.estado = 'completado'
-            GROUP BY 
-              TO_CHAR(p.fecha, 'HH24:MI')
-            ORDER BY 
-              pedidos DESC
-            LIMIT 10
-          ''';
-          resultKey = 'horasPico';
-          break;
-
-        case 'week':
-          distributionSQL = '''
-            SELECT 
-              TO_CHAR(p.fecha, 'Day') as dia,
-              COUNT(DISTINCT p.idpedido) as pedidos
-            FROM 
-              pedidos p
-            WHERE 
-              $whereClause
-              AND p.estado = 'completado'
-            GROUP BY 
-              TO_CHAR(p.fecha, 'Day')
-            ORDER BY 
-              pedidos DESC
-          ''';
-          resultKey = 'diasPico';
-          break;
-
-        case 'month':
-          distributionSQL = '''
-            SELECT 
-              CONCAT('Semana ', TO_CHAR(p.fecha, 'W')) as semana,
-              COUNT(DISTINCT p.idpedido) as pedidos
-            FROM 
-              pedidos p
-            WHERE 
-              $whereClause
-              AND p.estado = 'completado'
-            GROUP BY 
-              TO_CHAR(p.fecha, 'W')
-            ORDER BY 
-              TO_CHAR(p.fecha, 'W')::integer
-          ''';
-          resultKey = 'semanasPico';
-          break;
-
-        case 'year':
-          distributionSQL = '''
-            SELECT 
-              TO_CHAR(p.fecha, 'Month') as mes,
-              COUNT(DISTINCT p.idpedido) as pedidos
-            FROM 
-              pedidos p
-            WHERE 
-              $whereClause
-              AND p.estado = 'completado'
-            GROUP BY 
-              TO_CHAR(p.fecha, 'Month')
-            ORDER BY 
-              MIN(DATE_TRUNC('month', p.fecha))
-          ''';
-          resultKey = 'mesesPico';
-          break;
-
-        default:
-          return; // No agregar distribución para períodos no reconocidos
-      }
-
-      // Ejecutar la consulta
-      final data = await _executeQuery(distributionSQL);
-      final result = _extractQueryResults(data);
-
-      if (result.isNotEmpty) {
-        summary[resultKey] = result;
-        print('✅ Datos de distribución agregados: ${result.length} registros');
-      }
-    } catch (e) {
-      print('⚠️ Error al obtener datos de distribución: $e');
-    }
-  }
-
-  // Método para agregar distribución de "all"
-  Future<void> _addAllTimeDistribution(Map<String, dynamic> summary) async {
-    try {
-      // Obtener distribución por meses de todo el tiempo
-      String sql = '''
-        SELECT 
-          TO_CHAR(p.fecha, 'YYYY-MM') as periodo,
-          COUNT(DISTINCT p.idpedido) as pedidos
-        FROM 
-          pedidos p
-        WHERE 
-          p.estado = 'completado'
-        GROUP BY 
-          TO_CHAR(p.fecha, 'YYYY-MM')
-        ORDER BY 
-          periodo DESC
-        LIMIT 12
-      ''';
-
-      final data = await _executeQuery(sql);
-      final result = _extractQueryResults(data);
-
-      if (result.isNotEmpty) {
-        summary['periodosPico'] = result;
-        print(
-          '✅ Datos de distribución general agregados: ${result.length} registros',
-        );
-      }
-    } catch (e) {
-      print('⚠️ Error al obtener datos de distribución general: $e');
     }
   }
 
@@ -1028,17 +770,17 @@ class OrdersService {
       );
 
       final query = '''
-        SELECT 
-          idpedido,
-          estado,
-          fecha as timestamp_inicial,
-          EXTRACT(EPOCH FROM tiempo_procesamiento) as tiempo_segundos
-        FROM 
-          pedidos
-        WHERE 
-          idpedido = $orderId AND
-          tiempo_procesamiento IS NOT NULL
-        LIMIT 1
+            SELECT 
+              idpedido,
+              estado,
+              fecha as timestamp_inicial,
+              EXTRACT(EPOCH FROM tiempo_procesamiento) as tiempo_segundos
+            FROM 
+              pedidos
+            WHERE 
+              idpedido = $orderId AND
+              tiempo_procesamiento IS NOT NULL
+            LIMIT 1
       ''';
 
       final data = await _executeQuery(query);
@@ -1133,27 +875,27 @@ class OrdersService {
   // Estrategia 2: Consulta optimizada con INTERVAL
   Future<String?> _getAverageTimeOptimizedQuery() async {
     final query = '''
-      WITH PedidosCompletadosHoy AS (
-        SELECT 
-          idpedido,
-          tiempo_procesamiento,
-          fecha
-        FROM 
-          pedidos
-        WHERE 
-          estado = 'completado'
-          AND DATE(fecha) = CURRENT_DATE
-      )
-      SELECT 
-        COUNT(*) as count,
-        EXTRACT(EPOCH FROM AVG(
-          CASE 
-            WHEN tiempo_procesamiento IS NOT NULL THEN tiempo_procesamiento
-            ELSE CURRENT_TIMESTAMP - fecha
-          END
-        )) as promedio_segundos
-      FROM 
-        PedidosCompletadosHoy
+            WITH PedidosCompletadosHoy AS (
+              SELECT 
+                idpedido,
+                tiempo_procesamiento,
+                fecha
+              FROM 
+                pedidos
+              WHERE 
+                estado = 'completado'
+                AND DATE(fecha) = CURRENT_DATE
+            )
+            SELECT 
+              COUNT(*) as count,
+              EXTRACT(EPOCH FROM AVG(
+                CASE 
+                  WHEN tiempo_procesamiento IS NOT NULL THEN tiempo_procesamiento
+                  ELSE CURRENT_TIMESTAMP - fecha
+                END
+              )) as promedio_segundos
+            FROM 
+              PedidosCompletadosHoy
     ''';
 
     final data = await _executeQuery(query);
@@ -1184,10 +926,10 @@ class OrdersService {
   Future<String?> _getAverageTimeFromIndividualOrders() async {
     // Primero obtenemos IDs de pedidos completados hoy
     final pedidosQuery = '''
-      SELECT idpedido 
-      FROM pedidos 
-      WHERE estado = 'completado' 
-      AND DATE(fecha) = CURRENT_DATE
+            SELECT idpedido 
+            FROM pedidos 
+            WHERE estado = 'completado' 
+            AND DATE(fecha) = CURRENT_DATE
     ''';
 
     final pedidosData = await _executeQuery(pedidosQuery);
@@ -1204,10 +946,10 @@ class OrdersService {
     for (final pedido in pedidos) {
       final idPedido = pedido['idpedido'];
       final tiempoQuery = '''
-        SELECT EXTRACT(EPOCH FROM tiempo_procesamiento) as segundos
-        FROM pedidos 
-        WHERE idpedido = $idPedido 
-        AND tiempo_procesamiento IS NOT NULL
+                  SELECT EXTRACT(EPOCH FROM tiempo_procesamiento) as segundos
+                  FROM pedidos 
+                  WHERE idpedido = $idPedido 
+                  AND tiempo_procesamiento IS NOT NULL
       ''';
 
       final tiempoData = await _executeQuery(tiempoQuery);
@@ -1238,10 +980,10 @@ class OrdersService {
   // Estrategia 4: Valor aproximado basado en cantidad
   Future<String?> _getAverageTimeApproximated() async {
     final countQuery = '''
-      SELECT COUNT(*) as count
-      FROM pedidos 
-      WHERE estado = 'completado' 
-      AND DATE(fecha) = CURRENT_DATE
+            SELECT COUNT(*) as count
+            FROM pedidos 
+            WHERE estado = 'completado' 
+            AND DATE(fecha) = CURRENT_DATE
     ''';
 
     final countData = await _executeQuery(countQuery);
@@ -1266,7 +1008,19 @@ class OrdersService {
   // Actualizar el estado de un pedido (completado, cancelado, etc.)
   Future<bool> updateOrderStatus(int orderId, String newStatus) async {
     try {
-      print('🔄 Actualizando estado del pedido #$orderId a "$newStatus"');
+      // Obtener estado anterior para verificar si es un cambio de pendiente a completado
+      final estadoAnteriorQuery =
+          'SELECT estado FROM pedidos WHERE idpedido = $orderId';
+      final estadoAnteriorResult = await _executeQuery(estadoAnteriorQuery);
+      final estadoAnteriorRows = _extractQueryResults(estadoAnteriorResult);
+      final estadoAnterior =
+          estadoAnteriorRows.isNotEmpty
+              ? (estadoAnteriorRows[0]['estado'] ?? '').toString().toLowerCase()
+              : 'desconocido';
+
+      print(
+        '🔄 Actualizando estado del pedido #$orderId de "$estadoAnterior" a "$newStatus"',
+      );
 
       // Validar el estado
       final estadosValidos = [
@@ -1324,13 +1078,38 @@ class OrdersService {
           print(
             '✅ Verificación: El estado del pedido #$orderId es ahora "$estadoActual"',
           );
+
+          // Si es un cambio de pendiente a completado, notificar
+          if (estadoAnterior == 'pendiente' &&
+              newStatus.toLowerCase() == 'completado') {
+            print(
+              '🔔 Notificando cambio de pendiente a completado para pedido #$orderId',
+            );
+            _statusService.notifyOrderCompleted(orderId);
+          }
+
           return true;
         } else {
           print(
             '⚠️ Verificación: El estado del pedido #$orderId sigue siendo "$estadoActual" en lugar de "$newStatus"',
           );
           // Intentar método alternativo
-          return await _updateOrderStatusAlternative(orderId, newStatus);
+          final success = await _updateOrderStatusAlternative(
+            orderId,
+            newStatus,
+          );
+
+          // Si el método alternativo tuvo éxito y es un cambio de pendiente a completado, notificar
+          if (success &&
+              estadoAnterior == 'pendiente' &&
+              newStatus.toLowerCase() == 'completado') {
+            print(
+              '🔔 Notificando cambio de pendiente a completado para pedido #$orderId',
+            );
+            _statusService.notifyOrderCompleted(orderId);
+          }
+
+          return success;
         }
       }
 
@@ -1401,7 +1180,7 @@ class OrdersService {
         SET 
           $campoCompletado = $completado,
           $campoFecha = ${completado ? 'NOW()' : 'NULL'}
-        WHERE 
+          WHERE 
           idpedido = $pedidoId AND idplato = $platoId
         RETURNING *
       ''';
@@ -1480,16 +1259,16 @@ class OrdersService {
     try {
       // Obtener todos los ítems del pedido con su tipo
       final query = '''
-        SELECT 
-          pd.idplato, 
-          pd.completado_cocinero, 
-          pd.completado_barista,
-          m.tipo
-        FROM 
-          pedido_detalle pd
+              SELECT 
+                pd.idplato, 
+                pd.completado_cocinero,
+                pd.completado_barista,
+                m.tipo
+              FROM 
+                pedido_detalle pd 
         JOIN 
-          menu m ON pd.idplato = m.idplato
-        WHERE 
+                menu m ON pd.idplato = m.idplato 
+              WHERE 
           pd.idpedido = $pedidoId
       ''';
 
@@ -1766,5 +1545,115 @@ class OrdersService {
       print('❌ Error al obtener pedidos por tipo: $e');
       return [];
     }
+  }
+}
+
+class OrderSummary {
+  final int totalPedidos;
+  final double totalVentas;
+  final double ticketPromedio;
+  final double minPedido;
+  final double maxPedido;
+  final List<VentasPorHora> ventasPorHora;
+  final List<VentasPorCategoria> ventasPorCategoria;
+  final List<TicketPromedioPorDia> ticketPromedioPorDia;
+
+  OrderSummary({
+    required this.totalPedidos,
+    required this.totalVentas,
+    required this.ticketPromedio,
+    required this.minPedido,
+    required this.maxPedido,
+    required this.ventasPorHora,
+    required this.ventasPorCategoria,
+    required this.ticketPromedioPorDia,
+  });
+
+  factory OrderSummary.fromJson(Map<String, dynamic> json) {
+    return OrderSummary(
+      totalPedidos: json['totalPedidos'] ?? 0,
+      totalVentas: (json['totalVentas'] ?? 0).toDouble(),
+      ticketPromedio: (json['ticketPromedio'] ?? 0).toDouble(),
+      minPedido: (json['minPedido'] ?? 0).toDouble(),
+      maxPedido: (json['maxPedido'] ?? 0).toDouble(),
+      ventasPorHora:
+          (json['ventasPorHora'] as List<dynamic>?)
+              ?.map((x) => VentasPorHora.fromJson(x))
+              .toList() ??
+          [],
+      ventasPorCategoria:
+          (json['ventasPorCategoria'] as List<dynamic>?)
+              ?.map((x) => VentasPorCategoria.fromJson(x))
+              .toList() ??
+          [],
+      ticketPromedioPorDia:
+          (json['ticketPromedioPorDia'] as List<dynamic>?)
+              ?.map((x) => TicketPromedioPorDia.fromJson(x))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class VentasPorHora {
+  final int hora;
+  final int totalPedidos;
+  final double totalVentas;
+
+  VentasPorHora({
+    required this.hora,
+    required this.totalPedidos,
+    required this.totalVentas,
+  });
+
+  factory VentasPorHora.fromJson(Map<String, dynamic> json) {
+    return VentasPorHora(
+      hora: json['hora'] ?? 0,
+      totalPedidos: json['total_pedidos'] ?? 0,
+      totalVentas: (json['total_ventas'] ?? 0).toDouble(),
+    );
+  }
+}
+
+class VentasPorCategoria {
+  final String categoria;
+  final int totalPedidos;
+  final double totalVentas;
+
+  VentasPorCategoria({
+    required this.categoria,
+    required this.totalPedidos,
+    required this.totalVentas,
+  });
+
+  factory VentasPorCategoria.fromJson(Map<String, dynamic> json) {
+    return VentasPorCategoria(
+      categoria: json['categoria'] ?? '',
+      totalPedidos: json['total_pedidos'] ?? 0,
+      totalVentas: (json['total_ventas'] ?? 0).toDouble(),
+    );
+  }
+}
+
+class TicketPromedioPorDia {
+  final int diaSemana;
+  final int totalPedidos;
+  final double totalVentas;
+  final double ticketPromedio;
+
+  TicketPromedioPorDia({
+    required this.diaSemana,
+    required this.totalPedidos,
+    required this.totalVentas,
+    required this.ticketPromedio,
+  });
+
+  factory TicketPromedioPorDia.fromJson(Map<String, dynamic> json) {
+    return TicketPromedioPorDia(
+      diaSemana: json['dia_semana'] ?? 0,
+      totalPedidos: json['total_pedidos'] ?? 0,
+      totalVentas: (json['total_ventas'] ?? 0).toDouble(),
+      ticketPromedio: (json['ticket_promedio'] ?? 0).toDouble(),
+    );
   }
 }

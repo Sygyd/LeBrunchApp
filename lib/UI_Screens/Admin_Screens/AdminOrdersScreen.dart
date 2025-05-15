@@ -3,6 +3,7 @@ import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/order_detail_card.dart';
 import '../Widgets/background_scaffold.dart';
 import 'dart:async';
+import '../../services/order_status_service.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   const AdminOrdersScreen({super.key});
@@ -13,24 +14,45 @@ class AdminOrdersScreen extends StatefulWidget {
 
 class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   final OrdersService _ordersService = OrdersService();
+  final OrderStatusService _statusService = OrderStatusService();
   bool _isLoading = true;
   List<Map<String, dynamic>> _pendingOrders = [];
   Set<int> _expandedOrders = {};
   Timer? _refreshTimer;
   bool _autoRefresh = true;
   final Duration _refreshInterval = const Duration(seconds: 15);
+  StreamSubscription? _orderCompletedSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadPendingOrders();
     _startAutoRefresh();
+
+    _orderCompletedSubscription = _statusService.onOrderCompleted.listen((
+      orderId,
+    ) {
+      print(
+        '📣 AdminOrdersScreen: Notificación recibida - Pedido #$orderId completado',
+      );
+      _handleOrderCompleted(orderId);
+    });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _orderCompletedSubscription?.cancel();
     super.dispose();
+  }
+
+  void _handleOrderCompleted(int orderId) {
+    if (mounted) {
+      setState(() {
+        _pendingOrders.removeWhere((order) => order['idpedido'] == orderId);
+        _expandedOrders.remove(orderId);
+      });
+    }
   }
 
   void _startAutoRefresh() {
@@ -49,20 +71,16 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     });
 
     try {
-      // Listar IDs de los pedidos que ya están expandidos para mantenerlos así después de recargar
       final expandedOrderIds = Set<int>.from(_expandedOrders);
 
-      // Obtener todas las órdenes pendientes
       final orders = await _ordersService.getOrders(estado: 'pendiente');
 
-      // Lista de pedidos que deben ser actualizados automáticamente a completados
       List<int> ordersToComplete = [];
 
       print(
         '🔍 Verificando ${orders.length} pedidos pendientes para completado automático...',
       );
 
-      // Verificar todos los pedidos según las reglas establecidas
       for (var order in orders) {
         final orderId = order['idpedido'];
         final items = List<Map<String, dynamic>>.from(order['items'] ?? []);
@@ -77,20 +95,17 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         bool todosItemsComidaCompletados = true;
         bool todosItemsBebidaCompletados = true;
 
-        // Verificar cada ítem del pedido
         for (var item in items) {
           final tipo = item['tipo']?.toString().toLowerCase() ?? '';
 
           if (tipo == 'comida') {
             hayComida = true;
-            // Verificar si está completado por el cocinero
             final completadoCocinero = item['completado_cocinero'] ?? false;
             if (!completadoCocinero) {
               todosItemsComidaCompletados = false;
             }
           } else if (tipo == 'bebida') {
             hayBebida = true;
-            // Verificar si está completado por el barista
             final completadoBarista = item['completado_barista'] ?? false;
             if (!completadoBarista) {
               todosItemsBebidaCompletados = false;
@@ -98,10 +113,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           }
         }
 
-        // Aplicar las reglas para determinar si el pedido debe completarse automáticamente
         bool debeCompletarse = false;
 
-        // Regla 1: Si hay comida y bebida, ambas deben estar completadas
         if (hayComida && hayBebida) {
           if (todosItemsComidaCompletados && todosItemsBebidaCompletados) {
             debeCompletarse = true;
@@ -113,9 +126,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               'ℹ️ Pedido #$orderId mixto (comida y bebida): No todos los ítems están completados',
             );
           }
-        }
-        // Regla 2: Si solo hay comida, todos los ítems de comida deben estar completados
-        else if (hayComida && !hayBebida) {
+        } else if (hayComida && !hayBebida) {
           if (todosItemsComidaCompletados) {
             debeCompletarse = true;
             print(
@@ -126,9 +137,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               'ℹ️ Pedido #$orderId: Solo comida, faltan ítems por completar',
             );
           }
-        }
-        // Regla 3: Si solo hay bebida, todos los ítems de bebida deben estar completados
-        else if (!hayComida && hayBebida) {
+        } else if (!hayComida && hayBebida) {
           if (todosItemsBebidaCompletados) {
             debeCompletarse = true;
             print(
@@ -141,24 +150,19 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           }
         }
 
-        // Si debe completarse, agregarlo a la lista
         if (debeCompletarse) {
           ordersToComplete.add(orderId);
         }
       }
 
-      // Actualizar automáticamente los pedidos que deben completarse
       if (ordersToComplete.isNotEmpty) {
         print(
           '🔄 Se completarán automáticamente ${ordersToComplete.length} pedidos: ${ordersToComplete.join(', ')}',
         );
 
-        // Completar cada pedido de forma asíncrona
         for (int orderId in ordersToComplete) {
-          // Eliminar el pedido de la lista local para evitar parpadeos en la UI
           orders.removeWhere((order) => order['idpedido'] == orderId);
 
-          // Actualizar el estado en la base de datos
           _ordersService.updateOrderStatus(orderId, 'completado').then((
             success,
           ) {
@@ -166,7 +170,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               print('✅ Pedido #$orderId completado automáticamente');
             } else {
               print('❌ Error al completar automáticamente el pedido #$orderId');
-              // Programar una recarga para intentar nuevamente
               if (mounted) {
                 Future.delayed(
                   const Duration(seconds: 5),
@@ -185,7 +188,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           _pendingOrders = orders;
           _isLoading = false;
 
-          // Restaurar los pedidos expandidos
           _expandedOrders = expandedOrderIds.intersection(
             orders.map((o) => o['idpedido'] as int).toSet(),
           );
@@ -207,7 +209,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
-  // Obtener los contadores de órdenes mixtas con diferentes estados
   Map<String, int> _getOrdersCountByStatus(List<Map<String, dynamic>> orders) {
     int totalOrders = orders.length;
     int mixedOrders = 0;
@@ -325,13 +326,11 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           ),
         ),
         actions: [
-          // Botón de recargar pedidos
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPendingOrders,
             tooltip: 'Actualizar pedidos',
           ),
-          // Botón para activar/desactivar auto-refresh
           IconButton(
             onPressed: () {
               setState(() {
@@ -370,139 +369,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                 color: theme.colorScheme.primary,
                 child: Column(
                   children: [
-                    // Panel de estadísticas para pedidos mixtos
-                    if (orderStats['mixed']! > 0)
-                      Card(
-                        margin: const EdgeInsets.all(8),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Resumen de pedidos mixtos',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Órdenes listas para completar
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.check_circle_outline,
-                                    color: Colors.green,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Listos para completar',
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${orderStats['readyToComplete']}',
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              // Esperando al cocinero
-                              if (orderStats['waitingForCook']! > 0)
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.restaurant_outlined,
-                                      color: Colors.orange,
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Esperando al cocinero',
-                                        style: theme.textTheme.bodyMedium,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.orange.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${orderStats['waitingForCook']}',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.orange,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              if (orderStats['waitingForCook']! > 0)
-                                const SizedBox(height: 4),
-                              // Esperando al barista
-                              if (orderStats['waitingForBarista']! > 0)
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.coffee_outlined,
-                                      color: theme.colorScheme.secondary,
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Esperando al barista',
-                                        style: theme.textTheme.bodyMedium,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.secondary
-                                            .withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${orderStats['waitingForBarista']}',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color:
-                                                  theme.colorScheme.secondary,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-
                     Expanded(
                       child:
                           _pendingOrders.isEmpty
@@ -596,6 +462,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                                             newStatus,
                                           ),
                                       role: 'admin',
+                                      // Permite al admin completar platos individuales como cocinero o barista
+                                      // Refresca la pantalla cuando se marca un plato como completado
+                                      onRefresh: _loadPendingOrders,
                                     ),
                                   );
                                 },
@@ -609,9 +478,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _updateOrderStatus(int orderId, String newStatus) async {
     try {
-      // Si se está intentando completar la orden, primero verificamos si está realmente lista
       if (newStatus.toLowerCase() == 'completado') {
-        // Buscar la orden en la lista actual
         final orderIndex = _pendingOrders.indexWhere(
           (order) => order['idpedido'] == orderId,
         );
@@ -624,7 +491,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           bool todosItemsComidaCompletados = true;
           bool todosItemsBebidaCompletados = true;
 
-          // Verificar todos los ítems
           for (var item in items) {
             final tipo = item['tipo']?.toString().toLowerCase() ?? '';
 
@@ -641,16 +507,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             }
           }
 
-          // Aplicar las reglas definidas por el usuario:
           bool debeCompletarse = false;
           String mensajeError = '';
 
-          // Verificar según las reglas
           if (hayComida && hayBebida) {
-            // Si hay comida y bebida, verificamos reglas para ambas
             if (todosItemsComidaCompletados && todosItemsBebidaCompletados) {
-              debeCompletarse =
-                  true; // Regla: cook completado = true y barista completado = true
+              debeCompletarse = true;
             } else {
               if (!todosItemsComidaCompletados &&
                   !todosItemsBebidaCompletados) {
@@ -663,106 +525,207 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               }
             }
           } else if (hayComida && !hayBebida) {
-            // Si solo hay comida
-            debeCompletarse =
-                todosItemsComidaCompletados; // Regla: Solo comida y completada
+            debeCompletarse = todosItemsComidaCompletados;
             if (!debeCompletarse) {
               mensajeError = 'No se puede completar: Faltan ítems de comida';
             }
           } else if (!hayComida && hayBebida) {
-            // Si solo hay bebida
-            debeCompletarse =
-                todosItemsBebidaCompletados; // Regla: Solo bebida y completada
+            debeCompletarse = todosItemsBebidaCompletados;
             if (!debeCompletarse) {
               mensajeError = 'No se puede completar: Faltan ítems de bebida';
             }
           }
 
-          // Si no debe completarse, mostrar mensaje de error y salir
           if (!debeCompletarse) {
             if (mounted) {
+              final theme = Theme.of(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(mensajeError),
-                  backgroundColor: Colors.orange,
+                  content: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          mensajeError,
+                          style: TextStyle(
+                            fontFamily: 'MADE TOMMY',
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: theme.colorScheme.errorContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  margin: const EdgeInsets.all(8),
+                  elevation: 4,
                 ),
               );
             }
-            return; // No continuar con la actualización
+            return;
           }
         }
       }
 
-      // Mostrar indicador de carga
       if (mounted) {
+        final theme = Theme.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const SizedBox(
+                SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: theme.colorScheme.onPrimary,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Text('Actualizando estado del pedido...'),
+                const SizedBox(width: 12),
+                Text(
+                  'Actualizando estado del pedido...',
+                  style: TextStyle(
+                    fontFamily: 'MADE TOMMY',
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                ),
               ],
             ),
+            backgroundColor: theme.colorScheme.primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            elevation: 4,
             duration: const Duration(seconds: 1),
           ),
         );
       }
 
-      // Actualizar el estado de la orden
       final result = await _ordersService.updateOrderStatus(orderId, newStatus);
 
       if (result) {
-        // Eliminar de la lista de órdenes pendientes
         setState(() {
           _pendingOrders.removeWhere((order) => order['idpedido'] == orderId);
           _expandedOrders.remove(orderId);
         });
 
         if (mounted) {
+          final theme = Theme.of(context);
+          final isCompletado = newStatus.toLowerCase() == 'completado';
+          final backgroundColor =
+              isCompletado
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.errorContainer;
+          final textColor =
+              isCompletado
+                  ? theme.colorScheme.onPrimaryContainer
+                  : theme.colorScheme.onErrorContainer;
+          final icon =
+              isCompletado ? Icons.check_circle_outline : Icons.cancel_outlined;
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                newStatus.toLowerCase() == 'completado'
-                    ? 'Pedido #$orderId completado con éxito'
-                    : 'Pedido #$orderId cancelado',
+              content: Row(
+                children: [
+                  Icon(icon, color: textColor),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      isCompletado
+                          ? 'Pedido #$orderId completado con éxito'
+                          : 'Pedido #$orderId cancelado',
+                      style: TextStyle(
+                        fontFamily: 'MADE TOMMY',
+                        color: textColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              backgroundColor:
-                  newStatus.toLowerCase() == 'completado'
-                      ? Colors.green
-                      : Colors.orange,
+              backgroundColor: backgroundColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              elevation: 4,
+              duration: const Duration(seconds: 3),
             ),
           );
         }
       } else {
         if (mounted) {
+          final theme = Theme.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                'Error al actualizar el estado del pedido #$orderId',
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: theme.colorScheme.onError),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Error al actualizar el estado del pedido #$orderId',
+                      style: TextStyle(
+                        fontFamily: 'MADE TOMMY',
+                        color: theme.colorScheme.onError,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              backgroundColor: Colors.red,
+              backgroundColor: theme.colorScheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(8),
+              elevation: 4,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
       }
 
-      // Recargar órdenes pendientes
       _loadPendingOrders();
     } catch (e) {
       print('Error al actualizar estado del pedido: $e');
       if (mounted) {
+        final theme = Theme.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al actualizar el estado del pedido: $e'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: theme.colorScheme.onError),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Error al actualizar el estado del pedido: $e',
+                    style: TextStyle(
+                      fontFamily: 'MADE TOMMY',
+                      color: theme.colorScheme.onError,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: theme.colorScheme.error,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            elevation: 4,
+            duration: const Duration(seconds: 4),
           ),
         );
       }

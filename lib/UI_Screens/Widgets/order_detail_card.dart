@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../Api_services/pedidos/orders_service.dart';
+import 'custom_modal.dart'; // Importar nuestro modal personalizado
 
 class OrderDetailCard extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -238,27 +239,45 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
 
       final item = items[itemIndex];
       final String tipo = item['tipo']?.toString().toLowerCase() ?? '';
+      final String itemName = item['nombre'] ?? 'Ítem';
 
       // Determinar el rol adecuado para la actualización según el tipo de ítem
-      final String roleForUpdate = tipo == 'comida' ? 'cook' : 'barista';
+      // Si es administrador, usar el rol correspondiente según el tipo de ítem
+      String roleForUpdate;
+      if (widget.role == 'admin') {
+        roleForUpdate = tipo == 'comida' ? 'cook' : 'barista';
+      } else {
+        roleForUpdate = widget.role ?? (tipo == 'comida' ? 'cook' : 'barista');
+      }
+
+      // Mostrar modal de confirmación antes de marcar como completado
+      if (completado) {
+        final confirm = await CustomModal.showConfirmation(
+          context: context,
+          title: 'Completar ítem',
+          message: '¿Estás seguro de marcar "$itemName" como completado?',
+          confirmText: 'Completar',
+          confirmColor: Colors.green,
+        );
+
+        if (!confirm) return; // El usuario canceló la acción
+      }
 
       final success = await _ordersService.updateItemStatus(
         widget.order['idpedido'],
         platoId,
         completado,
-        widget.role ?? roleForUpdate,
+        roleForUpdate, // Usar el rol correcto
       );
 
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+        await CustomModal.showSuccess(
+          context: context,
+          message:
               completado
-                  ? 'Item marcado como completado'
-                  : 'Item marcado como pendiente',
-            ),
-            backgroundColor: Colors.green,
-          ),
+                  ? 'Ítem marcado como completado'
+                  : 'Ítem marcado como pendiente',
+          buttonText: 'Aceptar',
         );
 
         // Verificar si la orden está completamente lista usando el método adecuado
@@ -273,11 +292,9 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al actualizar estado: $e'),
-            backgroundColor: Colors.red,
-          ),
+        await CustomModal.showError(
+          context: context,
+          message: 'Error al actualizar estado: $e',
         );
       }
     }
@@ -289,7 +306,35 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
       final items = List<Map<String, dynamic>>.from(
         widget.order['items'] ?? [],
       );
+
+      // Contar items pendientes
+      int pendingItems = 0;
+      for (var item in items) {
+        if (item['tipo']?.toString().toLowerCase() == tipo.toLowerCase()) {
+          final bool isAlreadyCompleted =
+              tipo == 'comida'
+                  ? (item['completado_cocinero'] ?? false)
+                  : (item['completado_barista'] ?? false);
+          if (!isAlreadyCompleted) pendingItems++;
+        }
+      }
+
+      // Mostrar confirmación
+      final confirm = await CustomModal.showConfirmation(
+        context: context,
+        title: 'Completar todos los ítems',
+        message:
+            '¿Estás seguro de marcar todos los ítems de ${tipo == 'comida' ? 'comida' : 'bebida'} ($pendingItems) como completados?',
+        confirmText: 'Completar todos',
+        confirmColor: Colors.green,
+      );
+
+      if (!confirm) return; // Usuario canceló la acción
+
       bool atLeastOneUpdated = false;
+
+      // Determinar el rol a usar para la actualización
+      final String roleToUse = tipo == 'comida' ? 'cook' : 'barista';
 
       // Filtrar los ítems por tipo y marcar como completados
       for (var item in items) {
@@ -305,7 +350,7 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
               widget.order['idpedido'],
               item['idplato'],
               true,
-              tipo == 'comida' ? 'cook' : 'barista',
+              roleToUse, // Usar siempre el rol correcto según el tipo
             );
 
             if (success) {
@@ -337,9 +382,7 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
           }
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensaje), backgroundColor: Colors.green),
-        );
+        await CustomModal.showSuccess(context: context, message: mensaje);
 
         // Verificar el estado del pedido para posible actualización automática
         await _ordersService.checkAndUpdateOrderCompletion(
@@ -353,11 +396,9 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al actualizar los ítems: $e'),
-            backgroundColor: Colors.red,
-          ),
+        await CustomModal.showError(
+          context: context,
+          message: 'Error al actualizar los ítems: $e',
         );
       }
     }
@@ -369,6 +410,19 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     final items = List<Map<String, dynamic>>.from(widget.order['items'] ?? []);
     final total = widget.order['total'] ?? 0.0;
     final estado = widget.order['estado'] ?? 'pendiente';
+    final isStaffRole = widget.role == 'cook' || widget.role == 'barista';
+
+    // Si es cocinero, solo necesitamos mostrar ítems de comida
+    // Si es barista, solo necesitamos mostrar ítems de bebida
+    final filteredItems =
+        isStaffRole
+            ? items.where((item) {
+              final tipo = item['tipo']?.toString().toLowerCase() ?? '';
+              return widget.role == 'cook'
+                  ? tipo == 'comida'
+                  : tipo == 'bebida';
+            }).toList()
+            : items;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
@@ -428,34 +482,39 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
 
               const SizedBox(height: 8),
 
-              // Indicador de progreso de la orden (si está pendiente)
+              // Indicador de progreso simplificado para roles de staff
               if (estado.toLowerCase() == 'pendiente' && items.isNotEmpty) ...[
-                _buildOrderProgressIndicator(items, theme),
+                if (isStaffRole)
+                  _buildSimplifiedProgressForStaff(items, theme)
+                else
+                  _buildOrderProgressIndicator(items, theme),
                 const SizedBox(height: 8),
               ],
 
-              // Información del cliente
-              Row(
-                children: [
-                  Icon(
-                    Icons.person_outline,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Cliente: ${widget.order['cliente'] ?? 'Cliente'}',
-                      style: theme.textTheme.bodyMedium,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+              // Información del cliente (no tan relevante para staff, pero mantenida por contexto)
+              if (!isStaffRole || widget.isExpanded) ...[
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 18,
+                      color: theme.colorScheme.primary,
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Cliente: ${widget.order['cliente'] ?? 'Cliente'}',
+                        style: theme.textTheme.bodyMedium,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
 
               // Botones de acción para roles específicos (cook/barista)
-              if (widget.role == 'cook' || widget.role == 'barista') ...[
+              if (isStaffRole && filteredItems.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _buildCompleteItemsButton(items, widget.role!, theme),
               ],
@@ -478,384 +537,67 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                 ),
               ],
 
-              // Mostrar tiempo de procesamiento para pedidos completados o cancelados
-              if ((estado.toLowerCase() == 'completado' ||
-                  estado.toLowerCase() == 'cancelado')) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.timelapse,
-                      size: 18,
-                      color:
-                          estado.toLowerCase() == 'completado'
-                              ? Colors.green
-                              : Colors.red,
-                    ),
-                    const SizedBox(width: 8),
-                    if (_loadingProcessingTime)
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else if (_processingTimeData != null)
-                      Text(
-                        'Tiempo de procesamiento: ${_processingTimeData!['tiempo_formato']}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color:
-                              estado.toLowerCase() == 'completado'
-                                  ? Colors.green
-                                  : Colors.red,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    else
-                      Text(
-                        'Tiempo de procesamiento: No disponible',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: Colors.grey,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-
               // Si está expandido, mostrar los items
-              if (widget.isExpanded && items.isNotEmpty) ...[
+              if (widget.isExpanded && filteredItems.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 const Divider(height: 1),
                 const SizedBox(height: 6),
 
-                Text(
-                  'Detalle del pedido',
-                  style: theme.textTheme.titleSmall?.copyWith(fontSize: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isStaffRole
+                          ? 'Items para ${widget.role == 'cook' ? 'cocina' : 'barra'}'
+                          : 'Detalle del pedido',
+                      style: theme.textTheme.titleSmall?.copyWith(fontSize: 12),
+                    ),
+
+                    // Contador de items pendientes para roles de staff
+                    if (isStaffRole)
+                      _buildPendingItemsCount(filteredItems, theme),
+                  ],
                 ),
 
                 const SizedBox(height: 4),
 
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    // Asegurar que tipo siempre sea un valor válido
-                    final String itemTipo =
-                        (item['tipo'] ?? '').toString().toLowerCase();
-                    final bool isComida = itemTipo == 'comida';
-
-                    // Determinar si mostrar checkbox basado en el rol
-                    final bool showCheckbox = widget.role == 'admin';
-                    final bool showActionButton =
-                        (widget.role == 'cook' && isComida) ||
-                        (widget.role == 'barista' && !isComida);
-
-                    // Determinar el estado de completado para cocinero y barista
-                    final bool completadoCocinero =
-                        item['completado_cocinero'] ?? false;
-                    final bool completadoBarista =
-                        item['completado_barista'] ?? false;
-
-                    // Determinar si el item está completado según su tipo
-                    final bool isCompleted =
-                        isComida ? completadoCocinero : completadoBarista;
-
-                    // Obtener la fecha de completado según el rol o tipo
-                    final String? fechaCompletadoCocinero =
-                        item['fecha_completado_cocinero'];
-                    final String? fechaCompletadoBarista =
-                        item['fecha_completado_barista'];
-                    final String? fechaCompletado =
-                        isComida
-                            ? fechaCompletadoCocinero
-                            : fechaCompletadoBarista;
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Checkbox solo para admin
-                          if (showCheckbox)
-                            Checkbox(
-                              value:
-                                  isComida
-                                      ? completadoCocinero
-                                      : completadoBarista,
-                              onChanged: (bool? value) {
-                                if (value != null && widget.role == 'admin') {
-                                  _updateItemStatus(item['idplato'], value);
-                                }
-                              },
-                            )
-                          // Para otros roles o cuando no se muestra checkbox, mostrar icono indicador
-                          else
-                            Container(
-                              width: 24,
-                              height: 24,
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
-                              child:
-                                  isComida
-                                      ? Icon(
-                                        completadoCocinero
-                                            ? Icons.restaurant
-                                            : Icons.restaurant_outlined,
-                                        color:
-                                            completadoCocinero
-                                                ? Colors.green
-                                                : Colors.grey,
-                                        size: 20,
-                                      )
-                                      : Icon(
-                                        completadoBarista
-                                            ? Icons.local_cafe
-                                            : Icons.local_cafe_outlined,
-                                        color:
-                                            completadoBarista
-                                                ? Colors.green
-                                                : Colors.grey,
-                                        size: 20,
-                                      ),
-                            ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Row(
-                                        children: [
-                                          // Icono para indicar tipo de ítem
-                                          Icon(
-                                            isComida
-                                                ? Icons.restaurant
-                                                : Icons.local_cafe,
-                                            size: 14,
-                                            color: theme.colorScheme.primary
-                                                .withAlpha(153),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              item['nombre'] ?? 'Item',
-                                              style: theme.textTheme.bodyMedium
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
-                                                    // Aplicar tachado si está completado
-                                                    decoration:
-                                                        isCompleted &&
-                                                                widget.role !=
-                                                                    'admin'
-                                                            ? TextDecoration
-                                                                .lineThrough
-                                                            : null,
-                                                    decorationColor:
-                                                        Colors.grey,
-                                                  ),
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    // Etiqueta de cantidad
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.primary
-                                            .withAlpha(25),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        'x${item['cantidad'] ?? 1}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                      ),
-                                    ),
-                                    // Estado visual de completado
-                                    if (isCompleted)
-                                      Container(
-                                        margin: const EdgeInsets.only(left: 4),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withAlpha(50),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              isComida
-                                                  ? Icons.check_circle_outline
-                                                  : Icons.local_cafe,
-                                              color: Colors.green,
-                                              size: 10,
-                                            ),
-                                            const SizedBox(width: 2),
-                                            Text(
-                                              isComida ? 'Cocinero' : 'Barista',
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: Colors.green,
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                // Segunda línea con información adicional
-                                if (item['precio_unitario'] != null)
-                                  Text(
-                                    'Precio: ${_formatCurrency(item['precio_unitario'])}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 11,
-                                    ),
-                                  ),
-
-                                // Notas del ítem si existen
-                                if (item['notas'] != null &&
-                                    item['notas'].toString().isNotEmpty)
-                                  Text(
-                                    'Notas: ${item['notas']}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontStyle: FontStyle.italic,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-
-                                // Información de tiempo de completado
-                                if (fechaCompletado != null)
-                                  Text(
-                                    'Completado: ${_formatItemCompletionTime(fechaCompletado)}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: Colors.green,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-
-                                // Botón de acción para cocinero/barista
-                                if (showActionButton && !isCompleted)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: InkWell(
-                                      onTap:
-                                          () => _updateItemStatus(
-                                            item['idplato'],
-                                            true,
-                                          ),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary
-                                              .withAlpha(25),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: theme.colorScheme.primary
-                                                .withAlpha(75),
-                                            width: 0.5,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.check_circle_outline,
-                                              size: 14,
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Marcar como completado',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color:
-                                                    theme.colorScheme.primary,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          // Precio subtotal con manejo de overflow
-                          SizedBox(
-                            width: 50, // Ancho fijo para evitar overflow
-                            child: Text(
-                              _formatCurrency(
-                                (item['precio_unitario'] ?? 0) *
-                                    (item['cantidad'] ?? 1),
-                              ),
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontSize: 12,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.end,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                // Usamos un widget diferente para los roles de staff
+                isStaffRole
+                    ? _buildStaffItemsList(filteredItems, theme)
+                    : _buildFullItemsList(items, theme),
 
                 const SizedBox(height: 10),
                 const Divider(height: 1),
 
-                // Total
-                Row(
-                  children: [
-                    // Mostrar progreso de la orden si hay comida y bebida
-                    if (widget.isExpanded && hayComidaYBebida(items)) ...[
-                      Expanded(child: _buildProgressIndicator(items)),
-                    ],
-                    const Spacer(),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text('Total', style: theme.textTheme.titleSmall),
-                        Text(
-                          _formatCurrency(total),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                // Total solo visible para admin
+                if (!isStaffRole) ...[
+                  Row(
+                    children: [
+                      // Mostrar progreso de la orden si hay comida y bebida
+                      if (widget.isExpanded && hayComidaYBebida(items)) ...[
+                        Expanded(child: _buildProgressIndicator(items)),
                       ],
-                    ),
-                  ],
-                ),
+                      const Spacer(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('Total', style: theme.textTheme.titleSmall),
+                          Text(
+                            _formatCurrency(total),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
 
-                // Botones de acción si está pendiente y hay un callback para cambiar el estado
-                if (widget.onRefresh != null &&
+                // Botones de acción para administradores
+                if (widget.role == 'admin' &&
+                    widget.onRefresh != null &&
                     estado != 'completado' &&
                     estado != 'cancelado') ...[
                   const SizedBox(height: 16),
@@ -864,8 +606,7 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                     children: [
                       if (estado == 'pendiente') ...[
                         // Verificar si el pedido está completamente procesado
-                        if (widget.role == 'admin' &&
-                            _isOrderReadyToComplete(items)) ...[
+                        if (_isOrderReadyToComplete(items)) ...[
                           ElevatedButton.icon(
                             icon: const Icon(Icons.check_circle),
                             label: const Text('Completar pedido'),
@@ -918,44 +659,28 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                   ),
                 ],
               ] else ...[
+                // Vista resumida cuando no está expandido
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
                       child: Text(
-                        () {
-                          // Calcular el número total de platos sumando las cantidades
-                          int totalPlatos = 0;
-                          for (var item in items) {
-                            if (item['cantidad'] is int) {
-                              totalPlatos += item['cantidad'] as int;
-                            } else if (item['cantidad'] is double) {
-                              totalPlatos +=
-                                  (item['cantidad'] as double).toInt();
-                            } else if (item['cantidad'] != null) {
-                              totalPlatos +=
-                                  int.tryParse(item['cantidad'].toString()) ??
-                                  1;
-                            } else {
-                              totalPlatos +=
-                                  1; // Valor por defecto si no hay cantidad
-                            }
-                          }
-
-                          return '${items.length} ${items.length == 1 ? 'ítem' : 'ítems'} · $totalPlatos ${totalPlatos == 1 ? 'plato' : 'platos'}';
-                        }(),
+                        isStaffRole
+                            ? '${filteredItems.length} ${filteredItems.length == 1 ? 'ítem' : 'ítems'} para ${widget.role == 'cook' ? 'preparar' : 'servir'}'
+                            : '${items.length} ${items.length == 1 ? 'ítem' : 'ítems'} en total',
                         style: theme.textTheme.bodyMedium,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text(
-                      _formatCurrency(total),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                    if (!isStaffRole)
+                      Text(
+                        _formatCurrency(total),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 if (widget.onTap != null) ...[
@@ -989,6 +714,350 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
           ),
         ),
       ),
+    );
+  }
+
+  // Método para mostrar un contador simplificado de items pendientes
+  Widget _buildPendingItemsCount(
+    List<Map<String, dynamic>> items,
+    ThemeData theme,
+  ) {
+    int pendingItems = 0;
+    int totalItems = items.length;
+
+    for (var item in items) {
+      final bool isCompleted =
+          widget.role == 'cook'
+              ? (item['completado_cocinero'] ?? false)
+              : (item['completado_barista'] ?? false);
+
+      if (!isCompleted) pendingItems++;
+    }
+
+    final color = pendingItems == 0 ? Colors.green : theme.colorScheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color, width: 0.5),
+      ),
+      child: Text(
+        pendingItems == 0 ? 'Completado' : '$pendingItems pendientes',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
+  // Lista de ítems para roles de staff (cocinero o barista)
+  Widget _buildStaffItemsList(
+    List<Map<String, dynamic>> items,
+    ThemeData theme,
+  ) {
+    final isCocinero = widget.role == 'cook';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isCocinero ? 'Platos para cocinar:' : 'Bebidas para preparar:',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) {
+          final bool isCompleted =
+              isCocinero
+                  ? (item['completado_cocinero'] ?? false)
+                  : (item['completado_barista'] ?? false);
+
+          return Card(
+            color: theme.colorScheme.surface,
+            elevation: 0.5,
+            margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color:
+                    isCompleted
+                        ? Colors.green.withOpacity(0.5)
+                        : Colors.grey.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: InkWell(
+              onTap:
+                  isCompleted
+                      ? null // Desactivar la interacción si ya está completado
+                      : () => _updateItemStatus(item['idplato'], true),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    // Nombre e información del ítem
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${item['nombre']} (${item['cantidad']})',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  isCompleted
+                                      ? Colors.green
+                                      : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          if (item['notas'] != null &&
+                              item['notas'].toString().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Notas: ${item['notas']}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Checkbox para marcar como completado
+                    Checkbox(
+                      value: isCompleted,
+                      onChanged:
+                          isCompleted
+                              ? null // Desactivar cambio si ya está completado
+                              : (value) {
+                                if (value != null && value == true) {
+                                  _updateItemStatus(item['idplato'], true);
+                                }
+                              },
+                      activeColor: Colors.green,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  // Lista completa para administradores
+  Widget _buildFullItemsList(
+    List<Map<String, dynamic>> items,
+    ThemeData theme,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Detalle del pedido:',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) {
+          final tipo = item['tipo']?.toString().toLowerCase() ?? '';
+          final bool isComida = tipo == 'comida';
+          final bool isCompleted =
+              isComida
+                  ? (item['completado_cocinero'] ?? false)
+                  : (item['completado_barista'] ?? false);
+
+          return Card(
+            color: theme.colorScheme.surface,
+            elevation: 0.5,
+            margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color:
+                    isCompleted
+                        ? Colors.green.withOpacity(0.5)
+                        : Colors.grey.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: InkWell(
+              onTap:
+                  isCompleted
+                      ? null // Desactivar la interacción si ya está completado
+                      : () => _updateItemStatus(item['idplato'], true),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    // Ícono según tipo
+                    Icon(
+                      isComida ? Icons.restaurant : Icons.local_cafe,
+                      color:
+                          isComida
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.secondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    // Nombre e información del ítem
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${item['nombre']} (${item['cantidad']})',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  isCompleted
+                                      ? Colors.green
+                                      : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isComida ? 'Comida' : 'Bebida',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color:
+                                  isComida
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.secondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (item['notas'] != null &&
+                              item['notas'].toString().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Notas: ${item['notas']}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Checkbox para marcar como completado
+                    if (widget.role ==
+                        'admin') // Solo mostrar checkbox si es admin
+                      Checkbox(
+                        value: isCompleted,
+                        onChanged:
+                            isCompleted
+                                ? null // Desactivar cambio si ya está completado
+                                : (value) {
+                                  if (value != null && value == true) {
+                                    _updateItemStatus(item['idplato'], true);
+                                  }
+                                },
+                        activeColor: Colors.green,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  // Indicador de progreso simplificado para los roles de staff
+  Widget _buildSimplifiedProgressForStaff(
+    List<Map<String, dynamic>> items,
+    ThemeData theme,
+  ) {
+    // Filtrar solo los items relevantes para el rol actual
+    final String tipo = widget.role == 'cook' ? 'comida' : 'bebida';
+
+    int total = 0;
+    int completed = 0;
+
+    for (var item in items) {
+      if (item['tipo']?.toString().toLowerCase() == tipo) {
+        total++;
+        final bool isCompleted =
+            widget.role == 'cook'
+                ? (item['completado_cocinero'] ?? false)
+                : (item['completado_barista'] ?? false);
+
+        if (isCompleted) completed++;
+      }
+    }
+
+    // Si no hay items de este tipo, no mostrar nada
+    if (total == 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 14, color: Colors.orange),
+            const SizedBox(width: 8),
+            Text(
+              'No hay items de ${tipo == 'comida' ? 'comida' : 'bebida'} en este pedido',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final double progress = total > 0 ? completed / total : 0.0;
+    final bool isComplete = completed == total;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              widget.role == 'cook' ? Icons.restaurant : Icons.local_cafe,
+              size: 14,
+              color: isComplete ? Colors.green : theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$completed/$total ${widget.role == 'cook' ? 'comidas' : 'bebidas'} completadas',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isComplete ? Colors.green : theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: progress,
+            backgroundColor: Colors.grey.withOpacity(0.2),
+            color: isComplete ? Colors.green : theme.colorScheme.primary,
+            minHeight: 6,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1026,89 +1095,191 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     String status,
   ) {
     final items = List<Map<String, dynamic>>.from(widget.order['items'] ?? []);
+    final theme = Theme.of(context); // Obtener el tema actual
 
     // Si estamos intentando completar, verificar primero si está todo listo
-    if (status == 'completado' && !_isOrderReadyToComplete(items)) {
-      String customMessage = 'No se puede completar aún';
+    if (status == 'completado') {
+      bool todosCompletados = _isOrderReadyToComplete(items);
 
-      bool hayComida = false;
-      bool hayBebida = false;
-      bool todosLosItemsComidaCompletados = true;
-      bool todosLosItemsBebidaCompletados = true;
+      if (!todosCompletados) {
+        // Ofrecer completar todos los ítems automáticamente
+        CustomModal.showConfirmation(
+          context: context,
+          title: 'Completar pedido',
+          message:
+              'Hay ítems pendientes. ¿Deseas marcar todos como completados y finalizar el pedido?',
+          confirmText: 'Completar todo',
+          cancelText: 'Cancelar',
+          confirmColor: Colors.green,
+        ).then((confirmed) async {
+          if (confirmed) {
+            // Mostrar indicador de carga estilizado con el tema
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            theme.colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Completando ítems...',
+                        style: TextStyle(
+                          fontFamily: 'MADE TOMMY',
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  duration: const Duration(seconds: 2),
+                  backgroundColor: theme.colorScheme.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  margin: const EdgeInsets.all(8),
+                  elevation: 4,
+                ),
+              );
+            }
+
+            // Completar todos los ítems directamente sin confirmaciones adicionales
+            await _completarItemsDirectamente(items);
+
+            // Actualizar estado del pedido completo
+            if (widget.onStatusChange != null) {
+              widget.onStatusChange!(status);
+            }
+          }
+        });
+      } else {
+        // Si ya está todo completo, solo confirmar la finalización
+        CustomModal.showConfirmation(
+          context: context,
+          title: title,
+          message: message,
+          confirmText: 'Confirmar',
+          cancelText: 'Cancelar',
+          confirmColor: Colors.green,
+        ).then((confirmed) {
+          if (confirmed && widget.onStatusChange != null) {
+            widget.onStatusChange!(status);
+          }
+        });
+      }
+
+      return; // No continuar con el diálogo estándar
+    }
+
+    // Proceder con el diálogo de confirmación para cancelación
+    if (status == 'cancelado') {
+      CustomModal.showConfirmation(
+        context: context,
+        title: title,
+        message: message,
+        confirmText: 'Confirmar',
+        cancelText: 'Cancelar',
+        confirmColor: Colors.red,
+      ).then((confirmed) {
+        if (confirmed && widget.onStatusChange != null) {
+          widget.onStatusChange!(status);
+        }
+      });
+    }
+  }
+
+  // Método para completar todos los ítems directamente sin confirmaciones adicionales
+  Future<void> _completarItemsDirectamente(
+    List<Map<String, dynamic>> items,
+  ) async {
+    try {
+      // 1. Encontrar todos los ítems por completar, agrupados por tipo
+      final itemsComidaPendientes = <int>[];
+      final itemsBebidaPendientes = <int>[];
 
       for (var item in items) {
         final tipo = item['tipo']?.toString().toLowerCase() ?? '';
+        final int platoId = item['idplato'] ?? 0;
 
-        if (tipo == 'comida') {
-          hayComida = true;
-          if (!(item['completado_cocinero'] ?? false)) {
-            todosLosItemsComidaCompletados = false;
-          }
-        } else if (tipo == 'bebida') {
-          hayBebida = true;
-          if (!(item['completado_barista'] ?? false)) {
-            todosLosItemsBebidaCompletados = false;
-          }
+        if (tipo == 'comida' && !(item['completado_cocinero'] ?? false)) {
+          itemsComidaPendientes.add(platoId);
+        } else if (tipo == 'bebida' && !(item['completado_barista'] ?? false)) {
+          itemsBebidaPendientes.add(platoId);
         }
       }
 
-      if (hayComida && hayBebida) {
-        if (!todosLosItemsComidaCompletados &&
-            !todosLosItemsBebidaCompletados) {
-          customMessage = 'Faltan ítems de comida y bebida';
-        } else if (!todosLosItemsComidaCompletados) {
-          customMessage = 'Faltan ítems de comida';
-        } else {
-          customMessage = 'Faltan ítems de bebida';
-        }
-      } else if (hayComida && !todosLosItemsComidaCompletados) {
-        customMessage = 'Faltan ítems de comida';
-      } else if (hayBebida && !todosLosItemsBebidaCompletados) {
-        customMessage = 'Faltan ítems de bebida';
+      // 2. Completar ítems de comida
+      for (int platoId in itemsComidaPendientes) {
+        await _ordersService.updateItemStatus(
+          widget.order['idpedido'],
+          platoId,
+          true,
+          'cook',
+        );
       }
 
-      // Mostrar un diálogo de error o SnackBar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(customMessage),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
-        ),
+      // 3. Completar ítems de bebida
+      for (int platoId in itemsBebidaPendientes) {
+        await _ordersService.updateItemStatus(
+          widget.order['idpedido'],
+          platoId,
+          true,
+          'barista',
+        );
+      }
+
+      // 4. Verificar si todo está listo para completar el pedido
+      await _ordersService.checkAndUpdateOrderCompletion(
+        widget.order['idpedido'],
       );
 
-      return; // No continuar con el diálogo
-    }
+      // 5. Refrescar interfaz
+      if (widget.onRefresh != null) {
+        widget.onRefresh!();
+      }
+    } catch (e) {
+      debugPrint('❌ Error al completar ítems directamente: $e');
+      if (mounted) {
+        final theme = Theme.of(context); // Obtener el tema actual
 
-    // Proceder con el diálogo normal si la orden está lista o se está cancelando
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.grey),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancelar'),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: theme.colorScheme.onError),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Error al completar los ítems',
+                    style: TextStyle(
+                      fontFamily: 'MADE TOMMY',
+                      color: theme.colorScheme.onError,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor:
-                    status == 'completado' ? Colors.green : Colors.red,
-              ),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                if (widget.onStatusChange != null) {
-                  widget.onStatusChange!(status);
-                }
-              },
-              child: const Text('Confirmar'),
+            backgroundColor: theme.colorScheme.error,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-          ],
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(8),
+            elevation: 4,
+            duration: const Duration(seconds: 4),
+          ),
         );
-      },
-    );
+      }
+    }
   }
 
   Widget _buildOrderProgressIndicator(
@@ -1292,25 +1463,28 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         : Colors.orange,
               ),
               const SizedBox(width: 4),
-              Text(
-                _getOrderProgressMessage(
-                  completedComida,
-                  totalComida,
-                  completedBebida,
-                  totalBebida,
-                ),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color:
-                      _isOrderFullyCompleted(
-                            completedComida,
-                            totalComida,
-                            completedBebida,
-                            totalBebida,
-                          )
-                          ? Colors.green
-                          : Colors.orange,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 10,
+              Expanded(
+                child: Text(
+                  _getOrderProgressMessage(
+                    completedComida,
+                    totalComida,
+                    completedBebida,
+                    totalBebida,
+                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color:
+                        _isOrderFullyCompleted(
+                              completedComida,
+                              totalComida,
+                              completedBebida,
+                              totalBebida,
+                            )
+                            ? Colors.green
+                            : Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1341,13 +1515,13 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     bool bebidaCompleta = totalBebida == 0 || completedBebida == totalBebida;
 
     if (comidaCompleta && bebidaCompleta) {
-      return 'Pedido listo para ser completado';
+      return 'Pedido listo';
     } else if (!comidaCompleta && !bebidaCompleta) {
-      return 'Falta completar ítems de comida y bebida';
+      return 'Faltan ítems de comida y bebida';
     } else if (!comidaCompleta) {
-      return 'Falta completar ítems de comida';
+      return 'Faltan ítems de comida';
     } else {
-      return 'Falta completar ítems de bebida';
+      return 'Faltan ítems de bebida';
     }
   }
 
@@ -1475,12 +1649,15 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                 color: colorMensaje,
               ),
               const SizedBox(width: 4),
-              Text(
-                mensaje,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: colorMensaje,
+              Expanded(
+                child: Text(
+                  mensaje,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: colorMensaje,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

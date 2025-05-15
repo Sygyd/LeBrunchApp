@@ -7,6 +7,7 @@ import '../Widgets/background_scaffold.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import '../../Api_services/menu/menu_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class PopularDishesScreen extends StatefulWidget {
   const PopularDishesScreen({super.key});
@@ -154,7 +155,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
             period: period,
             startDate: startDateStr,
             endDate: endDateStr,
-            category: selectedCategory,
+            categoria: selectedCategory,
           );
 
       if (mounted) {
@@ -432,9 +433,20 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     );
   }
 
-  String _formatCurrency(double amount) {
+  String _formatCurrency(dynamic amount) {
+    if (amount == null) return '\$0.00';
+
+    double value = 0.0;
+    if (amount is double) {
+      value = amount;
+    } else if (amount is int) {
+      value = amount.toDouble();
+    } else if (amount is String) {
+      value = double.tryParse(amount) ?? 0.0;
+    }
+
     final formatter = NumberFormat.currency(symbol: '\$');
-    return formatter.format(amount);
+    return formatter.format(value);
   }
 
   // Formatear rango de fechas para mostrar
@@ -674,32 +686,41 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                                   child: ClipOval(
                                     child:
                                         dish['imagen_url'] != null
-                                            ? Image.network(
-                                              dish['imagen_url'],
+                                            ? CachedNetworkImage(
+                                              imageUrl: dish['imagen_url'],
                                               width: 56,
                                               height: 56,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (
-                                                context,
-                                                error,
-                                                stackTrace,
-                                              ) {
-                                                return Container(
-                                                  width: 56,
-                                                  height: 56,
-                                                  color: theme
-                                                      .colorScheme
-                                                      .primary
-                                                      .withOpacity(0.2),
-                                                  child: Icon(
-                                                    Icons.restaurant,
-                                                    color:
-                                                        theme
-                                                            .colorScheme
-                                                            .primary,
+                                              placeholder:
+                                                  (context, url) => Container(
+                                                    width: 56,
+                                                    height: 56,
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primary
+                                                        .withOpacity(0.2),
+                                                    child: const Center(
+                                                      child:
+                                                          CircularProgressIndicator(),
+                                                    ),
                                                   ),
-                                                );
-                                              },
+                                              errorWidget:
+                                                  (context, url, error) =>
+                                                      Container(
+                                                        width: 56,
+                                                        height: 56,
+                                                        color: theme
+                                                            .colorScheme
+                                                            .primary
+                                                            .withOpacity(0.2),
+                                                        child: Icon(
+                                                          Icons.restaurant,
+                                                          color:
+                                                              theme
+                                                                  .colorScheme
+                                                                  .primary,
+                                                        ),
+                                                      ),
                                             )
                                             : Container(
                                               width: 56,
@@ -815,12 +836,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
                                 Text(
                                   dish['cantidad_vendida'] == 0
                                       ? 'N/A'
-                                      : _formatCurrency(
-                                        (dish['cantidad_vendida'] ?? 0) *
-                                            (dish['precio_promedio'] ??
-                                                dish['precio'] ??
-                                                0),
-                                      ),
+                                      : _formatCurrency(_calcularTotal(dish)),
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color:
@@ -915,5 +931,32 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
       default:
         return 'all';
     }
+  }
+
+  // Método auxiliar para calcular el total de manera segura
+  double _calcularTotal(Map<String, dynamic> dish) {
+    // Obtener y convertir cantidad_vendida
+    var cantidadVendida = dish['cantidad_vendida'];
+    double cantidad = 0.0;
+    if (cantidadVendida is int) {
+      cantidad = cantidadVendida.toDouble();
+    } else if (cantidadVendida is double) {
+      cantidad = cantidadVendida;
+    } else if (cantidadVendida is String) {
+      cantidad = double.tryParse(cantidadVendida) ?? 0.0;
+    }
+
+    // Obtener y convertir precio
+    var precio = dish['precio_promedio'] ?? dish['precio'] ?? 0.0;
+    double precioFinal = 0.0;
+    if (precio is int) {
+      precioFinal = precio.toDouble();
+    } else if (precio is double) {
+      precioFinal = precio;
+    } else if (precio is String) {
+      precioFinal = double.tryParse(precio) ?? 0.0;
+    }
+
+    return cantidad * precioFinal;
   }
 }

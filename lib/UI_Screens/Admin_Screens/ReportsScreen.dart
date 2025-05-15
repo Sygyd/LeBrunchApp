@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import 'dart:math' as math;
+import '../Widgets/background_scaffold.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
+import '../Widgets/custom_modal.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -22,8 +31,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _hasError = false;
   String _errorMessage = '';
 
-  String _currentPeriod =
-      'hoy'; // Usando el formato de DateFilterBar: 'hoy', 'semana', 'mes', 'año', 'personalizado'
+  // Estado para el filtro de categoría con enum para mejor tipo de datos
+  String _selectedCategory = 'todos';
+
+  // Constantes para las categorías
+  static const Map<String, String> categoryLabels = {
+    'todos': 'Todos los items',
+    'comida': 'Solo comidas',
+    'bebida': 'Solo bebidas',
+  };
+
+  String _currentPeriod = 'hoy';
   Map<String, dynamic> _summaryData = {};
   List<Map<String, dynamic>> _popularDishes = [];
 
@@ -34,6 +52,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   void initState() {
     super.initState();
+    _currentPeriod = 'hoy';
+    _selectedCategory = 'todos';
     _loadReportData();
   }
 
@@ -43,7 +63,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _loadReportData() async {
-    if (!mounted) return; // Guarda de seguridad inicial
+    if (!mounted) return;
 
     setState(() {
       _isLoading = true;
@@ -52,36 +72,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
 
     try {
-      // Convertir el formato de periodo de DateFilterBar al formato de OrdersService
-      String? servicePeriod;
-      switch (_currentPeriod) {
-        case 'hoy':
-          servicePeriod = 'day';
-          break;
-        case 'semana':
-          servicePeriod = 'week';
-          break;
-        case 'mes':
-          servicePeriod = 'month';
-          break;
-        case 'año':
-          servicePeriod = 'year';
-          break;
-        case 'personalizado':
-          servicePeriod = 'custom';
-          break;
-        case 'todos':
-          servicePeriod = 'all'; // Para 'todos', usamos 'all' en lugar de null
-          break;
-        default:
-          servicePeriod = 'day'; // Por defecto, usar día
-      }
+      String? servicePeriod = _convertPeriodToServiceFormat(_currentPeriod);
+      String? selectedCategory =
+          _selectedCategory == 'todos' ? null : _selectedCategory;
 
       print(
-        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod)',
+        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod), categoría: $selectedCategory',
       );
 
-      // Preparar para recibir datos
+      // Preparar datos iniciales
       Map<String, dynamic> summary = {
         'totalPedidos': 0,
         'totalVentas': 0.0,
@@ -89,137 +88,92 @@ class _ReportsScreenState extends State<ReportsScreen> {
       };
       List<Map<String, dynamic>> popularDishes = [];
 
-      // Verificar si el widget sigue montado
       if (!mounted) return;
 
-      // Si es un período personalizado, enviar fechas específicas
-      if (_currentPeriod == 'personalizado' &&
-          _customStartDate != null &&
-          _customEndDate != null) {
-        print('📅 Rango personalizado: $_customStartDate a $_customEndDate');
+      // Obtener resumen de pedidos
+      final ordersSummary = await _ordersService.getOrdersSummary(
+        period: servicePeriod,
+        customStartDate: _customStartDate,
+        customEndDate: _customEndDate,
+        categoria: selectedCategory,
+      );
 
-        try {
-          summary = await _ordersService.getOrdersSummary(
-            period: servicePeriod,
-            customStartDate: _customStartDate,
-            customEndDate: _customEndDate,
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo resumen personalizado: $e');
-          // Continuamos con valores por defecto
-        }
+      print('📊 Resumen de pedidos recibido: $ordersSummary');
 
-        // Verificar si el widget sigue montado
-        if (!mounted) return;
+      // Obtener platos populares
+      final dishes = await _popularDishesService.getPopularDishesDirect(
+        period: servicePeriod,
+        startDate: _customStartDate,
+        endDate: _customEndDate,
+        categoria: selectedCategory,
+      );
 
-        // Cargar platos populares para el mismo período
-        try {
-          popularDishes = await _popularDishesService.getPopularDishesDirect(
-            period:
-                null, // No usar período predefinido para rango personalizado
-            startDate: _customStartDate,
-            endDate: _customEndDate,
-            limit: 5,
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo platos populares personalizados: $e');
-          // Continuamos con lista vacía
-        }
-      } else if (_currentPeriod == 'todos') {
-        // Para "todos", usamos el período 'all'
-        try {
-          summary = await _ordersService.getOrdersSummary(
-            period: 'all', // Usar 'all' como período para incluir todo
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo resumen de todos los datos: $e');
-          // Continuamos con valores por defecto
-        }
+      print('📊 Platos populares recibidos: ${dishes.length}');
 
-        // Verificar si el widget sigue montado
-        if (!mounted) return;
-
-        // Cargar todos los platos populares sin filtros de fecha
-        try {
-          popularDishes = await _popularDishesService.getPopularDishesDirect(
-            period: 'all', // Usar 'all' como período para incluir todo
-            limit: 5,
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo platos populares de todos los datos: $e');
-          // Continuamos con lista vacía
-        }
-      } else {
-        // Caso normal para períodos predefinidos
-        try {
-          summary = await _ordersService.getOrdersSummary(
-            period: servicePeriod,
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo resumen predefinido: $e');
-          // Continuamos con valores por defecto
-        }
-
-        // Verificar si el widget sigue montado
-        if (!mounted) return;
-
-        // Cargar platos populares para el mismo período
-        try {
-          popularDishes = await _popularDishesService.getPopularDishesDirect(
-            period: servicePeriod,
-            limit: 5,
-          );
-        } catch (e) {
-          print('⚠️ Error obteniendo platos populares predefinidos: $e');
-          // Continuamos con lista vacía
-        }
-      }
-
-      // Verificación final antes de actualizar el estado
       if (mounted) {
         setState(() {
-          _summaryData = summary;
-          _popularDishes = popularDishes;
+          _summaryData = ordersSummary;
+          _popularDishes = dishes;
           _isLoading = false;
         });
-        print('📊 Datos cargados: ${summary.toString()}');
-        print('🍽️ Platos populares: ${popularDishes.length}');
       }
     } catch (e) {
-      print('❌ Error al cargar datos: $e');
+      print('❌ Error al cargar datos del reporte: $e');
       if (mounted) {
         setState(() {
-          _isLoading = false;
           _hasError = true;
-          _errorMessage = e.toString();
-          // En caso de error, mostrar datos vacíos
-          _summaryData = {
-            'totalPedidos': 0,
-            'totalVentas': 0.0,
-            'ticketPromedio': 0.0,
-          };
-          _popularDishes = [];
+          _errorMessage = 'Error al cargar datos: $e';
+          _isLoading = false;
         });
-
-        // Evitar mostrar SnackBar si el contexto ya no está disponible
-        if (mounted && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al cargar los datos: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
       }
     }
   }
 
-  String _formatCurrency(double amount) {
-    final formatter = NumberFormat.currency(symbol: '\$');
-    return formatter.format(amount);
+  // Función auxiliar para convertir el período al formato del servicio
+  String _convertPeriodToServiceFormat(String period) {
+    switch (period) {
+      case 'hoy':
+        return 'day';
+      case 'semana':
+        return 'week';
+      case 'mes':
+        return 'month';
+      case 'año':
+        return 'year';
+      case 'personalizado':
+        return 'custom';
+      case 'todos':
+        return 'all';
+      default:
+        return 'day';
+    }
+  }
+
+  String _formatCurrency(dynamic amount) {
+    // Convertir el valor a double de manera segura
+    double value = 0.0;
+    if (amount != null) {
+      if (amount is int) {
+        value = amount.toDouble();
+      } else if (amount is double) {
+        value = amount;
+      } else if (amount is String) {
+        value = double.tryParse(amount) ?? 0.0;
+      }
+    }
+    final formatter = NumberFormat.currency(
+      symbol: '\$',
+      decimalDigits: 2,
+      locale: 'es_VE',
+    );
+    return formatter.format(value);
   }
 
   String _getReportTitle() {
+    // Si el filtro es 'todos' o 'personalizado', mostrar solo 'Reporte'
+    if (_currentPeriod == 'todos' || _currentPeriod == 'personalizado') {
+      return 'Reporte';
+    }
     switch (_currentPeriod) {
       case 'hoy':
         return 'Reporte del día';
@@ -229,19 +183,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         return 'Reporte mensual';
       case 'año':
         return 'Reporte anual';
-      case 'personalizado':
-        if (_customStartDate != null && _customEndDate != null) {
-          // Convertir las fechas de formato yyyy-MM-dd a dd/MM/yyyy para mostrar
-          final dateFormat = DateFormat('yyyy-MM-dd');
-          final displayFormat = DateFormat('dd/MM/yyyy');
-          final startDate = dateFormat.parse(_customStartDate!);
-          final endDate = dateFormat.parse(_customEndDate!);
-
-          return 'Reporte del ${displayFormat.format(startDate)} al ${displayFormat.format(endDate)}';
-        }
-        return 'Reporte personalizado';
       default:
-        return 'Reporte de ventas';
+        return 'Reporte';
     }
   }
 
@@ -320,27 +263,793 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Future<bool> _requestStoragePermission() async {
+    if (Platform.isAndroid) {
+      if (await _isAndroid10OrHigher()) {
+        // Para Android 10 y superior, necesitamos MANAGE_EXTERNAL_STORAGE
+        if (!await Permission.manageExternalStorage.isGranted) {
+          bool shouldRequest = await CustomModal.showConfirmation(
+            context: context,
+            title: 'Permisos de almacenamiento',
+            message:
+                'Para guardar el reporte, necesitamos acceso al almacenamiento. Se abrirá la configuración del dispositivo donde deberás activar "Permitir administrar todos los archivos".',
+            confirmText: 'Ir a Configuración',
+            cancelText: 'Cancelar',
+          );
+
+          if (shouldRequest) {
+            await Permission.manageExternalStorage.request();
+            if (!await Permission.manageExternalStorage.isGranted) {
+              await openAppSettings();
+            }
+          }
+          return await Permission.manageExternalStorage.isGranted;
+        }
+        return true;
+      } else {
+        // Para Android 9 y anterior
+        var status = await Permission.storage.request();
+        return status.isGranted;
+      }
+    }
+    return true; // Para iOS u otras plataformas
+  }
+
+  Future<bool> _isAndroid10OrHigher() async {
+    if (Platform.isAndroid) {
+      try {
+        final deviceInfoPlugin = DeviceInfoPlugin();
+        final androidInfo = await deviceInfoPlugin.androidInfo;
+        return androidInfo.version.sdkInt >= 29;
+      } catch (e) {
+        print('Error al obtener información del dispositivo: $e');
+        // Si hay un error al obtener la información, asumimos que es una versión anterior
+        return false;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _generateAndDownloadPDF() async {
+    try {
+      bool hasPermission = await _requestStoragePermission();
+
+      if (!hasPermission) {
+        if (!mounted) return;
+        await CustomModal.showError(
+          context: context,
+          title: 'Permiso denegado',
+          message:
+              'No se puede descargar el reporte sin los permisos necesarios.',
+        );
+        return;
+      }
+
+      // Mostrar modal de progreso
+      if (!mounted) return;
+      bool showingProgress = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return WillPopScope(
+            onWillPop: () async => false,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Generando reporte',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    'Por favor espera mientras generamos tu reporte...',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      // Crear el documento PDF
+      final pdf = pw.Document();
+
+      // Obtener el título del reporte según los filtros
+      String reportTitle = _getReportTitle();
+      String categoryFilter =
+          categoryLabels[_selectedCategory] ?? 'Todos los items';
+      String dateRange = '';
+
+      switch (_currentPeriod) {
+        case 'hoy':
+          dateRange = DateFormat('dd/MM/yyyy').format(DateTime.now());
+          break;
+        case 'semana':
+          final now = DateTime.now();
+          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfWeek)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'mes':
+          final now = DateTime.now();
+          final startOfMonth = DateTime(now.year, now.month, 1);
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfMonth)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'año':
+          final now = DateTime.now();
+          final startOfYear = DateTime(now.year, 1, 1);
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfYear)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'personalizado':
+          if (_customStartDate != null && _customEndDate != null) {
+            final startDate = DateFormat('yyyy-MM-dd').parse(_customStartDate!);
+            final endDate = DateFormat('yyyy-MM-dd').parse(_customEndDate!);
+            dateRange =
+                '${DateFormat('dd/MM/yyyy').format(startDate)} - ${DateFormat('dd/MM/yyyy').format(endDate)}';
+          }
+          break;
+      }
+
+      // Asegurar que los valores numéricos sean válidos
+      final totalPedidos = _summaryData['totalPedidos']?.toString() ?? '0';
+      final totalVentas = _summaryData['totalVentas'] ?? 0.0;
+      final ticketPromedio = _summaryData['ticketPromedio'] ?? 0.0;
+      final minTicket = _summaryData['minPedido'] ?? 0.0;
+      final maxTicket = _summaryData['maxPedido'] ?? 0.0;
+      final ventasPorHora =
+          _summaryData['ventasPorHora'] as List<dynamic>? ?? [];
+      final ventasPorCategoria =
+          _summaryData['ventasPorCategoria'] as List<dynamic>? ?? [];
+      final ticketPromedioPorDia =
+          _summaryData['ticketPromedioPorDia'] as List<dynamic>? ?? [];
+
+      // Agregar contenido al PDF
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Encabezado
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('43A047'),
+                      borderRadius: pw.BorderRadius.circular(10),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Le Brunch - Reporte',
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          categoryFilter,
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Información del período y filtros
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.grey300),
+                      borderRadius: pw.BorderRadius.circular(8),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Row(children: [pw.Text('Período: $_currentPeriod')]),
+                        pw.SizedBox(height: 5),
+                        pw.Row(children: [pw.Text('Filtro: $categoryFilter')]),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Resumen de ventas
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                      borderRadius: pw.BorderRadius.circular(10),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Resumen de ventas',
+                          style: pw.TextStyle(
+                            fontSize: 18,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 10),
+                        _buildSummaryRow('Total de pedidos', totalPedidos),
+                        _buildSummaryRow(
+                          'Total de ventas',
+                          _formatCurrency(totalVentas),
+                        ),
+                        _buildSummaryRow(
+                          'Ticket promedio',
+                          _formatCurrency(ticketPromedio),
+                        ),
+                        pw.SizedBox(height: 10),
+                        pw.Divider(color: PdfColors.grey300),
+                        pw.SizedBox(height: 10),
+                        pw.Text(
+                          'Rango de tickets',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        _buildSummaryRow(
+                          'Ticket mínimo',
+                          _formatCurrency(minTicket),
+                        ),
+                        _buildSummaryRow(
+                          'Ticket máximo',
+                          _formatCurrency(maxTicket),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Platos más vendidos
+                  if (_popularDishes.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Platos más vendidos',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          ..._popularDishes.map((dish) {
+                            final nombre = dish['nombre'] as String;
+                            final cantidadVendida =
+                                int.tryParse(
+                                  dish['cantidad_vendida'].toString(),
+                                ) ??
+                                0;
+                            final porcentaje = ((cantidadVendida /
+                                        (int.tryParse(totalPedidos) ?? 1)) *
+                                    100)
+                                .toStringAsFixed(1);
+
+                            return pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Row(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    pw.Text(nombre),
+                                    pw.Text(
+                                      '$cantidadVendida und. ($porcentaje%)',
+                                    ),
+                                  ],
+                                ),
+                                pw.SizedBox(height: 5),
+                                pw.Container(
+                                  height: 10,
+                                  child: pw.Stack(
+                                    children: [
+                                      pw.Container(
+                                        decoration: pw.BoxDecoration(
+                                          color: PdfColors.grey300,
+                                          borderRadius: pw
+                                              .BorderRadius.circular(5),
+                                        ),
+                                      ),
+                                      pw.Container(
+                                        width:
+                                            400 *
+                                            (cantidadVendida /
+                                                (int.tryParse(totalPedidos) ??
+                                                    1)),
+                                        decoration: pw.BoxDecoration(
+                                          color: PdfColors.green300,
+                                          borderRadius: pw
+                                              .BorderRadius.circular(5),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                pw.SizedBox(height: 10),
+                              ],
+                            );
+                          }).toList(),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  // Gráficos
+                  if (ventasPorHora.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ventas por hora',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildVentasPorHoraChart(ventasPorHora),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  if (ventasPorCategoria.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ventas por categoría',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildVentasPorCategoriaChart(ventasPorCategoria),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  if (ticketPromedioPorDia.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ticket promedio por día',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildTicketPromedioPorDiaChart(ticketPromedioPorDia),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+
+      // Obtener el directorio de descargas
+      Directory? dir;
+      if (Platform.isAndroid) {
+        dir = Directory('/storage/emulated/0/Download');
+        if (!await dir.exists()) {
+          dir = await getExternalStorageDirectory();
+        }
+      } else {
+        dir = await getApplicationDocumentsDirectory();
+      }
+
+      if (dir == null) {
+        throw Exception('No se pudo acceder al directorio de almacenamiento');
+      }
+
+      // Generar nombre de archivo único
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final file = File('${dir.path}/reporte_lebrunch_$timestamp.pdf');
+
+      // Guardar el archivo
+      await file.writeAsBytes(await pdf.save());
+
+      if (!mounted) return;
+      // Cerrar el modal de progreso si está abierto
+      if (showingProgress && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostrar modal de éxito
+      await CustomModal.showSuccess(
+        context: context,
+        title: '¡Reporte generado!',
+        message: 'El reporte se ha guardado exitosamente en:\n${file.path}',
+        buttonText: 'Entendido',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // Cerrar el modal de progreso si está abierto
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostrar modal de error
+      await CustomModal.showError(
+        context: context,
+        title: 'Error',
+        message: 'Ocurrió un error al generar el reporte: ${e.toString()}',
+      );
+    }
+  }
+
+  // Función auxiliar para construir filas de resumen en el PDF
+  pw.Widget _buildSummaryRow(String label, String value) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 5),
+      child: pw.Row(
+        children: [
+          pw.Text(label),
+          pw.Spacer(),
+          pw.Text(value, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  // Función para construir el gráfico de ventas por hora
+  pw.Widget _buildVentasPorHoraChart(List<dynamic> data) {
+    try {
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double totalVentas = 0.0;
+            int hora = 0;
+            try {
+              if (item['total_ventas'] is num) {
+                totalVentas = (item['total_ventas'] as num).toDouble();
+              } else {
+                totalVentas =
+                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
+              }
+              hora = int.tryParse(item['hora'].toString()) ?? 0;
+            } catch (e) {
+              print('Error procesando total_ventas: $e');
+            }
+            return {'total_ventas': totalVentas, 'hora': hora};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['total_ventas'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.green300,
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        '${item['hora']}h',
+                        style: pw.TextStyle(fontSize: 8),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ventas por hora: $e');
+      return pw.Container();
+    }
+  }
+
+  // Función para construir el gráfico de ventas por categoría
+  pw.Widget _buildVentasPorCategoriaChart(List<dynamic> data) {
+    try {
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double totalVentas = 0.0;
+            String categoria = '';
+            try {
+              if (item['total_ventas'] is num) {
+                totalVentas = (item['total_ventas'] as num).toDouble();
+              } else {
+                totalVentas =
+                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
+              }
+              categoria = item['categoria']?.toString() ?? '';
+            } catch (e) {
+              print('Error procesando datos de categoría: $e');
+            }
+            return {'categoria': categoria, 'total_ventas': totalVentas};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['total_ventas'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.green300,
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        item['categoria']?.toString() ?? '',
+                        style: pw.TextStyle(fontSize: 8),
+                      ),
+                      pw.Text(
+                        _formatCurrency(item['total_ventas'] as double? ?? 0.0),
+                        style: pw.TextStyle(fontSize: 6),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ventas por categoría: $e');
+      return pw.Container();
+    }
+  }
+
+  // Función para construir el gráfico de ticket promedio por día
+  pw.Widget _buildTicketPromedioPorDiaChart(List<dynamic> data) {
+    try {
+      final diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double ticketPromedio = 0.0;
+            try {
+              if (item['ticket_promedio'] is num) {
+                ticketPromedio = (item['ticket_promedio'] as num).toDouble();
+              } else {
+                ticketPromedio =
+                    double.tryParse(item['ticket_promedio'].toString()) ?? 0.0;
+              }
+            } catch (e) {
+              print('Error procesando ticket_promedio: $e');
+            }
+            return {'ticket_promedio': ticketPromedio};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) =>
+            math.max(max, (item['ticket_promedio'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['ticket_promedio'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.green300,
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        diasSemana[processedData.indexOf(item)],
+                        style: pw.TextStyle(fontSize: 8),
+                      ),
+                      pw.Text(
+                        _formatCurrency(
+                          item['ticket_promedio'] as double? ?? 0.0,
+                        ),
+                        style: pw.TextStyle(fontSize: 6),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ticket promedio por día: $e');
+      return pw.Container();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return BackgroundScaffold(
       appBar: AppBar(
-        title: Text(
-          _getReportTitle(),
-          style: TextStyle(
-            fontFamily: 'Lighthouse',
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.3),
-                offset: const Offset(1, 1),
-                blurRadius: 3,
+        title: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _getReportTitle(),
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withOpacity(0.3),
+                          offset: const Offset(1, 1),
+                          blurRadius: 3,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    categoryLabels[_selectedCategory] ?? 'Todos los items',
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            // Filtro de categoría a la derecha
+            DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedCategory,
+                dropdownColor: theme.primaryColor,
+                icon: const Icon(Icons.filter_list, color: Colors.white),
+                focusColor: Colors.transparent,
+                elevation: 1,
+                items:
+                    categoryLabels.entries.map((entry) {
+                      return DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Row(
+                          children: [
+                            Icon(
+                              entry.key == 'todos'
+                                  ? Icons.restaurant_menu
+                                  : entry.key == 'comida'
+                                  ? Icons.lunch_dining
+                                  : Icons.local_drink,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              entry.value,
+                              style: const TextStyle(
+                                fontFamily: 'Lighthouse',
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  if (newValue != null && newValue != _selectedCategory) {
+                    setState(() {
+                      _selectedCategory = newValue;
+                    });
+                    _loadReportData();
+                  }
+                },
+                style: const TextStyle(color: Colors.white),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ],
         ),
         automaticallyImplyLeading: true,
         backgroundColor: const Color(0xFF3ea69b),
@@ -364,69 +1073,118 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
       ),
       body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Filtro de fechas
           DateFilterBar(
             key: _filterBarKey,
             initialFilter: _currentPeriod,
-            onFilterChanged: (filter) {
+            onFilterChanged: (String period) {
               setState(() {
-                _currentPeriod = filter;
+                _currentPeriod = period;
+                if (period != 'personalizado') {
+                  _customStartDate = null;
+                  _customEndDate = null;
+                }
               });
               _loadReportData();
             },
-            onCustomDateRangeSelected: (startDate, endDate) {
+            onCustomDateRangeSelected: (String startDate, String endDate) {
               setState(() {
+                _currentPeriod = 'personalizado';
                 _customStartDate = startDate;
                 _customEndDate = endDate;
-                _currentPeriod = 'personalizado';
               });
               _loadReportData();
             },
+            showFilterLabel: true,
           ),
-
-          // Contenido principal con Expanded para evitar el desbordamiento
           Expanded(
             child:
                 _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _hasError
                     ? Center(
-                      child: CircularProgressIndicator(
-                        color: theme.colorScheme.primary,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: Colors.red,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error al cargar los datos',
+                            style: TextStyle(
+                              fontFamily: 'Lighthouse',
+                              fontSize: 18,
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _errorMessage,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Lighthouse',
+                              fontSize: 14,
+                              color: theme.colorScheme.error.withOpacity(0.8),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _loadReportData,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text(
+                              'Reintentar',
+                              style: TextStyle(fontFamily: 'Lighthouse'),
+                            ),
+                          ),
+                        ],
                       ),
                     )
                     : RefreshIndicator(
                       onRefresh: _loadReportData,
-                      color: theme.colorScheme.primary,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16.0),
+                      child: SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          // Tarjetas de estadísticas
-                          _buildStatisticsCards(theme),
-
-                          const SizedBox(height: 16),
-
-                          // Distribución de pedidos (platos populares)
-                          _buildDistributionSection(theme),
-
-                          const SizedBox(height: 16),
-
-                          // Botón para ver historial de pedidos
-                          ElevatedButton.icon(
-                            onPressed: _navigateToOrderHistory,
-                            icon: const Icon(Icons.history),
-                            label: const Text('Ver historial de pedidos'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 48),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildStatisticsCards(theme),
+                              const SizedBox(height: 16),
+                              _buildDistributionSection(theme),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _navigateToOrderHistory,
+                                icon: const Icon(Icons.history),
+                                label: const Text('Ver historial de pedidos'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                onPressed: _generateAndDownloadPDF,
+                                icon: const Icon(Icons.download),
+                                label: const Text('Descargar reporte'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.secondary,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
           ),
@@ -509,12 +1267,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildStatCard(
-          theme,
-          'Ticket promedio',
-          _formatCurrency(ticketPromedio),
-          Icons.point_of_sale,
-          isWide: true,
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                theme,
+                'Ticket promedio',
+                _formatCurrency(ticketPromedio),
+                Icons.point_of_sale,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMinMaxCard(
+                theme,
+                (_summaryData['minPedido'] as num?)?.toDouble() ?? 0.0,
+                (_summaryData['maxPedido'] as num?)?.toDouble() ?? 0.0,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -572,44 +1343,94 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Widget _buildMinMaxCard(ThemeData theme, double minValue, double maxValue) {
+    return SizedBox(
+      height: 100,
+      child: Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.analytics, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Min/Max',
+                    style: theme.textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Column(
+                    children: [
+                      Text('Min', style: theme.textTheme.bodySmall),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _formatCurrency(minValue),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                            fontFamily: 'MADE TOMMY',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(height: 30, width: 1, color: theme.dividerColor),
+                  Column(
+                    children: [
+                      Text('Max', style: theme.textTheme.bodySmall),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _formatCurrency(maxValue),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                            fontFamily: 'MADE TOMMY',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDistributionSection(ThemeData theme) {
     // Verificar que haya datos de pedidos
     final hayPedidos = (_summaryData['totalPedidos'] ?? 0) > 0;
 
-    // Si hay pedidos, mostrar el gráfico siempre
-    if (hayPedidos) {
-      // Incluso si no hay platos populares, intentar mostrar el gráfico
-      return _buildPopularDishesChart(theme);
-    }
+    return Column(
+      children: [
+        // Gráfico de platos populares existente
+        if (hayPedidos) _buildPopularDishesChart(theme),
 
-    // Mensaje para cuando no hay pedidos
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.restaurant_menu, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text('Platos más vendidos', style: theme.textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Text(
-                  'No hay pedidos en este período para mostrar distribución',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+        // Nuevos gráficos
+        if (hayPedidos) ...[
+          const SizedBox(height: 16),
+          _buildSalesByHourChart(theme),
+          const SizedBox(height: 16),
+          _buildCategorySalesChart(theme),
+          const SizedBox(height: 16),
+          _buildAverageTicketByDayChart(theme),
+        ],
+      ],
     );
   }
 
@@ -673,7 +1494,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
     // Calcular el total de ventas para porcentajes
     int totalVentas = 0;
     for (var dish in _popularDishes) {
-      totalVentas += dish['cantidad_vendida'] as int;
+      // Manejar diferentes tipos de datos para cantidad_vendida
+      var cantidadVendida = dish['cantidad_vendida'];
+      if (cantidadVendida is int) {
+        totalVentas += cantidadVendida;
+      } else if (cantidadVendida is double) {
+        totalVentas += cantidadVendida.toInt();
+      } else if (cantidadVendida is String) {
+        totalVentas += int.tryParse(cantidadVendida) ?? 0;
+      }
     }
 
     // Si no hay ventas registradas, mostrar gráfico con proporciones iguales
@@ -863,13 +1692,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     child: CustomPaint(
                       size: const Size(180, 180),
                       painter: PieChartPainter(
-                        _popularDishes
-                            .map(
-                              (dish) =>
-                                  (dish['cantidad_vendida'] as int) /
-                                  totalVentas,
-                            )
-                            .toList(),
+                        _popularDishes.map((dish) {
+                          var cantidadVendida = dish['cantidad_vendida'];
+                          int cantidad = 0;
+                          if (cantidadVendida is int) {
+                            cantidad = cantidadVendida;
+                          } else if (cantidadVendida is double) {
+                            cantidad = cantidadVendida.toInt();
+                          } else if (cantidadVendida is String) {
+                            cantidad = int.tryParse(cantidadVendida) ?? 0;
+                          }
+                          return cantidad / totalVentas;
+                        }).toList(),
                         chartColors,
                       ),
                     ),
@@ -885,9 +1719,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         math.min(_popularDishes.length, 5),
                         (index) {
                           final dish = _popularDishes[index];
-                          final percent = ((dish['cantidad_vendida'] as int) /
-                                  totalVentas *
-                                  100)
+                          var cantidadVendida = dish['cantidad_vendida'];
+                          int cantidad = 0;
+                          if (cantidadVendida is int) {
+                            cantidad = cantidadVendida;
+                          } else if (cantidadVendida is double) {
+                            cantidad = cantidadVendida.toInt();
+                          } else if (cantidadVendida is String) {
+                            cantidad = int.tryParse(cantidadVendida) ?? 0;
+                          }
+                          final percent = (cantidad / totalVentas * 100)
                               .toStringAsFixed(1);
 
                           return Padding(
@@ -931,7 +1772,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
             // Lista detallada
             ...List.generate(math.min(_popularDishes.length, 5), (index) {
               final dish = _popularDishes[index];
-              final ventas = dish['cantidad_vendida'] as int;
+              var cantidadVendida = dish['cantidad_vendida'];
+              int ventas = 0;
+              if (cantidadVendida is int) {
+                ventas = cantidadVendida;
+              } else if (cantidadVendida is double) {
+                ventas = cantidadVendida.toInt();
+              } else if (cantidadVendida is String) {
+                ventas = int.tryParse(cantidadVendida) ?? 0;
+              }
               final percent = (ventas / totalVentas * 100).toStringAsFixed(1);
               final color = chartColors[index % chartColors.length];
 
@@ -988,6 +1837,573 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildSalesByHourChart(ThemeData theme) {
+    final ventasPorHora = _summaryData['ventasPorHora'] as List<dynamic>? ?? [];
+
+    // Convertir los datos a spots para el gráfico
+    final spots =
+        ventasPorHora.map((venta) {
+          // Convertir hora de manera segura
+          final horaValue = venta['hora'];
+          final hora =
+              horaValue is int ? horaValue : int.parse(horaValue.toString());
+
+          // Convertir total_ventas de manera segura
+          final ventasValue = venta['total_ventas'];
+          final totalVentas =
+              ventasValue is num
+                  ? ventasValue.toDouble()
+                  : double.parse(ventasValue.toString());
+
+          return FlSpot(hora.toDouble(), totalVentas);
+        }).toList();
+
+    // Encontrar el valor máximo para el eje Y
+    final maxY =
+        spots.isEmpty
+            ? 100.0
+            : spots.map((spot) => spot.y).reduce(math.max) * 1.2;
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.access_time, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Ventas por hora', style: theme.textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child:
+                  spots.isEmpty
+                      ? const Center(child: Text('No hay datos para mostrar'))
+                      : LineChart(
+                        LineChartData(
+                          gridData: FlGridData(show: false),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 40,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '\$${value.toInt()}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '${value.toInt()}h',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                                interval: 4,
+                              ),
+                            ),
+                            rightTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: true),
+                          lineBarsData: [
+                            LineChartBarData(
+                              spots: spots,
+                              isCurved: true,
+                              color: theme.colorScheme.primary,
+                              barWidth: 3,
+                              isStrokeCapRound: true,
+                              dotData: FlDotData(show: false),
+                              belowBarData: BarAreaData(
+                                show: true,
+                                color: theme.colorScheme.primary.withOpacity(
+                                  0.1,
+                                ),
+                              ),
+                            ),
+                          ],
+                          minX: 0,
+                          maxX: 23,
+                          minY: 0,
+                          maxY: maxY,
+                        ),
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategorySalesChart(ThemeData theme) {
+    final ventasPorCategoria =
+        _summaryData['ventasPorCategoria'] as List<dynamic>? ?? [];
+
+    // Convertir los datos para el gráfico de manera segura
+    final barGroups =
+        ventasPorCategoria.asMap().entries.map((entry) {
+          final venta = entry.value;
+          try {
+            final totalVentas = double.parse(venta['total_ventas'].toString());
+            return BarChartGroupData(
+              x: entry.key,
+              barRods: [
+                BarChartRodData(
+                  toY: totalVentas,
+                  color: theme.colorScheme.primary,
+                  width: 20,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            );
+          } catch (e) {
+            print('Error procesando venta: $venta');
+            return BarChartGroupData(
+              x: entry.key,
+              barRods: [
+                BarChartRodData(
+                  toY: 0,
+                  color: theme.colorScheme.primary,
+                  width: 20,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            );
+          }
+        }).toList();
+
+    // Encontrar el valor máximo para el eje Y de manera segura
+    final maxY =
+        ventasPorCategoria.isEmpty
+            ? 100.0
+            : (ventasPorCategoria
+                    .map((venta) {
+                      try {
+                        return double.parse(venta['total_ventas'].toString());
+                      } catch (e) {
+                        return 0.0;
+                      }
+                    })
+                    .reduce((a, b) => math.max(a, b)) *
+                1.2);
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.category, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Ventas por categoría',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300, // Aumentamos la altura para dar más espacio
+              child:
+                  ventasPorCategoria.isEmpty
+                      ? const Center(child: Text('No hay datos para mostrar'))
+                      : BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: maxY,
+                          barTouchData: BarTouchData(
+                            enabled: true,
+                            touchTooltipData: BarTouchTooltipData(
+                              tooltipBgColor: Colors.blueGrey,
+                              getTooltipItem: (
+                                group,
+                                groupIndex,
+                                rod,
+                                rodIndex,
+                              ) {
+                                return BarTooltipItem(
+                                  '\$${rod.toY.toStringAsFixed(2)}',
+                                  const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 40,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '\$${value.toInt()}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 50,
+                                getTitlesWidget: (value, meta) {
+                                  if (value.toInt() >= 0 &&
+                                      value.toInt() <
+                                          ventasPorCategoria.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 55.0,
+                                      ),
+                                      child: Transform.rotate(
+                                        angle: -math.pi / 4,
+                                        child: SizedBox(
+                                          width: 100,
+                                          child: Text(
+                                            ventasPorCategoria[value
+                                                    .toInt()]['categoria']
+                                                as String,
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 11,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const Text('');
+                                },
+                              ),
+                            ),
+                            rightTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(show: false),
+                          barGroups: barGroups,
+                        ),
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAverageTicketByDayChart(ThemeData theme) {
+    final ticketPromedioPorDia =
+        _summaryData['ticketPromedioPorDia'] as List<dynamic>? ?? [];
+
+    print('📊 Datos de ticket promedio por día: $ticketPromedioPorDia');
+
+    // Convertir los datos para el gráfico
+    final barGroups = List.generate(7, (index) {
+      try {
+        final diaData = ticketPromedioPorDia.firstWhere((dia) {
+          try {
+            final diaSemanaValue = dia['dia_semana'];
+            print(
+              '🔍 Valor de día semana para índice $index: $diaSemanaValue (tipo: ${diaSemanaValue.runtimeType})',
+            );
+
+            int diaSemana;
+            if (diaSemanaValue is int) {
+              diaSemana = diaSemanaValue;
+            } else if (diaSemanaValue is String) {
+              diaSemana = int.parse(diaSemanaValue);
+            } else {
+              print(
+                '⚠️ Tipo de dato no esperado para dia_semana: ${diaSemanaValue.runtimeType}',
+              );
+              return false;
+            }
+
+            return diaSemana == index;
+          } catch (e) {
+            print('❌ Error procesando día de la semana: $e');
+            return false;
+          }
+        }, orElse: () => {'ticket_promedio': '0.0'});
+
+        print('📊 Datos encontrados para día $index: $diaData');
+
+        double ticketPromedio;
+        try {
+          final rawTicket = diaData['ticket_promedio'];
+          if (rawTicket is num) {
+            ticketPromedio = rawTicket.toDouble();
+          } else {
+            ticketPromedio = double.parse(rawTicket.toString());
+          }
+        } catch (e) {
+          print('❌ Error convirtiendo ticket promedio: $e');
+          ticketPromedio = 0.0;
+        }
+
+        return BarChartGroupData(
+          x: index,
+          barRods: [
+            BarChartRodData(
+              toY: ticketPromedio,
+              color: theme.colorScheme.primary,
+              width: 20,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ],
+        );
+      } catch (e) {
+        print('❌ Error general procesando día $index: $e');
+        return BarChartGroupData(
+          x: index,
+          barRods: [
+            BarChartRodData(
+              toY: 0,
+              color: theme.colorScheme.primary,
+              width: 20,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ],
+        );
+      }
+    });
+
+    // Encontrar el valor máximo para el eje Y de manera segura
+    double maxY;
+    try {
+      if (ticketPromedioPorDia.isEmpty) {
+        maxY = 50.0;
+      } else {
+        final valores =
+            ticketPromedioPorDia.map((dia) {
+              try {
+                final rawTicket = dia['ticket_promedio'];
+                if (rawTicket is num) {
+                  return rawTicket.toDouble();
+                } else {
+                  return double.parse(rawTicket.toString());
+                }
+              } catch (e) {
+                print('❌ Error convirtiendo valor para maxY: $e');
+                return 0.0;
+              }
+            }).toList();
+        maxY = valores.reduce(math.max) * 1.2;
+      }
+    } catch (e) {
+      print('❌ Error calculando maxY: $e');
+      maxY = 50.0;
+    }
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.calendar_today, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Ticket promedio por día',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child:
+                  ticketPromedioPorDia.isEmpty
+                      ? const Center(child: Text('No hay datos para mostrar'))
+                      : BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.center,
+                          maxY: maxY,
+                          barTouchData: BarTouchData(enabled: false),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 40,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '\$${value.toInt()}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  const dias = [
+                                    'Lun',
+                                    'Mar',
+                                    'Mié',
+                                    'Jue',
+                                    'Vie',
+                                    'Sáb',
+                                    'Dom',
+                                  ];
+                                  if (value.toInt() >= 0 &&
+                                      value.toInt() < dias.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: Text(
+                                        dias[value.toInt()],
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const Text('');
+                                },
+                              ),
+                            ),
+                            rightTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            topTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          gridData: FlGridData(show: false),
+                          barGroups: barGroups,
+                        ),
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Procesar los datos cuando se reciben
+  void _processSummaryData(Map<String, dynamic> data) {
+    if (data['ventasPorCategoria'] != null) {
+      final List<dynamic> rawData = data['ventasPorCategoria'];
+      data['ventasPorCategoria'] =
+          rawData.map((venta) {
+            return {
+              ...venta,
+              'total_ventas': double.parse(venta['total_ventas'].toString()),
+            };
+          }).toList();
+    }
+
+    if (data['ventasPorHora'] != null) {
+      final List<dynamic> rawData = data['ventasPorHora'];
+      data['ventasPorHora'] =
+          rawData.map((venta) {
+            return {
+              ...venta,
+              'hora': int.parse(venta['hora'].toString()),
+              'total_ventas': double.parse(venta['total_ventas'].toString()),
+            };
+          }).toList();
+    }
+
+    _summaryData = data;
+  }
+
+  // Modificar el método que obtiene los datos
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      String? servicePeriod = _convertPeriodToServiceFormat(_currentPeriod);
+      String? selectedCategory =
+          _selectedCategory == 'todos' ? null : _selectedCategory;
+
+      print(
+        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod), categoría: $selectedCategory',
+      );
+
+      // Obtener resumen de pedidos
+      final ordersSummary = await _ordersService.getOrdersSummary(
+        period: servicePeriod,
+        customStartDate: _customStartDate,
+        customEndDate: _customEndDate,
+        categoria: selectedCategory,
+      );
+
+      print('📊 Resumen de pedidos recibido: $ordersSummary');
+
+      // Obtener platos populares
+      final dishes = await _popularDishesService.getPopularDishesDirect(
+        period: servicePeriod,
+        startDate: _customStartDate,
+        endDate: _customEndDate,
+        categoria: selectedCategory,
+      );
+
+      print('📊 Platos populares recibidos: ${dishes.length}');
+
+      if (mounted) {
+        setState(() {
+          _summaryData = ordersSummary;
+          _popularDishes = dishes;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error al cargar datos del reporte: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Error al cargar datos: $e';
+          _isLoading = false;
+        });
+      }
+    }
   }
 }
 

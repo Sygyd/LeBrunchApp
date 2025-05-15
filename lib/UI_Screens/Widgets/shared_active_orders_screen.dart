@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../Api_services/pedidos/orders_service.dart';
 import 'order_detail_card.dart';
+import 'custom_modal.dart';
 
 /// Pantalla de Órdenes Activas compartida que puede ser usada tanto por Cocinero como por Barista
 /// Personalizable con parámetros según el rol
@@ -57,21 +58,17 @@ class _SharedActiveOrdersScreenState extends State<SharedActiveOrdersScreen> {
       );
 
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Estado actualizado a: $newStatus'),
-            backgroundColor: Colors.green,
-          ),
+        await CustomModal.showSuccess(
+          context: context,
+          message: 'Estado actualizado a: $newStatus',
         );
         widget.onRefresh();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al actualizar estado: $e'),
-            backgroundColor: Colors.red,
-          ),
+        await CustomModal.showError(
+          context: context,
+          message: 'Error al actualizar estado: $e',
         );
       }
     }

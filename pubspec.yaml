@@ -27,8 +27,13 @@ dependencies:
   google_generative_ai: ^0.4.6
   flutter_dotenv: ^5.1.0
   calendar_date_picker2: ^2.0.0
+  fl_chart: ^0.66.2
+  pdf: ^3.10.8
+  path_provider: ^2.1.2
+  device_info_plus: ^9.1.1
   flutter_localizations:
     sdk: flutter
+  provider: ^6.1.5
 
 dev_dependencies:
   flutter_test:

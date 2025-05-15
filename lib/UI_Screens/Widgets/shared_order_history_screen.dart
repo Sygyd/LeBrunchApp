@@ -200,8 +200,8 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
           break;
         case 'todos':
         default:
-          // No añadir filtro de fecha
-          whereClause = "";
+          // Para 'todos', asegurarnos de incluir solo pedidos completados y cancelados
+          whereClause = "AND p.estado IN ('completado', 'cancelado')";
           break;
       }
 

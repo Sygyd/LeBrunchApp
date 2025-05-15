@@ -13,7 +13,9 @@ class PopularDishesService {
         dotenv.env['NODE_SERVER_IP'] ??
         '192.168.1.121';
     final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-    return 'http://$serverIp:$serverPort';
+    final baseUrl = 'http://$serverIp:$serverPort';
+    print('🌐 URL base del servidor: $baseUrl');
+    return baseUrl;
   }
 
   // Obtener los platos más populares con filtros opcionales
@@ -141,17 +143,42 @@ class PopularDishesService {
     return dishes;
   }
 
-  // Método alternativo para obtener platos populares directamente de la base de datos
+  // Método para asegurar que la URL de la imagen esté completa
+  Future<String> _ensureFullImageUrl(String? imageUrl) async {
+    if (imageUrl == null || imageUrl.isEmpty) return '';
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))
+      return imageUrl;
+
+    final baseUrl = await _getBaseUrl();
+    return '$baseUrl/$imageUrl';
+  }
+
+  // Método para procesar los platos y asegurar URLs completas
+  Future<List<Map<String, dynamic>>> _processDishesWithFullUrls(
+    List<Map<String, dynamic>> dishes,
+  ) async {
+    List<Map<String, dynamic>> processedDishes = [];
+    for (var dish in dishes) {
+      var processedDish = Map<String, dynamic>.from(dish);
+      processedDish['imagen_url'] = await _ensureFullImageUrl(
+        dish['imagen_url'],
+      );
+      processedDishes.add(processedDish);
+    }
+    return processedDishes;
+  }
+
+  // Método para obtener los platos más vendidos con filtros opcionales
   Future<List<Map<String, dynamic>>> getPopularDishesDirect({
-    String? period, // 'day', 'week', 'month', 'year'
+    String? period,
     String? startDate,
     String? endDate,
-    String? category,
-    int limit = 20,
+    int limit = 5,
+    String? categoria,
   }) async {
     try {
       print(
-        'Solicitud de platos populares: periodo=$period, categoría=$category, fechas=$startDate a $endDate',
+        'Solicitud de platos populares: periodo=$period, categoría=$categoria, fechas=$startDate a $endDate',
       );
 
       // Convertir el período a fechas si no se proporcionaron fechas específicas
@@ -199,132 +226,75 @@ class PopularDishesService {
           AVG(pd.precio_unitario) as precio_promedio
         FROM 
           pedido_detalle pd
-        JOIN 
+        INNER JOIN 
           pedidos p ON pd.idpedido = p.idpedido
+        INNER JOIN 
+          menu m ON pd.idplato = m.idplato
         WHERE 
           p.estado = 'completado'
-      ''';
-
-      // Añadir filtros de fecha si se proporcionan
-      List<String> conditions = [];
-
-      if (startDate != null) {
-        conditions.add("DATE(p.fecha) >= '$startDate'::date");
-      }
-
-      if (endDate != null) {
-        conditions.add("DATE(p.fecha) <= '$endDate'::date");
-      }
-
-      if (conditions.isNotEmpty) {
-        sql += " AND " + conditions.join(" AND ");
-      }
-
-      // Agrupar resultados por plato
-      sql += '''
-        GROUP BY pd.idplato
+          ${startDate != null ? "AND p.fecha >= '$startDate'::date" : ''}
+          ${endDate != null ? "AND p.fecha <= '$endDate'::date + interval '1 day'" : ''}
+          ${categoria == 'comida' ? "AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')" : ''}
+          ${categoria == 'bebida' ? "AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')" : ''}
+        GROUP BY 
+          pd.idplato
       )
       SELECT 
-        m.idplato, 
-        m.nombre, 
+        m.idplato,
+        m.nombre,
         m.categoria,
         m.precio,
-        m.imagen_url,
-        vp.cantidad_vendida,
-        vp.precio_promedio
+        COALESCE(vp.cantidad_vendida, 0) as cantidad_vendida,
+        COALESCE(vp.precio_promedio, m.precio) as precio_promedio,
+        m.imagen_url
       FROM 
         menu m
-      JOIN 
+      LEFT JOIN 
         ventas_platos vp ON m.idplato = vp.idplato
-      ''';
-
-      // Añadir filtro de categoría si se proporciona
-      if (category != null &&
-          category.isNotEmpty &&
-          category.toLowerCase() != 'todas') {
-        sql += " AND LOWER(m.categoria) = LOWER('$category')";
-      }
-
-      // Ordenar y limitar resultados
-      sql += '''
-      ORDER BY vp.cantidad_vendida DESC, m.nombre ASC
+      WHERE 
+        ${categoria == 'comida'
+          ? "LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')"
+          : categoria == 'bebida'
+          ? "m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')"
+          : '1=1'}
+        AND COALESCE(vp.cantidad_vendida, 0) > 0
+      ORDER BY 
+        vp.cantidad_vendida DESC NULLS LAST
       LIMIT $limit
       ''';
 
-      print('Consulta SQL optimizada: $sql');
+      print('📊 Ejecutando consulta SQL: $sql');
 
-      // Crear el objeto query para la consulta
-      final query = {'query': sql};
-
-      // Ejecutar la consulta directa
+      // Obtener la URL base del servidor
       final baseUrl = await _getBaseUrl();
-      final uri = Uri.parse('$baseUrl/db/query');
 
+      // Realizar la consulta a través del endpoint de consulta directa
       final response = await http.post(
-        uri,
+        Uri.parse('$baseUrl/db/query'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(query),
+        body: jsonEncode({'query': sql}),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-
-        if (data['result'] != null && data['result'].isNotEmpty) {
+        if (data['result'] != null) {
           final List<Map<String, dynamic>> dishes =
               List<Map<String, dynamic>>.from(data['result']);
+          print('✅ Se obtuvieron ${dishes.length} platos populares');
 
-          print('Platos obtenidos directamente de BD: ${dishes.length}');
-
-          // Formatear los resultados y asegurar que todos los campos estén presentes
-          final formattedDishes =
-              dishes
-                  .map(
-                    (dish) => {
-                      'idplato': dish['idplato'],
-                      'nombre': dish['nombre'] ?? 'Plato sin nombre',
-                      'categoria': dish['categoria'] ?? 'Sin categoría',
-                      'imagen_url': dish['imagen_url'] ?? '',
-                      'precio': _parseDoubleSafely(dish['precio']),
-                      'cantidad_vendida': _parseIntSafely(
-                        dish['cantidad_vendida'],
-                      ),
-                      'precio_promedio': _parseDoubleSafely(
-                        dish['precio_promedio'],
-                      ),
-                    },
-                  )
-                  .toList();
-
-          // Si la lista está vacía, mostrar mensaje de que no hay ventas
-          if (formattedDishes.isEmpty) {
-            print(
-              'No se encontraron platos con ventas en el período seleccionado',
-            );
-
-            // Verificar si se aplicaron filtros específicos
-            if (category != null || startDate != null || endDate != null) {
-              // Mostrar mensaje de que no hay ventas con esos filtros
-              return [];
-            } else {
-              // Para la vista general (sin filtros), mostrar algunos platos del menú
-              return await _getTopMenuItems(limit);
-            }
-          }
-
-          return formattedDishes;
-        } else {
-          print('No se encontraron platos populares en la consulta directa');
-          return await _getTopMenuItems(limit);
+          // Procesar las URLs de las imágenes
+          final processedDishes = await _processDishesWithFullUrls(dishes);
+          return processedDishes;
         }
-      } else {
-        print(
-          'Error en consulta directa: ${response.statusCode} - ${response.body}',
-        );
-        return await _getTopMenuItems(limit);
       }
+
+      print(
+        '❌ Error al obtener platos populares: ${response.statusCode} - ${response.body}',
+      );
+      return [];
     } catch (e) {
-      print('⚠️ Error en consulta directa de platos populares: $e');
-      return await _getTopMenuItems(limit);
+      print('⚠️ Error al obtener platos populares: $e');
+      return [];
     }
   }
 

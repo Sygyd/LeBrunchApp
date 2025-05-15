@@ -1,6 +1,7 @@
 const express = require("express");
 const pool = require("./db");
 const router = express.Router();
+const { FOOD_CATEGORIES, DRINK_CATEGORIES } = require("./constants");
 
 // Obtener todos los pedidos con filtros opcionales
 router.get("/pedidos", async (req, res) => {
@@ -369,54 +370,79 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
     
     // Construir la consulta base
     let query = `
-      SELECT 
-        m.idplato, 
-        m.nombre, 
-        m.imagen_url,
-        SUM(pd.cantidad) as cantidad_vendida,
-        AVG(pd.precio_unitario) as precio_promedio
-      FROM 
-        pedido_detalle pd
-      JOIN 
-        menu m ON pd.idplato = m.idplato
-      JOIN 
-        pedidos p ON pd.idpedido = p.idpedido
-      WHERE 
-        p.estado = 'completado'
+      WITH ventas_platos AS (
+        SELECT 
+          pd.idplato,
+          SUM(pd.cantidad) as cantidad_vendida,
+          AVG(pd.precio_unitario) as precio_promedio
+        FROM 
+          pedido_detalle pd
+        INNER JOIN 
+          pedidos p ON pd.idpedido = p.idpedido
+        INNER JOIN 
+          menu m ON pd.idplato = m.idplato
+        WHERE 
+          p.estado = 'completado'
     `;
-    
-    // Agregar filtros de fecha si se proporcionan
-    const queryParams = [limit];
+
+    const queryParams = [];
     let paramCounter = 1;
-    
+
+    // Agregar filtros de fecha
     if (startDate) {
-      paramCounter++;
       queryParams.push(startDate);
-      query += ` AND DATE(p.fecha) >= $${paramCounter}::date`;
+      query += ` AND p.fecha >= $${paramCounter}::date`;
+      paramCounter++;
     }
     
     if (endDate) {
-      paramCounter++;
       queryParams.push(endDate);
-      query += ` AND DATE(p.fecha) <= $${paramCounter}::date`;
-    }
-    
-    // Agregar filtro de categoría si se proporciona
-    if (categoria) {
+      query += ` AND p.fecha <= $${paramCounter}::date + interval '1 day'`;
       paramCounter++;
-      queryParams.push(categoria);
-      query += ` AND LOWER(m.categoria) = LOWER($${paramCounter})`;
     }
-    
-    // Completar la consulta con el agrupamiento, ordenamiento y límite
+
+    // Agregar filtro de categoría
+    if (categoria === 'comida') {
+      query += ` AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')`;
+    } else if (categoria === 'bebida') {
+      query += ` AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')`;
+    }
+
+    // Completar la primera parte de la consulta
     query += `
-      GROUP BY 
-        m.idplato, m.nombre, m.imagen_url
-      ORDER BY 
-        cantidad_vendida DESC
-      LIMIT $1
+        GROUP BY 
+          pd.idplato
+      )
+      SELECT 
+        m.idplato,
+        m.nombre,
+        m.categoria,
+        m.precio,
+        COALESCE(vp.cantidad_vendida, 0) as cantidad_vendida,
+        COALESCE(vp.precio_promedio, m.precio) as precio_promedio
+      FROM 
+        menu m
+      LEFT JOIN 
+        ventas_platos vp ON m.idplato = vp.idplato
+      WHERE 
+        COALESCE(vp.cantidad_vendida, 0) > 0
     `;
-    
+
+    // Agregar el mismo filtro de categoría en la segunda parte
+    if (categoria === 'comida') {
+      query += ` AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')`;
+    } else if (categoria === 'bebida') {
+      query += ` AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')`;
+    }
+
+    // Agregar ordenamiento y límite
+    queryParams.push(limit);
+    query += `
+      ORDER BY 
+        vp.cantidad_vendida DESC NULLS LAST
+      LIMIT $${paramCounter}
+    `;
+
     console.log('📊 Consulta de platos populares:', query);
     console.log('📊 Parámetros:', queryParams);
     
@@ -481,247 +507,202 @@ router.get("/pedidos/stats/ventas-por-hora", async (req, res) => {
 // Obtener resumen de pedidos por período
 router.get("/pedidos/resumen", async (req, res) => {
   try {
-    const { period, startDate, endDate } = req.query;
+    const { period, startDate, endDate, categoria } = req.query;
     
-    console.log(`📊 Solicitud de resumen de pedidos: período=${period || 'N/A'}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}`);
+    console.log(`📊 Solicitud de resumen de pedidos: período=${period || 'N/A'}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}, categoría=${categoria || 'todos'}`);
 
-    // Para pruebas, vamos a incluir todas las fechas a menos que se especifique un rango
+    // Determinar fechas según el periodo
     let fechaInicio, fechaFin;
-
-    if (startDate && endDate) {
-      // Si se proporcionan fechas específicas, usarlas
+    const hoy = new Date();
+    
+    // Si se proporcionan fechas futuras, mostrar datos históricos de los últimos 30 días
+    if (startDate) {
       fechaInicio = new Date(`${startDate}T00:00:00`);
-      fechaFin = new Date(`${endDate}T23:59:59`);
-      console.log('📅 Usando rango de fechas proporcionado');
-    } else {
-      // Si no, determinar fechas según el periodo
-      const hoy = new Date();
-      
-      if (!period || period === 'all') {
-        // Si no se especifica periodo o es 'all', usar rango amplio
-        fechaInicio = new Date('2020-01-01');
-        fechaFin = new Date('2030-12-31');
-        console.log('📅 Usando rango amplio para datos');
-      } else {
-        // En producción, usar el período solicitado
-        switch (period) {
-          case 'day':
-            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-            fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
-            break;
-          case 'week':
-            const diaSemana = hoy.getDay() || 7;
-            const diasAtras = diaSemana - 1;
-            fechaInicio = new Date(hoy);
-            fechaInicio.setDate(hoy.getDate() - diasAtras);
-            fechaInicio.setHours(0, 0, 0, 0);
-            fechaFin = new Date(hoy);
-            fechaFin.setHours(23, 59, 59, 999);
-            break;
-          case 'month':
-            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-            fechaFin = new Date(hoy);
-            fechaFin.setHours(23, 59, 59, 999);
-            break;
-          case 'year':
-            fechaInicio = new Date(hoy.getFullYear(), 0, 1);
-            fechaFin = new Date(hoy);
-            fechaFin.setHours(23, 59, 59, 999);
-            break;
-          case 'custom':
-            return res.status(400).json({ 
-              error: "Se requieren fechas de inicio y fin para el período personalizado" 
-            });
-          default:
-            // Fallback a día actual si el periodo no es reconocido
-            fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-            fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59);
-            console.log(`⚠️ Periodo no reconocido: "${period}", usando día actual como fallback`);
-        }
+      if (fechaInicio > hoy) {
+        console.log('⚠️ Fecha de inicio futura detectada, ajustando a los últimos 30 días');
+        fechaInicio = new Date(hoy);
+        fechaInicio.setDate(hoy.getDate() - 30);
       }
     }
     
-    const formatoFecha = fecha => fecha.toISOString().split('T')[0];
-    console.log(`📅 Rango de fechas calculado: ${formatoFecha(fechaInicio)} a ${formatoFecha(fechaFin)}`);
-    
-    // 1. Consultar total de pedidos y ventas en el período
+    if (endDate) {
+      fechaFin = new Date(`${endDate}T23:59:59`);
+      if (fechaFin > hoy) {
+        console.log('⚠️ Fecha fin futura detectada, ajustando al día actual');
+        fechaFin = new Date(hoy);
+        fechaFin.setHours(23, 59, 59, 999);
+      }
+    } else {
+      fechaFin = new Date(hoy);
+      fechaFin.setHours(23, 59, 59, 999);
+    }
+
+    // Si no se proporcionaron fechas, usar el periodo
+    if (!startDate && !endDate) {
+      switch (period) {
+        case 'day':
+          fechaInicio = new Date(hoy);
+          fechaInicio.setHours(0, 0, 0, 0);
+          break;
+        case 'week':
+          fechaInicio = new Date(hoy);
+          fechaInicio.setDate(hoy.getDate() - 7);
+          break;
+        case 'month':
+          fechaInicio = new Date(hoy);
+          fechaInicio.setMonth(hoy.getMonth() - 1);
+          break;
+        case 'year':
+          fechaInicio = new Date(hoy);
+          fechaInicio.setFullYear(hoy.getFullYear() - 1);
+          break;
+        default:
+          fechaInicio = new Date(hoy);
+          fechaInicio.setDate(hoy.getDate() - 30); // Por defecto mostrar últimos 30 días
+          fechaInicio.setHours(0, 0, 0, 0);
+      }
+    }
+
+    console.log(`📅 Fechas ajustadas: inicio=${fechaInicio.toISOString()}, fin=${fechaFin.toISOString()}`);
+
+    // Condición para filtrar por categoría
+    const categoriaCondition = categoria && categoria !== 'todos'
+      ? `AND LOWER(m.tipo) = '${categoria.toLowerCase()}'`
+      : '';
+
+    // Consulta para el resumen general
     const resumenQuery = `
+      WITH pedidos_totales AS (
+        SELECT 
+          p.idpedido,
+          SUM(pd.cantidad * pd.precio_unitario) as total_pedido
+        FROM 
+          pedidos p
+          INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+          INNER JOIN menu m ON pd.idplato = m.idplato
+        WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          AND p.estado = 'completado'
+          ${categoriaCondition}
+        GROUP BY 
+          p.idpedido
+      )
       SELECT 
+        COUNT(DISTINCT pt.idpedido) as total_pedidos,
+        COALESCE(SUM(pt.total_pedido), 0) as total_ventas,
+        COALESCE(MIN(pt.total_pedido), 0) as min_pedido,
+        COALESCE(MAX(pt.total_pedido), 0) as max_pedido
+      FROM 
+        pedidos_totales pt`;
+
+    // Consulta para ventas por hora
+    const ventasPorHoraQuery = `
+      SELECT 
+        EXTRACT(HOUR FROM p.fecha)::integer as hora,
         COUNT(DISTINCT p.idpedido) as total_pedidos,
         COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
       FROM 
         pedidos p
-      LEFT JOIN 
-        pedido_detalle pd ON p.idpedido = pd.idpedido
+        INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+        INNER JOIN menu m ON pd.idplato = m.idplato
       WHERE 
         p.fecha >= $1 AND p.fecha <= $2
         AND p.estado = 'completado'
-    `;
-    
-    console.log(`📊 Ejecutando consulta de resumen: ${resumenQuery}`);
-    console.log(`📊 Parámetros: fechaInicio=${fechaInicio.toISOString()}, fechaFin=${fechaFin.toISOString()}`);
-    
-    const resumenResult = await pool.query(resumenQuery, [fechaInicio, fechaFin]);
-    console.log(`📊 Resultado resumen: ${JSON.stringify(resumenResult.rows[0])}`);
-    
-    // 3. Inicializar el objeto de respuesta
+        ${categoriaCondition}
+      GROUP BY 
+        hora
+      ORDER BY 
+        hora`;
+
+    // Consulta para ventas por categoría
+    const ventasPorCategoriaQuery = `
+      SELECT 
+        m.categoria,
+        COUNT(DISTINCT p.idpedido) as total_pedidos,
+        COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
+      FROM 
+        pedidos p
+        INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+        INNER JOIN menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.fecha >= $1 AND p.fecha <= $2
+        AND p.estado = 'completado'
+        ${categoriaCondition}
+      GROUP BY 
+        m.categoria
+      ORDER BY 
+        total_ventas DESC`;
+
+    // Consulta para ticket promedio por día
+    const ticketPromedioPorDiaQuery = `
+      SELECT 
+        EXTRACT(DOW FROM p.fecha) as dia_semana,
+        COUNT(DISTINCT p.idpedido) as total_pedidos,
+        SUM(pd.cantidad * pd.precio_unitario) as total_ventas,
+        ROUND(AVG(subquery.total_pedido), 2) as ticket_promedio
+      FROM 
+        pedidos p
+        INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+        INNER JOIN menu m ON pd.idplato = m.idplato
+        INNER JOIN (
+          SELECT 
+            pd2.idpedido,
+            SUM(pd2.cantidad * pd2.precio_unitario) as total_pedido
+          FROM 
+            pedido_detalle pd2
+          GROUP BY 
+            pd2.idpedido
+        ) subquery ON p.idpedido = subquery.idpedido
+      WHERE 
+        p.fecha >= $1 AND p.fecha <= $2
+        AND p.estado = 'completado'
+        ${categoriaCondition}
+      GROUP BY 
+        dia_semana
+      ORDER BY 
+        dia_semana`;
+
+    // Ejecutar todas las consultas
+    const [resumenResult, ventasPorHora, ventasPorCategoria, ticketPromedioPorDia] = await Promise.all([
+      pool.query(resumenQuery, [fechaInicio, fechaFin]),
+      pool.query(ventasPorHoraQuery, [fechaInicio, fechaFin]),
+      pool.query(ventasPorCategoriaQuery, [fechaInicio, fechaFin]),
+      pool.query(ticketPromedioPorDiaQuery, [fechaInicio, fechaFin])
+    ]);
+
+    // Función auxiliar para formatear fechas
+    const formatoFecha = (fecha) => {
+      return fecha.toISOString().split('T')[0];
+    };
+
+    // Inicializar el objeto de respuesta
     const resumen = {
       totalPedidos: parseInt(resumenResult.rows[0].total_pedidos) || 0,
       totalVentas: parseFloat(resumenResult.rows[0].total_ventas) || 0,
       ticketPromedio: 0,
+      minPedido: parseFloat(resumenResult.rows[0].min_pedido) || 0,
+      maxPedido: parseFloat(resumenResult.rows[0].max_pedido) || 0,
       periodo: {
         inicio: formatoFecha(fechaInicio),
         fin: formatoFecha(fechaFin),
         tipo: period || 'custom'
-      }
+      },
+      ventasPorHora: ventasPorHora.rows,
+      ventasPorCategoria: ventasPorCategoria.rows,
+      ticketPromedioPorDia: ticketPromedioPorDia.rows
     };
-    
+
     // Calcular ticket promedio si hay pedidos
     if (resumen.totalPedidos > 0) {
       resumen.ticketPromedio = parseFloat((resumen.totalVentas / resumen.totalPedidos).toFixed(2));
     }
-    
-    // 4. Añadir distribución específica según el período
-    let distribucionQuery = '';
-    
-    if (period === 'day') {
-      // Distribución por horas del día
-      distribucionQuery = `
-        SELECT 
-          EXTRACT(HOUR FROM p.fecha) as grupo,
-          TO_CHAR(p.fecha, 'HH24:00') as etiqueta,
-          COUNT(DISTINCT p.idpedido) as pedidos
-        FROM 
-          pedidos p
-        WHERE 
-          p.fecha >= $1 AND p.fecha <= $2
-          AND p.estado = 'completado'
-        GROUP BY 
-          grupo, etiqueta
-        ORDER BY 
-          grupo
-      `;
-      resumen.distribucionLabel = 'horasPico';
-    } 
-    else if (period === 'week') {
-      // Distribución por días de la semana
-      distribucionQuery = `
-        SELECT 
-          EXTRACT(DOW FROM p.fecha) as grupo,
-          CASE 
-            WHEN EXTRACT(DOW FROM p.fecha) = 0 THEN 'Domingo'
-            WHEN EXTRACT(DOW FROM p.fecha) = 1 THEN 'Lunes'
-            WHEN EXTRACT(DOW FROM p.fecha) = 2 THEN 'Martes'
-            WHEN EXTRACT(DOW FROM p.fecha) = 3 THEN 'Miércoles'
-            WHEN EXTRACT(DOW FROM p.fecha) = 4 THEN 'Jueves'
-            WHEN EXTRACT(DOW FROM p.fecha) = 5 THEN 'Viernes'
-            WHEN EXTRACT(DOW FROM p.fecha) = 6 THEN 'Sábado'
-          END as etiqueta,
-          COUNT(DISTINCT p.idpedido) as pedidos
-        FROM 
-          pedidos p
-        WHERE 
-          p.fecha >= $1 AND p.fecha <= $2
-          AND p.estado = 'completado'
-        GROUP BY 
-          grupo, etiqueta
-        ORDER BY 
-          grupo
-      `;
-      resumen.distribucionLabel = 'diasPico';
-    }
-    else if (period === 'month') {
-      // Distribución por semanas del mes
-      distribucionQuery = `
-        SELECT 
-          CASE 
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 1 AND 7 THEN 1
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 8 AND 14 THEN 2
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 15 AND 21 THEN 3
-            ELSE 4
-          END as grupo,
-          CASE 
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 1 AND 7 THEN '1-7'
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 8 AND 14 THEN '8-14'
-            WHEN EXTRACT(DAY FROM p.fecha) BETWEEN 15 AND 21 THEN '15-21'
-            ELSE '22-31'
-          END as etiqueta,
-          COUNT(DISTINCT p.idpedido) as pedidos
-        FROM 
-          pedidos p
-        WHERE 
-          p.fecha >= $1 AND p.fecha <= $2
-          AND p.estado = 'completado'
-        GROUP BY 
-          grupo, etiqueta
-        ORDER BY 
-          grupo
-      `;
-      resumen.distribucionLabel = 'semanasPico';
-    }
-    else if (period === 'year') {
-      // Distribución por meses del año
-      distribucionQuery = `
-        SELECT 
-          EXTRACT(MONTH FROM p.fecha) as grupo,
-          CASE 
-            WHEN EXTRACT(MONTH FROM p.fecha) = 1 THEN 'Enero'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 2 THEN 'Febrero'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 3 THEN 'Marzo'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 4 THEN 'Abril'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 5 THEN 'Mayo'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 6 THEN 'Junio'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 7 THEN 'Julio'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 8 THEN 'Agosto'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 9 THEN 'Septiembre'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 10 THEN 'Octubre'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 11 THEN 'Noviembre'
-            WHEN EXTRACT(MONTH FROM p.fecha) = 12 THEN 'Diciembre'
-          END as etiqueta,
-          COUNT(DISTINCT p.idpedido) as pedidos
-        FROM 
-          pedidos p
-        WHERE 
-          p.fecha >= $1 AND p.fecha <= $2
-          AND p.estado = 'completado'
-        GROUP BY 
-          grupo, etiqueta
-        ORDER BY 
-          grupo
-      `;
-      resumen.distribucionLabel = 'mesesPico';
-    }
-      
-    // Ejecutar la consulta de distribución si existe
-    if (distribucionQuery) {
-      try {
-        const distribucionResult = await pool.query(distribucionQuery, [fechaInicio, fechaFin]);
-      
-        resumen[resumen.distribucionLabel] = distribucionResult.rows.map(row => ({
-          etiqueta: row.etiqueta,
-        pedidos: parseInt(row.pedidos)
-      }));
 
-        console.log(`📊 Distribución por ${resumen.distribucionLabel}:`, resumen[resumen.distribucionLabel]);
-      } catch (distError) {
-        console.error(`❌ Error al obtener distribución: ${distError.message}`);
-        // No detener todo el proceso por un error en la distribución
-        resumen.errorDistribucion = distError.message;
-    }
-    }
-    
-    // Eliminar la etiqueta de distribución del resultado final
-    delete resumen.distribucionLabel;
-    
-    console.log(`✅ Resumen generado con éxito: ${resumen.totalPedidos} pedidos por valor de ${resumen.totalVentas}`);
+    console.log('✅ Resumen generado con éxito:', resumen);
     return res.status(200).json(resumen);
-    
+
   } catch (error) {
-    console.error("❌ Error al generar resumen de pedidos:", error);
-    return res.status(500).json({
-      error: "Error al generar resumen de pedidos",
-      details: error.message
-    });
+    console.error('❌ Error al generar resumen:', error);
+    return res.status(500).json({ error: 'Error al generar resumen de pedidos' });
   }
 });
 
