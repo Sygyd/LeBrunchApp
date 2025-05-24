@@ -118,30 +118,24 @@ class CartService extends ChangeNotifier {
           '💰 CartService: Precio final: \$${finalPrice.toStringAsFixed(2)}',
         );
 
-        // Buscar si el item ya existe en el carrito (por nombre)
+        // NUEVO: Buscar si el item ya existe en el carrito (por nombre Y notas exactas)
+        // Solo combinar items si tienen exactamente el mismo nombre Y las mismas notas
         final existingItemIndex = _items.indexWhere(
-          (item) => item.name.toLowerCase() == name.toLowerCase(),
+          (item) =>
+              item.name.toLowerCase() == name.toLowerCase() &&
+              (item.notes?.trim() ?? '') == (notes?.trim() ?? ''),
         );
 
         if (existingItemIndex != -1) {
-          // Si el item existe, actualizamos la cantidad y notas
+          // Si el item existe CON LAS MISMAS NOTAS, actualizamos solo la cantidad
           CartItem existingItem = _items[existingItemIndex];
-          String updatedNotes = existingItem.notes ?? '';
-          if (notes != null && notes.isNotEmpty) {
-            if (updatedNotes.isNotEmpty) {
-              updatedNotes += '; $notes';
-            } else {
-              updatedNotes = notes;
-            }
-          }
           _items[existingItemIndex] = existingItem.copyWith(
             quantity: existingItem.quantity + quantity,
-            notes: updatedNotes,
           );
-          print('➕ CartService: Item existente actualizado');
+          print('➕ CartService: Item existente con mismas notas actualizado');
           print('   Cantidad anterior: ${existingItem.quantity}');
           print('   Cantidad nueva: ${_items[existingItemIndex].quantity}');
-          print('   Notas actualizadas: "$updatedNotes"');
+          print('   Notas mantenidas: "${existingItem.notes}"');
         } else {
           // Si el item no existe, lo añadimos como nuevo
           final newCartItem = CartItem(

@@ -56,9 +56,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       );
       _cartItems = List<CartItem>.from(currentItems);
       _isLoading = false;
-      // Cargar recomendaciones en background sin bloquear UI
-      Future.microtask(() => _loadRecommendationsQuietly());
     }
+
+    // Cargar recomendaciones en background siempre (carrito vacío o no)
+    Future.microtask(() => _loadRecommendationsQuietly());
 
     // Inicialización ligera en background
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -131,16 +132,14 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   // Cargar recomendaciones en background sin afectar UI
   Future<void> _loadRecommendationsQuietly() async {
     try {
-      if (_cartItems.isEmpty) return;
-
       print('📱 CartScreen: Cargando recomendaciones en background...');
 
-      // Solo cargar si no tenemos recomendaciones
+      // Cargar recomendaciones siempre, independientemente si el carrito está vacío o no
       if (_recommendedDishes.isEmpty) {
         final recommendations = await _generateRecommendations();
         if (mounted && recommendations.isNotEmpty) {
           setState(() {
-            _recommendedDishes = recommendations.take(3).toList();
+            _recommendedDishes = recommendations.take(6).toList();
           });
         }
       }
@@ -177,10 +176,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           _isLoading = false;
         });
 
-        // Cargar recomendaciones en background
-        if (_cartItems.isNotEmpty) {
-          Future.microtask(() => _loadRecommendationsQuietly());
-        }
+        // Cargar recomendaciones en background siempre
+        Future.microtask(() => _loadRecommendationsQuietly());
       }
     } catch (e) {
       print('❌ Error en inicialización optimizada: $e');
@@ -480,23 +477,26 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         '📊 Obtenidos ${popularDishes.length} platos populares para recomendaciones',
       );
 
-      // Filtrar platos que ya están en el carrito
+      // Filtrar platos que ya están en el carrito (solo si el carrito no está vacío)
       final cartItemIds = _cartItems.map((item) => item.id).toSet();
 
       final filteredDishes =
-          popularDishes.where((dish) {
-            final dishId = dish['idplato']?.toString() ?? '';
-            return !cartItemIds.contains(dishId);
-          }).toList();
+          _cartItems.isEmpty
+              ? popularDishes // Si el carrito está vacío, usar todos los platos populares
+              : popularDishes.where((dish) {
+                final dishId = dish['idplato']?.toString() ?? '';
+                return !cartItemIds.contains(dishId);
+              }).toList();
 
       // Si no hay suficientes recomendaciones después de filtrar, añadir algunos aleatorios
-      if (filteredDishes.length < 3) {
+      if (filteredDishes.length < 6) {
         // Obtener platos aleatorios del menú como respaldo
         final menuItems = await _geminiService.getFullMenu();
 
         // Filtrar los que ya están en el carrito o en las recomendaciones
         final existingIds = {
-          ...cartItemIds,
+          if (_cartItems.isNotEmpty)
+            ...cartItemIds, // Solo agregar IDs del carrito si no está vacío
           ...filteredDishes.map((dish) => dish['idplato']?.toString() ?? ''),
         };
 
@@ -512,13 +512,13 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
           additionalItems.shuffle();
           filteredDishes.addAll(
             additionalItems
-                .take(3 - filteredDishes.length)
+                .take(6 - filteredDishes.length)
                 .cast<Map<String, dynamic>>(),
           );
         }
       }
 
-      return filteredDishes.take(3).toList();
+      return filteredDishes.take(6).toList();
     } catch (e) {
       print('Error al generar recomendaciones: $e');
       return [];
@@ -616,98 +616,6 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Carrito'),
-        actions: [
-          // Botón para sincronizar el contador del badge con el carrito
-          IconButton(
-            icon: Icon(Icons.sync),
-            tooltip: 'Sincronizar contador',
-            onPressed: () async {
-              try {
-                setState(() {
-                  _isLoading = true;
-                });
-
-                final prefs = await SharedPreferences.getInstance();
-                final badgeCount = prefs.getInt('nav_bar_badge_count') ?? 0;
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Sincronizando contador: $badgeCount'),
-                    duration: Duration(milliseconds: 1000),
-                  ),
-                );
-
-                // Si hay un contador en la barra pero el carrito está vacío, intentar recuperación
-                if (badgeCount > 0 && _cartItems.isEmpty) {
-                  final recoveredItems = await _tryRecoverItemsFromPrefs();
-
-                  if (recoveredItems.isNotEmpty) {
-                    setState(() {
-                      _cartItems = recoveredItems;
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Items recuperados: ${recoveredItems.length}',
-                        ),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('No se pudieron recuperar los items'),
-                        backgroundColor: Colors.orange,
-                      ),
-                    );
-                  }
-                }
-
-                setState(() {
-                  _isLoading = false;
-                });
-              } catch (e) {
-                print('❌ Error al sincronizar contador: $e');
-                setState(() {
-                  _isLoading = false;
-                });
-              }
-            },
-          ),
-          // Botón para forzar recarga del carrito
-          IconButton(
-            icon: Icon(Icons.refresh),
-            tooltip: 'Forzar recarga',
-            onPressed: () async {
-              setState(() {
-                _isLoading = true;
-              });
-
-              // Mostrar mensaje de carga
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Recargando carrito...'),
-                  duration: Duration(milliseconds: 1000),
-                ),
-              );
-
-              // MEJOR: Solo forzar actualización ligera
-              await _refreshCartQuietly();
-
-              // Mostrar datos actualizados
-              if (mounted) {
-                setState(() {
-                  _cartItems = List<CartItem>.from(_cartService.items);
-                });
-              }
-            },
-          ),
-          SizedBox(width: 8),
-        ],
-      ),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -992,7 +900,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             ),
           ),
           SizedBox(
-            height: 120,
+            height: 130,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: _recommendedDishes.length,
@@ -1001,8 +909,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 return GestureDetector(
                   onTap: () => _addRecommendedDishToCart(dish),
                   child: Container(
-                    width: 120,
-                    margin: EdgeInsets.only(right: 10),
+                    width: 110,
+                    margin: EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
@@ -1023,13 +931,13 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                           ),
                           child: Image.network(
                             dish['imagen_url'] ??
-                                'https://via.placeholder.com/120',
-                            height: 70,
-                            width: 120,
+                                'https://via.placeholder.com/110',
+                            height: 75,
+                            width: 110,
                             fit: BoxFit.cover,
                             errorBuilder:
                                 (context, error, stackTrace) => Container(
-                                  height: 70,
+                                  height: 75,
                                   color: Colors.grey[300],
                                   child: Icon(
                                     Icons.restaurant,
@@ -1039,7 +947,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(4.0),
+                          padding: const EdgeInsets.all(3.0),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1049,15 +957,16 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w500,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                 ),
                               ),
+                              SizedBox(height: 2),
                               Text(
                                 '\$${dish['precio'] ?? '0.00'}',
                                 style: TextStyle(
                                   color: Colors.green[700],
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 11,
+                                  fontSize: 10,
                                 ),
                               ),
                             ],
@@ -1353,7 +1262,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       final recommendations = await _generateRecommendations();
       if (mounted && recommendations.isNotEmpty) {
         setState(() {
-          _recommendedDishes = recommendations.take(3).toList();
+          _recommendedDishes = recommendations.take(6).toList();
         });
         print(
           '📱 CartScreen: ${_recommendedDishes.length} recomendaciones cargadas',

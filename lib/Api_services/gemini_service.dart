@@ -234,8 +234,19 @@ class GeminiService extends ChangeNotifier {
               '💰 GeminiService: Precio procesado: \$${itemPrice.toStringAsFixed(2)}',
             );
 
+            // NUEVO: Generar ID único para items con mismo nombre pero diferentes notas
+            String uniqueId = menuItem['idplato']?.toString() ?? '';
+            if (notes.isNotEmpty) {
+              // Si hay notas, añadir un sufijo único basado en las notas
+              final notesHash = notes.hashCode.abs().toString();
+              uniqueId = '${uniqueId}_${notesHash}';
+              print(
+                '🆔 GeminiService: ID único generado para item con notas: $uniqueId',
+              );
+            }
+
             final completeItem = {
-              'id': menuItem['idplato']?.toString() ?? '',
+              'id': uniqueId,
               'name': menuItem['nombre'] ?? itemName,
               'price': itemPrice,
               'quantity': quantity,
@@ -254,21 +265,13 @@ class GeminiService extends ChangeNotifier {
             );
           } else {
             print('❌ GeminiService: Item "$itemName" no encontrado en el menú');
+            print(
+              '⚠️ GeminiService: SALTANDO item inexistente - no se añadirá al carrito',
+            );
 
-            // Crear item con datos básicos si no se encuentra en el menú
-            final basicItem = {
-              'id': const Uuid().v4(),
-              'name': itemName,
-              'price': 0.0, // Precio por defecto
-              'quantity': quantity,
-              'notes': notes,
-              'imageUrl': '',
-              'originalData': item,
-              'item_price': 0.0,
-            };
-
-            itemsToAdd.add(basicItem);
-            print('📦 GeminiService: Item básico creado: $basicItem');
+            // NO crear items que no existen en el menú
+            // El servidor debería haber validado esto, pero por seguridad adicional
+            // no añadimos items inexistentes al carrito
           }
         }
 

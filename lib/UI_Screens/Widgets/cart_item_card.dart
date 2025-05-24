@@ -226,6 +226,10 @@ class _CartItemCardState extends State<CartItemCard> {
   }
 
   Widget _buildNotesDisplay(ThemeData theme) {
+    final hasNotes = widget.item.notes?.isNotEmpty == true;
+    final displayText =
+        hasNotes ? widget.item.notes! : 'Añadir instrucciones especiales...';
+
     return InkWell(
       onTap: () {
         setState(() {
@@ -233,36 +237,69 @@ class _CartItemCardState extends State<CartItemCard> {
         });
       },
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
+      child: Container(
         padding: const EdgeInsets.all(8.0),
+        decoration:
+            hasNotes
+                ? BoxDecoration(
+                  color: theme.colorScheme.primaryContainer.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    width: 1,
+                  ),
+                )
+                : null,
         child: Row(
           children: [
             Icon(
-              Icons.note_alt_outlined,
+              hasNotes ? Icons.assignment_outlined : Icons.note_add_outlined,
               size: 16,
-              color: theme.colorScheme.primary,
+              color:
+                  hasNotes
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outline,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                widget.item.notes?.isNotEmpty == true
-                    ? widget.item.notes!
-                    : 'Añadir instrucciones especiales...',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color:
-                      widget.item.notes?.isNotEmpty == true
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.outline,
-                  fontStyle:
-                      widget.item.notes?.isNotEmpty == true
-                          ? FontStyle.normal
-                          : FontStyle.italic,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasNotes)
+                    Text(
+                      widget.item.quantity > 1
+                          ? 'Para ${widget.item.quantity} unidades:'
+                          : 'Especificación:',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  Text(
+                    displayText,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color:
+                          hasNotes
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.outline,
+                      fontStyle: hasNotes ? FontStyle.normal : FontStyle.italic,
+                      fontWeight:
+                          hasNotes ? FontWeight.w500 : FontWeight.normal,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
-            Icon(Icons.edit, size: 16, color: theme.colorScheme.primary),
+            Icon(
+              Icons.edit,
+              size: 16,
+              color:
+                  hasNotes
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outline,
+            ),
           ],
         ),
       ),
