@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../Api_services/cart_service.dart';
 import '../Widgets/custom_modal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/cart_event_bus.dart';
 
 class DishCard extends StatefulWidget {
   final Map<String, dynamic> dish;
@@ -435,32 +437,9 @@ class _DishCardState extends State<DishCard>
                           ),
                         ] else if (widget.userRole == 1 &&
                             (widget.dish['disponibilidad'] ?? false)) ...[
-                          // Botón de agregar al carrito para cliente
+                          // Eliminamos completamente el mensaje
                           const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                // Agregar al carrito
-                                _addToCart(context);
-                              },
-                              icon: const Icon(Icons.add_shopping_cart),
-                              label: const Text('Agregar al Pedido'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: theme.colorScheme.onPrimary,
-                                elevation: 2,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 16,
-                                ),
-                                textStyle: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
+                          // Espacio vacío sin mensaje
                         ],
                       ],
                     ),
@@ -476,36 +455,69 @@ class _DishCardState extends State<DishCard>
   }
 
   // Método para añadir al carrito
-  void _addToCart(BuildContext context) {
-    // Datos del plato
-    final id = widget.dish['idplato'].toString();
-    final name = widget.dish['nombre'] ?? 'Producto sin nombre';
-    final price =
-        widget.dish['precio'] != null
-            ? double.tryParse(widget.dish['precio'].toString()) ?? 0.0
-            : 0.0;
-    final imageUrl = widget.dish['imagen_url'] ?? '';
+  void _addToCart(BuildContext context) async {
+    try {
+      final CartService cartService = CartService();
+      final String name = widget.dish['nombre'] ?? 'Sin nombre';
+      final double price =
+          double.tryParse(widget.dish['precio']?.toString() ?? '0') ?? 0.0;
+      final String imageUrl = widget.dish['imagen_url'] ?? '';
+      final String id =
+          widget.dish['idplato']?.toString() ??
+          DateTime.now().millisecondsSinceEpoch.toString();
 
-    // Agregar al carrito usando el servicio de carrito
-    final cartService = CartService();
-    cartService.addItem(
-      id: id,
-      name: name,
-      price: price,
-      imageUrl: imageUrl,
-      originalData: widget.dish,
-    );
+      // Agregar al carrito usando el servicio
+      await cartService.addItem(
+        id: id,
+        name: name,
+        price: price,
+        imageUrl: imageUrl,
+        originalData: widget.dish,
+      );
 
-    // Cerrar el diálogo
-    Navigator.of(context).pop();
+      // Ya no es necesario forzar la notificación, ya que el EventBus lo maneja automáticamente
+      // Cerrar el diálogo
+      Navigator.of(context).pop();
 
-    // Mostrar modal de confirmación
-    CustomModal.showSuccess(
-      context: context,
-      title: '¡Añadido al Carrito!',
-      message: '$name ha sido añadido a tu pedido',
-      buttonText: 'Aceptar',
-    );
+      // Mostrar modal de confirmación
+      await CustomModal.showSuccess(
+        context: context,
+        title: '¡Añadido al Carrito!',
+        message: '$name ha sido añadido a tu pedido',
+        buttonText: 'Aceptar',
+      );
+
+      // Verificar si está en la pantalla de menú del cliente y mostrar mensaje
+      try {
+        if (context.mounted) {
+          final String callerStackTrace = StackTrace.current.toString();
+          if (callerStackTrace.contains('ClientMenuScreen')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Producto agregado al carrito correctamente'),
+                duration: Duration(seconds: 2),
+                action: SnackBarAction(
+                  label: 'Ver Carrito',
+                  onPressed: () {
+                    // Ir a la pantalla del carrito
+                    Navigator.of(context).pushNamed('/cart');
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        print('Error al mostrar snackbar: $e');
+      }
+    } catch (e) {
+      print('Error al agregar producto al carrito: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al agregar producto al carrito')),
+        );
+      }
+    }
   }
 
   // Nuevo método para construir secciones de información

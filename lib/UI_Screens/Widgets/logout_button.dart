@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../../Api_services/gemini_service.dart';
+import '../../Api_services/cart_service.dart';
+import '../../services/user_preferences_service.dart';
 
 class LogoutButton extends StatelessWidget {
   const LogoutButton({super.key});
@@ -32,49 +34,101 @@ class LogoutButton extends StatelessWidget {
 
     if (confirm == true) {
       try {
-        // Marcar que el usuario ha cerrado sesión (para limpiar el historial de chat)
+        print('🔄 Iniciando proceso de cierre de sesión completo...');
+
+        // Mostrar un indicador de carga
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return const Center(child: CircularProgressIndicator());
+            },
+          );
+        }
+
+        // 1. PRIMERO: Limpiar el carrito y resetear su estado
+        final cartService = CartService();
+        await cartService.clearAllCarts();
+        print('✅ Carrito limpiado completamente');
+
+        // 2. Limpiar historial de chat y preferencias de usuario
+        final geminiService = GeminiService();
+        await geminiService.clearChatHistory();
+        print('✅ Historial de chat limpiado');
+
+        // Limpiar todas las claves de SharedPreferences relacionadas con el chat
         final prefs = await SharedPreferences.getInstance();
+        final chatKeys = prefs.getKeys().toList();
+        for (final key in chatKeys) {
+          if (key.contains('chat_history') ||
+              key.contains('chat_messages') ||
+              key.contains('temporary_chat_id') ||
+              key.contains('persistent_chat_user_id')) {
+            await prefs.remove(key);
+            print('🗑️ Eliminada clave de chat: $key');
+          }
+        }
+
+        // 3. Limpiar preferencias de platos del usuario
+        final userPreferencesService = UserPreferencesService();
+        await userPreferencesService.clearAllPreferences();
+        print('✅ Preferencias de platos eliminadas');
+
+        // 4. Llamar al endpoint de logout del servidor
+        try {
+          final response = await http
+              .post(
+                Uri.parse('http://192.168.1.121:3000/logout'),
+                headers: {"Content-Type": "application/json"},
+              )
+              .timeout(const Duration(seconds: 5));
+          print('✅ Logout en servidor: ${response.statusCode}');
+        } catch (e) {
+          print('⚠️ Error al llamar endpoint de logout: $e');
+          // Continuamos aunque haya error al contactar al servidor
+        }
+
+        // 5. Limpiar TODAS las preferencias excepto configuraciones de la app
+        final allKeys = prefs.getKeys().toList();
+        final keysToKeep = ['app_theme', 'app_language', 'first_run'];
+
+        print('🧹 Limpiando todas las claves en SharedPreferences...');
+        for (final key in allKeys) {
+          if (!keysToKeep.contains(key)) {
+            await prefs.remove(key);
+            print('🗑️ Eliminada clave: $key');
+          }
+        }
+
+        // 6. Establecer flags para indicar cierre de sesión
         await prefs.setBool('user_logged_out', true);
+        await prefs.setBool('cart_cleared_on_logout', true);
 
-        final response = await http.post(
-          Uri.parse('http://192.168.1.121:3000/logout'),
-          headers: {"Content-Type": "application/json"},
-        );
+        // 7. Reiniciar el carrito con ID de invitado (después de limpiar todo)
+        await cartService.setUserId('guest');
+        print('✅ CartService reiniciado y establecido como invitado');
 
-        // Limpiar preferencias excepto las necesarias para mantener configuraciones de la app
-        await prefs.remove('user_id');
-        await prefs.remove('user_role');
-        await prefs.remove('user_name');
-        await prefs.remove('token');
-        await prefs.remove('persistent_chat_user_id');
-
-        // Limpiar historial de chat inmediatamente
-        await _clearChatHistory();
-
-        if (!context.mounted) return;
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/',
-          (Route<dynamic> route) => false,
-        );
+        // 8. Cerrar el diálogo de carga y navegar a la pantalla de inicio
+        if (context.mounted) {
+          Navigator.pop(context); // Cerrar diálogo de carga
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (Route<dynamic> route) => false,
+          );
+        }
       } catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
-      }
-    }
-  }
+        print('❌ Error en el proceso de logout: $e');
 
-  /// Limpia el historial de chat al cerrar sesión
-  Future<void> _clearChatHistory() async {
-    try {
-      // Usar el servicio Gemini directamente ya que ahora lo importamos
-      final geminiService = GeminiService();
-      await geminiService.resetChat();
-      print('Historial de chat limpiado después del cierre de sesión');
-    } catch (e) {
-      print('Error al limpiar historial de chat: $e');
+        // Cerrar diálogo de carga en caso de error
+        if (context.mounted) {
+          Navigator.pop(context); // Cerrar diálogo de carga
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error al cerrar sesión: ${e.toString()}")),
+          );
+        }
+      }
     }
   }
 

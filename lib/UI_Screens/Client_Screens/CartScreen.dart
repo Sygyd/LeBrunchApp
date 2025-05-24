@@ -5,7 +5,12 @@ import '../../models/cart_item.dart';
 import '../Widgets/cart_item_card.dart';
 import '../Widgets/custom_modal.dart';
 import '../../Api_services/pedidos/create_order_service.dart';
+import 'package:le_brunch_app/Api_services/pedidos/popular_dishes_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import '../../services/cart_event_bus.dart';
+import 'dart:convert';
+import '../../services/user_preferences_service.dart';
 
 class CartScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -17,137 +22,548 @@ class CartScreen extends StatefulWidget {
   State<CartScreen> createState() => _CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> {
+class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   final CartService _cartService = CartService();
   final GeminiService _geminiService = GeminiService();
+  final PopularDishesService _popularDishesService = PopularDishesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+  // Lista modificable de items del carrito
   List<CartItem> _cartItems = [];
   List<Map<String, dynamic>> _recommendedDishes = [];
   bool _isLoading = true;
+  bool _lastEmptyCart = true;
+
+  // Suscripción al EventBus
+  StreamSubscription<CartEvent>? _cartEventSubscription;
 
   @override
   void initState() {
     super.initState();
-    _refreshCart();
+    print('📱 CartScreen: initState INICIADO');
+
+    // Agregar observer para detectar cambios de estado de la app
+    WidgetsBinding.instance.addObserver(this);
+
+    // Suscribirse a eventos INMEDIATAMENTE para no perder ningún evento
+    _subscribeToCartEvents();
+
+    // OPTIMIZACIÓN: Cargar datos inmediatamente si están disponibles
+    final currentItems = _cartService.items;
+    if (currentItems.isNotEmpty) {
+      print(
+        '📱 CartScreen: Datos encontrados inmediatamente, cargando sin delay',
+      );
+      _cartItems = List<CartItem>.from(currentItems);
+      _isLoading = false;
+      // Cargar recomendaciones en background sin bloquear UI
+      Future.microtask(() => _loadRecommendationsQuietly());
+    }
+
+    // Inicialización ligera en background
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      print('📱 CartScreen: addPostFrameCallback ejecutándose');
+      await _initializeCartOptimized();
+      _checkChatSync();
+      // Verificar si llegamos desde ChatScreen (importante para la integración con chat)
+      await _checkIfCameFromChat();
+    });
   }
 
-  Future<void> _refreshCart() async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // Cuando la app vuelve al primer plano, verificar si hay cambios en el carrito
+    if (state == AppLifecycleState.resumed && mounted) {
+      print(
+        '📱 CartScreen: App volvió al primer plano, refrescando carrito...',
+      );
+      _refreshCartQuietly();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    print('📱 CartScreen: didChangeDependencies ejecutándose');
+
+    // Verificar si hay cambios en el carrito cada vez que las dependencias cambian
+    if (mounted) {
+      _refreshCartQuietly();
+    }
+  }
+
+  @override
+  void dispose() {
+    // Cancelar la suscripción al EventBus
+    _cartEventSubscription?.cancel();
+    // Cancelar timer de recomendaciones
+    _recommendationsTimer?.cancel();
+    // Remover observer
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Refrescar carrito sin mostrar loading
+  Future<void> _refreshCartQuietly() async {
+    try {
+      print('📱 CartScreen: Refrescando carrito silenciosamente...');
+
+      // Obtener items más recientes del servicio
+      final items = _cartService.items;
+      print('📱 CartScreen: Items encontrados: ${items.length}');
+
+      // Actualizar solo si hay diferencias
+      if (items.length != _cartItems.length) {
+        print(
+          '📱 CartScreen: Detectado cambio en carrito (${_cartItems.length} -> ${items.length})',
+        );
+        setState(() {
+          _cartItems = List<CartItem>.from(items);
+        });
+      }
+    } catch (e) {
+      print('❌ Error al refrescar carrito silenciosamente: $e');
+    }
+  }
+
+  // Cargar recomendaciones en background sin afectar UI
+  Future<void> _loadRecommendationsQuietly() async {
+    try {
+      if (_cartItems.isEmpty) return;
+
+      print('📱 CartScreen: Cargando recomendaciones en background...');
+
+      // Solo cargar si no tenemos recomendaciones
+      if (_recommendedDishes.isEmpty) {
+        final recommendations = await _generateRecommendations();
+        if (mounted && recommendations.isNotEmpty) {
+          setState(() {
+            _recommendedDishes = recommendations.take(3).toList();
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error al cargar recomendaciones silenciosamente: $e');
+    }
+  }
+
+  // Inicialización optimizada y ligera
+  Future<void> _initializeCartOptimized() async {
+    try {
+      // Solo hacer verificaciones básicas si ya tenemos datos cargados
+      if (_cartItems.isNotEmpty) {
+        print(
+          '📱 CartScreen: Items ya cargados, solo verificando contadores...',
+        );
+        await _syncCountersOnly();
+        return;
+      }
+
+      print('📱 CartScreen: Carga completa necesaria...');
+
+      // Solo cargar si realmente no hay datos
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Carga robusta pero sin ensureCartSynchronized pesado
+      final items = await _cartService.getCartItemsWithSync();
+
+      if (mounted) {
+        setState(() {
+          _cartItems = List<CartItem>.from(items);
+          _isLoading = false;
+        });
+
+        // Cargar recomendaciones en background
+        if (_cartItems.isNotEmpty) {
+          Future.microtask(() => _loadRecommendationsQuietly());
+        }
+      }
+    } catch (e) {
+      print('❌ Error en inicialización optimizada: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Solo sincronizar contadores sin recargar todo
+  Future<void> _syncCountersOnly() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final itemCount = _cartItems.length;
+
+      await prefs.setInt('cart_item_count', itemCount);
+      await prefs.setInt('current_cart_count', itemCount);
+      await prefs.setInt('last_nav_cart_count', itemCount);
+      await prefs.setInt('nav_bar_badge_count', itemCount);
+
+      print('📱 CartScreen: Contadores sincronizados: $itemCount');
+    } catch (e) {
+      print('❌ Error al sincronizar contadores: $e');
+    }
+  }
+
+  // Método separado para inicialización del carrito
+  Future<void> _initializeCart() async {
+    print('📱 CartScreen: _initializeCart INICIANDO');
+
     setState(() {
       _isLoading = true;
     });
 
-    // Obtener los items del carrito
-    final items = _cartService.items;
-
-    // Obtener recomendaciones si el carrito no está vacío
-    List<Map<String, dynamic>> recommendations = [];
-    if (items.isNotEmpty) {
-      try {
-        final prefs = await _geminiService.getUserPreferences();
-        final menuItems = await _geminiService.fetchMenu();
-        // Obtener el último plato pedido y los platos más frecuentes
-        final lastOrderedDish = prefs['lastOrderedDish'];
-        final dishCounts = prefs['dishCounts'] ?? {};
-
-        if (lastOrderedDish != null || dishCounts.isNotEmpty) {
-          recommendations = await _getRecommendedDishes(
-            menuItems,
-            lastOrderedDish,
-            dishCounts,
-          );
-        }
-      } catch (e) {
-        print('Error al obtener recomendaciones: $e');
-      }
-    }
-
-    setState(() {
-      _cartItems = List.from(items);
-      _recommendedDishes = recommendations;
-      _isLoading = false;
-    });
-  }
-
-  Future<List<Map<String, dynamic>>> _getRecommendedDishes(
-    List<dynamic> menuItems,
-    String? lastOrderedDish,
-    Map<String, dynamic> dishCounts,
-  ) async {
-    // Filtrar platos que ya están en el carrito
-    final cartItemNames =
-        _cartItems.map((item) => item.name.toLowerCase()).toSet();
-
-    // Convertir dishCounts a una lista ordenada
-    List<MapEntry<String, dynamic>> popularDishes = [];
-    if (dishCounts.isNotEmpty) {
-      popularDishes =
-          dishCounts.entries.toList()
-            ..sort((a, b) => (b.value as int).compareTo(a.value as int));
-    }
-
-    // Lista de posibles recomendaciones
-    List<Map<String, dynamic>> recommendations = [];
-
-    // Añadir platos de la misma categoría que el último ordenado
-    if (lastOrderedDish != null) {
-      // Buscar la categoría del último plato
-      final lastDishInfo = menuItems.firstWhere(
-        (dish) =>
-            dish['nombre']?.toLowerCase() == lastOrderedDish.toLowerCase(),
-        orElse: () => null,
+    try {
+      // CRÍTICO: Verificar el estado del CartService ANTES de hacer cualquier cosa
+      print('🔍 CartScreen: Estado inicial del CartService:');
+      print('   - Items en memoria: ${_cartService.items.length}');
+      print('   - Item count: ${_cartService.itemCount}');
+      print(
+        '   - IsInitialized: ${_cartService.toString().contains('_isInitialized')}',
       );
 
-      if (lastDishInfo != null && lastDishInfo['categoria'] != null) {
-        final similarCategory =
-            menuItems
-                .where(
-                  (dish) =>
-                      dish['categoria'] == lastDishInfo['categoria'] &&
-                      !cartItemNames.contains(dish['nombre']?.toLowerCase()),
-                )
-                .toList();
+      // Verificar qué userId está usando el CartService
+      final prefs = await SharedPreferences.getInstance();
+      final storedUserId = prefs.getString('current_user_id');
+      final userIdFromPrefs = prefs.getInt('user_id');
+      print('   - UserId en SharedPrefs (current_user_id): $storedUserId');
+      print('   - UserId en SharedPrefs (user_id): $userIdFromPrefs');
 
-        // Añadir hasta 2 recomendaciones de la misma categoría
-        if (similarCategory.isNotEmpty) {
-          recommendations.addAll(
-            similarCategory.take(2).map((dish) => dish as Map<String, dynamic>),
+      print('📱 CartScreen: Obteniendo items directamente del servicio...');
+
+      // 1. PRIMERO obtener items directos del servicio (sin reset para no perder datos)
+      final directItems = _cartService.items;
+      print(
+        '📱 CartScreen: Items directos del servicio: ${directItems.length}',
+      );
+
+      // 2. También cargar desde almacenamiento para estar seguros
+      final storedItems = await _cartService.getCartItemsWithSync();
+      print('📱 CartScreen: Items desde almacenamiento: ${storedItems.length}');
+
+      // 3. CRÍTICO: Si el servicio está vacío pero hay datos en SharedPreferences, forzar recuperación
+      if (directItems.isEmpty && storedItems.isEmpty) {
+        print('🔍 CartScreen: Ambas fuentes vacías, verificando contadores...');
+        final badgeCount = prefs.getInt('nav_bar_badge_count') ?? 0;
+        final cartItemCount = prefs.getInt('cart_item_count') ?? 0;
+
+        print('   - Badge count: $badgeCount');
+        print('   - Cart item count: $cartItemCount');
+
+        if (badgeCount > 0 || cartItemCount > 0) {
+          print(
+            '⚠️ CartScreen: DISCREPANCIA DETECTADA - contadores indican items pero carrito vacío',
+          );
+          print(
+            '🔧 CartScreen: Intentando recuperación desde todas las claves posibles...',
+          );
+
+          // Intentar cargar directamente desde las claves de storage específicas
+          await _forceLoadFromAllStorageKeys();
+        }
+      }
+
+      // 4. Usar los que tengan más items (probablemente los más actualizados)
+      final items =
+          directItems.length >= storedItems.length ? directItems : storedItems;
+      print(
+        '📱 CartScreen: Usando ${items.length} items (fuente: ${directItems.length >= storedItems.length ? "servicio" : "almacenamiento"})',
+      );
+
+      // 4. SIEMPRE usar los items encontrados (sin lógica compleja de recuperación)
+      setState(() {
+        _cartItems = List<CartItem>.from(items);
+        _isLoading = false;
+      });
+
+      print('📱 CartScreen: Estado actualizado con ${_cartItems.length} items');
+
+      // Debug: Mostrar los items cargados
+      for (int i = 0; i < _cartItems.length; i++) {
+        final item = _cartItems[i];
+        print('   Item $i: ${item.name} x${item.quantity} (\$${item.price})');
+      }
+
+      // 3. Verificar contador y actualizar SharedPreferences
+      final itemCount = _cartItems.length;
+
+      // Guardar contador en todas las claves para máxima consistencia
+      await prefs.setInt('cart_item_count', itemCount);
+      await prefs.setInt('current_cart_count', itemCount);
+      await prefs.setInt('last_nav_cart_count', itemCount);
+      await prefs.setInt('nav_bar_badge_count', itemCount);
+
+      // Guardar timestamp para diagnóstico
+      await prefs.setString(
+        'cart_last_load_timestamp',
+        DateTime.now().toIso8601String(),
+      );
+
+      // 4. Suscribirse a eventos para mantener sincronización
+      _subscribeToCartEvents();
+
+      // 5. Cargar recomendaciones si hay items
+      if (_cartItems.isNotEmpty) {
+        _loadRecommendations();
+      }
+
+      // 6. Solo sincronizar contadores (sin sincronización pesada)
+      await _syncCountersOnly();
+    } catch (e) {
+      print('❌ Error en inicialización del carrito: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Verificar y corregir contadores del carrito
+  Future<void> _verifyCartCounters() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final badgeCount = prefs.getInt('last_nav_cart_count') ?? -1;
+      final serviceCount = _cartService.itemCount;
+
+      if (badgeCount != serviceCount) {
+        print(
+          '⚠️ CartScreen: Discrepancia detectada: Badge=$badgeCount vs Service=$serviceCount',
+        );
+        // Corregir contadores
+        await prefs.setInt('cart_item_count', serviceCount);
+        await prefs.setInt('current_cart_count', serviceCount);
+        await prefs.setInt('last_nav_cart_count', serviceCount);
+      }
+    } catch (e) {
+      print('❌ Error al verificar contadores: $e');
+    }
+  }
+
+  // Método para suscribirse a los eventos del carrito
+  void _subscribeToCartEvents() {
+    print('📱 CartScreen: Configurando suscripción a eventos del carrito...');
+
+    // Cancelar suscripción anterior si existe
+    _cartEventSubscription?.cancel();
+
+    _cartEventSubscription = _cartService.cartEvents.listen((event) {
+      print('📱 CartScreen: Evento de carrito recibido - ${event.type}');
+      print('📱 CartScreen: Datos del evento: ${event.data}');
+
+      // Para cualquier cambio en el carrito, actualizar inmediatamente
+      if (mounted) {
+        // Obtener items más recientes del servicio
+        final items = _cartService.items;
+        print('📱 CartScreen: Items actuales en servicio: ${items.length}');
+
+        // Manejar específicamente la navegación desde Chat
+        if (event.type == CartEventType.navToCartFromChat) {
+          print('⭐ CartScreen: Detectado evento de navegación desde Chat');
+
+          setState(() {
+            _cartItems = List<CartItem>.from(items);
+            _isLoading = false;
+          });
+
+          // Mostrar mensaje de confirmación
+          if (mounted && _cartItems.isNotEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Items del chat agregados al carrito (${_cartItems.length})',
+                ),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+
+          // Cargar recomendaciones basadas en los nuevos items
+          _loadRecommendations();
+          return;
+        }
+
+        // Para CUALQUIER otro evento, actualizar inmediatamente
+        print('📱 CartScreen: Actualizando UI con ${items.length} items');
+
+        setState(() {
+          _cartItems = List<CartItem>.from(items);
+          _isLoading = false;
+        });
+
+        // Actualizar recomendaciones solo si el carrito cambió significativamente
+        if (event.type == CartEventType.itemAdded ||
+            event.type == CartEventType.cartCleared ||
+            event.type == CartEventType.cartLoaded ||
+            event.type == CartEventType.forceRefresh) {
+          print(
+            '📱 CartScreen: Cargando recomendaciones debido a ${event.type}',
+          );
+          _loadRecommendations();
+        }
+      }
+    });
+
+    print('📱 CartScreen: Suscripción a eventos configurada exitosamente');
+  }
+
+  /// Refrescar los datos del carrito
+  Future<void> _refreshCart() async {
+    try {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = true;
+      });
+
+      // 1. Obtener los datos más actualizados del carrito
+      final cartService = CartService();
+
+      // Forzar una carga completa desde almacenamiento
+      final items = await cartService.getCartItemsWithSync();
+
+      // 2. Verificar si hay datos y actualizar UI
+      if (mounted) {
+        setState(() {
+          _cartItems = items;
+          _isLoading = false;
+          _recommendedDishes =
+              []; // Limpiar recomendaciones para forzar recarga
+        });
+
+        // 3. Verificar si hay ítems y actualizar recomendaciones si es necesario
+        if (_cartItems.isNotEmpty) {
+          _loadRecommendations();
+        }
+
+        print(
+          '🔄 CartScreen: Carrito actualizado con ${_cartItems.length} ítems',
+        );
+      }
+
+      // 4. Verificar si hay estado inconsistente en el contador del badge
+      final prefs = await SharedPreferences.getInstance();
+      final badgeCount = prefs.getInt('nav_bar_badge_count') ?? 0;
+
+      // Si hay discrepancia entre el badge y el carrito actual, corregir
+      if (badgeCount != _cartItems.length) {
+        await prefs.setInt('nav_bar_badge_count', _cartItems.length);
+        await prefs.setInt('cart_item_count', _cartItems.length);
+        await prefs.setInt('current_cart_count', _cartItems.length);
+        print(
+          '⚠️ Corregida discrepancia de contador: Badge=$badgeCount vs Carrito=${_cartItems.length}',
+        );
+      }
+    } catch (e) {
+      print('❌ Error al refrescar carrito: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Genera recomendaciones basadas en el carrito actual
+  Future<List<Map<String, dynamic>>> _generateRecommendations() async {
+    try {
+      // Obtener los platos más populares usando el servicio especializado
+      final popularDishes = await _popularDishesService.getPopularDishesDirect(
+        period: 'month', // Usar datos del último mes
+        limit: 6, // Obtener más platos de los necesarios para filtrado
+      );
+
+      print(
+        '📊 Obtenidos ${popularDishes.length} platos populares para recomendaciones',
+      );
+
+      // Filtrar platos que ya están en el carrito
+      final cartItemIds = _cartItems.map((item) => item.id).toSet();
+
+      final filteredDishes =
+          popularDishes.where((dish) {
+            final dishId = dish['idplato']?.toString() ?? '';
+            return !cartItemIds.contains(dishId);
+          }).toList();
+
+      // Si no hay suficientes recomendaciones después de filtrar, añadir algunos aleatorios
+      if (filteredDishes.length < 3) {
+        // Obtener platos aleatorios del menú como respaldo
+        final menuItems = await _geminiService.getFullMenu();
+
+        // Filtrar los que ya están en el carrito o en las recomendaciones
+        final existingIds = {
+          ...cartItemIds,
+          ...filteredDishes.map((dish) => dish['idplato']?.toString() ?? ''),
+        };
+
+        final additionalItems =
+            menuItems?.where((dish) {
+              final dishId = dish['idplato']?.toString() ?? '';
+              return !existingIds.contains(dishId);
+            }).toList() ??
+            [];
+
+        // Mezclar para obtener resultados aleatorios
+        if (additionalItems.isNotEmpty) {
+          additionalItems.shuffle();
+          filteredDishes.addAll(
+            additionalItems
+                .take(3 - filteredDishes.length)
+                .cast<Map<String, dynamic>>(),
           );
         }
       }
-    }
 
-    // Añadir platos populares basados en el historial
-    if (popularDishes.isNotEmpty) {
-      for (var entry in popularDishes.take(3)) {
-        final dishName = entry.key;
-        final dishInfo = menuItems.firstWhere(
-          (dish) => dish['nombre']?.toLowerCase() == dishName.toLowerCase(),
-          orElse: () => null,
+      return filteredDishes.take(3).toList();
+    } catch (e) {
+      print('Error al generar recomendaciones: $e');
+      return [];
+    }
+  }
+
+  // Añadir este método en _CartScreenState
+  Future<void> _checkChatSync() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastSync = prefs.getString('last_chat_cart_sync');
+
+    if (lastSync != null) {
+      final data = jsonDecode(lastSync);
+      final syncTime = DateTime.parse(data['timestamp']);
+
+      // Sincronizar solo si es reciente (últimos 5 minutos)
+      if (DateTime.now().difference(syncTime) < Duration(minutes: 5)) {
+        final items = List<Map<String, dynamic>>.from(data['items']);
+
+        setState(() {
+          _cartItems =
+              items
+                  .map(
+                    (item) => CartItem(
+                      id: item['idplato']?.toString() ?? UniqueKey().toString(),
+                      name: item['nombre'],
+                      price: double.parse(item['precio'].toString()),
+                      imageUrl: item['imagen_url'] ?? '',
+                      quantity: item['quantity'] ?? 1,
+                      notes: item['notes'],
+                      originalData: item,
+                    ),
+                  )
+                  .toList();
+        });
+
+        // Mostrar feedback al usuario
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${items.length} ítems añadidos desde el chat'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
         );
-
-        if (dishInfo != null &&
-            !cartItemNames.contains(dishInfo['nombre']?.toLowerCase()) &&
-            !recommendations.any(
-              (rec) => rec['nombre'] == dishInfo['nombre'],
-            )) {
-          recommendations.add(dishInfo);
-          if (recommendations.length >= 3) break;
-        }
       }
     }
-
-    // Si necesitamos más recomendaciones, añadir platos aleatorios
-    if (recommendations.length < 3) {
-      menuItems.shuffle();
-      for (var dish in menuItems) {
-        if (!cartItemNames.contains(dish['nombre']?.toLowerCase()) &&
-            !recommendations.any((rec) => rec['nombre'] == dish['nombre'])) {
-          recommendations.add(dish);
-          if (recommendations.length >= 3) break;
-        }
-      }
-    }
-
-    return recommendations.take(3).toList();
   }
 
   void _addRecommendedDishToCart(Map<String, dynamic> dish) async {
@@ -170,13 +586,12 @@ class _CartScreenState extends State<CartScreen> {
       );
 
       // Actualizar preferencias del usuario
-      await _geminiService.updateUserPreferences(name);
+      await _userPreferencesService.updateOrderedDish(name);
 
+      // Mostrar mensaje de confirmación
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('¡$name añadido al carrito!')));
-
-      _refreshCart();
     } catch (e) {
       print('Error al añadir plato recomendado: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -187,61 +602,382 @@ class _CartScreenState extends State<CartScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return _buildLoadingScreen();
+    print('📱 CartScreen: build() ejecutándose');
+    print('📱 CartScreen: _isLoading = $_isLoading');
+    print('📱 CartScreen: _cartItems.length = ${_cartItems.length}');
+
+    // Debug: Mostrar items actuales en el build
+    if (_cartItems.isNotEmpty) {
+      print('📱 CartScreen: Items en _cartItems:');
+      for (int i = 0; i < _cartItems.length; i++) {
+        final item = _cartItems[i];
+        print('   ${i + 1}. ${item.name} x${item.quantity} (\$${item.price})');
+      }
     }
 
     return Scaffold(
-      drawerEdgeDragWidth: MediaQuery.of(context).size.width,
-      drawerEnableOpenDragGesture: true,
-      body: WillPopScope(
-        onWillPop: () async {
-          if (widget.isEmbedded && widget.onTabChange != null) {
-            widget.onTabChange!(0);
-            return false;
-          }
-          return true;
-        },
-        child: GestureDetector(
-          onHorizontalDragEnd: (details) {
-            if (details.primaryVelocity != null &&
-                details.primaryVelocity! > 300) {
-              if (widget.isEmbedded && widget.onTabChange != null) {
-                widget.onTabChange!(0);
-              } else {
-                Navigator.of(context).pop();
-              }
-            }
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage("assets/images/fondolb.jpg"),
-                fit: BoxFit.cover,
-              ),
-            ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Expanded(
-                    child:
-                        _cartItems.isEmpty
-                            ? _buildEmptyCart()
-                            : _buildCartList(),
+      appBar: AppBar(
+        title: const Text('Carrito'),
+        actions: [
+          // Botón para sincronizar el contador del badge con el carrito
+          IconButton(
+            icon: Icon(Icons.sync),
+            tooltip: 'Sincronizar contador',
+            onPressed: () async {
+              try {
+                setState(() {
+                  _isLoading = true;
+                });
+
+                final prefs = await SharedPreferences.getInstance();
+                final badgeCount = prefs.getInt('nav_bar_badge_count') ?? 0;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sincronizando contador: $badgeCount'),
+                    duration: Duration(milliseconds: 1000),
                   ),
-                  if (_recommendedDishes.isNotEmpty && _cartItems.isNotEmpty)
-                    _buildRecommendations(),
-                  if (_cartItems.isNotEmpty) _buildCheckoutSection(),
+                );
+
+                // Si hay un contador en la barra pero el carrito está vacío, intentar recuperación
+                if (badgeCount > 0 && _cartItems.isEmpty) {
+                  final recoveredItems = await _tryRecoverItemsFromPrefs();
+
+                  if (recoveredItems.isNotEmpty) {
+                    setState(() {
+                      _cartItems = recoveredItems;
+                    });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Items recuperados: ${recoveredItems.length}',
+                        ),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('No se pudieron recuperar los items'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                }
+
+                setState(() {
+                  _isLoading = false;
+                });
+              } catch (e) {
+                print('❌ Error al sincronizar contador: $e');
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            },
+          ),
+          // Botón para forzar recarga del carrito
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: 'Forzar recarga',
+            onPressed: () async {
+              setState(() {
+                _isLoading = true;
+              });
+
+              // Mostrar mensaje de carga
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Recargando carrito...'),
+                  duration: Duration(milliseconds: 1000),
+                ),
+              );
+
+              // MEJOR: Solo forzar actualización ligera
+              await _refreshCartQuietly();
+
+              // Mostrar datos actualizados
+              if (mounted) {
+                setState(() {
+                  _cartItems = List<CartItem>.from(_cartService.items);
+                });
+              }
+            },
+          ),
+          SizedBox(width: 8),
+        ],
+      ),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _cartItems.isEmpty
+              ? SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 80,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.5),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Tu carrito está vacío',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Agrega productos desde el menú o pide recomendaciones a Brunchy',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.color,
+                              ),
+                            ),
+                            SizedBox(height: 24),
+                            ElevatedButton.icon(
+                              icon: Icon(Icons.menu_book),
+                              label: Text('Ver menú'),
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                              onPressed: () async {
+                                // Implementar navegación al menú
+                                if (widget.isEmbedded &&
+                                    widget.onTabChange != null) {
+                                  // Registrar la navegación antes de cambiar
+                                  await _registerNavigationFromCart(1);
+                                  widget.onTabChange!(1);
+                                } else {
+                                  // Registrar la navegación
+                                  await _registerNavigationFromCart(1);
+
+                                  final prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.setInt('navigate_to_tab', 1);
+                                  await prefs.setString(
+                                    'navigation_timestamp',
+                                    DateTime.now().toIso8601String(),
+                                  );
+                                  if (mounted) {
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamedAndRemoveUntil(
+                                      '/client_home',
+                                      (route) => false,
+                                      arguments: {'initialIndex': 1},
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                            // Agregar un botón para verificar inconsistencias si el badge muestra items pero la pantalla está vacía
+                            FutureBuilder<int>(
+                              future: _getCartCountFromBadge(),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData && snapshot.data! > 0) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 16.0),
+                                    child: TextButton.icon(
+                                      icon: Icon(Icons.sync_problem),
+                                      label: Text(
+                                        'Verificar items del carrito (${snapshot.data})',
+                                      ),
+                                      onPressed: () {
+                                        // Forzar actualización completa del carrito
+                                        _forceRefreshCart();
+                                      },
+                                    ),
+                                  );
+                                }
+                                return SizedBox.shrink();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Mostrar recomendaciones incluso cuando el carrito está vacío
+                    if (_recommendedDishes.isNotEmpty)
+                      _buildRecommendedSection(),
+
+                    // Mover el botón de actualizar después de las recomendaciones
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                      child: TextButton.icon(
+                        icon: Icon(Icons.refresh),
+                        label: Text('Actualizar recomendaciones'),
+                        onPressed: () async {
+                          setState(() {
+                            _isLoading = true;
+                          });
+                          await _forceRefreshCart();
+                        },
+                      ),
+                    ),
+
+                    // Mostrar indicador de carga si no hay recomendaciones todavía
+                    if (_recommendedDishes.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Text(
+                                'Cargando recomendaciones...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              CircularProgressIndicator(strokeWidth: 2),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              )
+              : Stack(
+                children: [
+                  ListView(
+                    children: [
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _cartItems.length,
+                        itemBuilder: (context, index) {
+                          final item = _cartItems[index];
+                          return Dismissible(
+                            key: Key(item.id),
+                            background: Container(
+                              color: Colors.red,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: const Icon(
+                                Icons.delete,
+                                color: Colors.white,
+                              ),
+                            ),
+                            direction: DismissDirection.endToStart,
+                            onDismissed: (direction) async {
+                              _cartService.removeItem(item.id);
+                              setState(() {
+                                _cartItems = List<CartItem>.from(_cartItems)
+                                  ..removeAt(index);
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${item.name} eliminado del carrito',
+                                  ),
+                                  duration: const Duration(seconds: 1),
+                                ),
+                              );
+                            },
+                            child: CartItemCard(
+                              item: item,
+                              onIncrease: () async {
+                                _cartService.updateQuantity(
+                                  item.id,
+                                  item.quantity + 1,
+                                );
+
+                                // Optimistic update - actualizar UI inmediatamente
+                                setState(() {
+                                  _cartItems = List<CartItem>.from(_cartItems);
+                                  _cartItems[index] = _cartItems[index]
+                                      .copyWith(quantity: item.quantity + 1);
+                                });
+                              },
+                              onDecrease: () async {
+                                if (item.quantity > 1) {
+                                  _cartService.updateQuantity(
+                                    item.id,
+                                    item.quantity - 1,
+                                  );
+
+                                  // Optimistic update - actualizar UI inmediatamente
+                                  setState(() {
+                                    _cartItems = List<CartItem>.from(
+                                      _cartItems,
+                                    );
+                                    _cartItems[index] = _cartItems[index]
+                                        .copyWith(quantity: item.quantity - 1);
+                                  });
+                                } else {
+                                  _cartService.removeItem(item.id);
+
+                                  // Optimistic update - actualizar UI inmediatamente
+                                  setState(() {
+                                    _cartItems = List<CartItem>.from(_cartItems)
+                                      ..removeAt(index);
+                                  });
+                                }
+                              },
+                              onRemove: () async {
+                                _cartService.removeItem(item.id);
+
+                                // Optimistic update - actualizar UI inmediatamente
+                                setState(() {
+                                  _cartItems = List<CartItem>.from(_cartItems)
+                                    ..removeAt(index);
+                                });
+                              },
+                              onUpdateNotes: (newNotes) async {
+                                _cartService.updateNotes(item.id, newNotes);
+
+                                // Optimistic update - actualizar UI inmediatamente
+                                setState(() {
+                                  _cartItems = List<CartItem>.from(_cartItems);
+                                  _cartItems[index] = _cartItems[index]
+                                      .copyWith(notes: newNotes);
+                                });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                      // Mostrar recomendaciones si hay
+                      if (_recommendedDishes.isNotEmpty)
+                        _buildRecommendedSection(),
+                      const SizedBox(height: 140),
+                    ],
+                  ),
+                  // Botón para proceder al checkout y total
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildCheckoutBar(),
+                  ),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _buildRecommendations() {
+  Widget _buildRecommendedSection() {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
       color: Colors.grey[50],
@@ -339,88 +1075,15 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildEmptyCart() {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.shopping_cart_outlined,
-            size: 80,
-            color: theme.colorScheme.primary.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Tu carrito está vacío',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontFamily: 'LightHouse',
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Agrega productos desde el menú o pide recomendaciones a Brunchy',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.outline,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              if (widget.isEmbedded && widget.onTabChange != null) {
-                widget.onTabChange!(1);
-              } else {
-                Navigator.of(context).pop();
-              }
-            },
-            icon: const Icon(Icons.restaurant_menu),
-            label: const Text('Ver menú'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildCheckoutBar() {
+    // Calcular el total directamente desde los items en pantalla
+    // para evitar discrepancias entre la pantalla y el CartService
+    final totalAmount = _cartItems.fold(
+      0.0,
+      (sum, item) => sum + (item.price * item.quantity),
     );
-  }
+    final itemCount = _cartItems.fold(0, (sum, item) => sum + item.quantity);
 
-  Widget _buildCartList() {
-    return ListView.builder(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      itemCount: _cartItems.length,
-      itemBuilder: (context, index) {
-        final item = _cartItems[index];
-        return CartItemCard(
-          key: ValueKey(item.id),
-          item: item,
-          onIncrease: () {
-            _cartService.updateQuantity(item.id, item.quantity + 1);
-            _refreshCart();
-          },
-          onDecrease: () {
-            if (item.quantity > 1) {
-              _cartService.updateQuantity(item.id, item.quantity - 1);
-            } else {
-              _showRemoveItemConfirmation(item);
-            }
-            _refreshCart();
-          },
-          onRemove: () => _showRemoveItemConfirmation(item),
-          onUpdateNotes: (notes) {
-            _cartService.updateNotes(item.id, notes);
-            _refreshCart();
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCheckoutSection() {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
@@ -442,13 +1105,13 @@ class _CartScreenState extends State<CartScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Total (${_cartService.itemCount} items)',
+                  'Total ($itemCount items)',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 Text(
-                  '\$${_cartService.totalAmount.toStringAsFixed(2)}',
+                  '\$${totalAmount.toStringAsFixed(2)}',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontFamily: 'MADE TOMMY',
@@ -482,23 +1145,6 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Future<void> _showRemoveItemConfirmation(CartItem item) async {
-    final confirm = await CustomModal.showConfirmation(
-      context: context,
-      title: 'Eliminar ${item.name}',
-      message:
-          '¿Estás seguro de que quieres eliminar este producto de tu pedido?',
-      confirmText: 'Eliminar',
-      cancelText: 'Cancelar',
-      confirmColor: Theme.of(context).colorScheme.error,
-    );
-
-    if (confirm) {
-      _cartService.removeItem(item.id);
-      _refreshCart();
-    }
-  }
-
   Future<void> _confirmOrder() async {
     try {
       showDialog(
@@ -509,7 +1155,7 @@ class _CartScreenState extends State<CartScreen> {
                 const Center(child: CircularProgressIndicator()),
       );
 
-      final cartItems = _cartService.items;
+      final cartItems = _cartItems; // Usar la lista actual en pantalla
 
       if (cartItems.isEmpty) {
         if (context.mounted) {
@@ -544,9 +1190,9 @@ class _CartScreenState extends State<CartScreen> {
 
         // Actualizar las preferencias del usuario con los platos ordenados
         try {
-          final geminiService = GeminiService();
+          final userPreferencesService = UserPreferencesService();
           for (var item in cartItems) {
-            await geminiService.updateUserPreferences(item.name);
+            await userPreferencesService.updateOrderedDish(item.name);
           }
           print('✅ Preferencias de usuario actualizadas correctamente');
         } catch (e) {
@@ -554,7 +1200,15 @@ class _CartScreenState extends State<CartScreen> {
         }
 
         _cartService.clear();
-        _refreshCart();
+
+        // Actualizar UI inmediatamente (optimistic update)
+        setState(() {
+          _cartItems = [];
+          _recommendedDishes = [];
+        });
+
+        // Forzar una notificación explícita para que todos los componentes sepan que el carrito está vacío
+        await _cartService.forceNotifyListeners();
 
         if (context.mounted) {
           await CustomModal.showSuccess(
@@ -596,7 +1250,421 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Widget _buildLoadingScreen() {
-    return const Center(child: CircularProgressIndicator());
+  // Método para forzar la actualización completa del carrito
+  Future<void> _forceRefreshCart() async {
+    if (!mounted) return;
+
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Mostrar mensaje de actualización
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Actualizando carrito...'),
+          duration: Duration(milliseconds: 1000),
+        ),
+      );
+
+      // 1. Obtener datos actuales del servicio
+      final cartService = CartService();
+      final currentItems = cartService.items;
+
+      // 2. Actualizar UI inmediatamente si hay datos
+      if (currentItems.isNotEmpty && mounted) {
+        setState(() {
+          _cartItems = List<CartItem>.from(currentItems);
+          _isLoading = false;
+        });
+      } else {
+        // Solo hacer carga completa si no hay datos inmediatos
+        await _refreshCart();
+      }
+
+      // 3. Forzar actualización del contador en la barra de navegación
+      await cartService.saveCountToSharedPrefs();
+
+      // 4. Verificar si hay discrepancias
+      await _verifyCartCounters();
+
+      // 5. Notificar éxito si se encontraron items
+      if (_cartItems.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Carrito actualizado: ${_cartItems.length} items'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error al forzar actualización del carrito: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar carrito'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Debounce para evitar múltiples cargas simultáneas
+  Timer? _recommendationsTimer;
+  bool _isLoadingRecommendations = false;
+
+  // Método para cargar recomendaciones con debounce
+  Future<void> _loadRecommendations() async {
+    // Cancelar timer previo si existe
+    _recommendationsTimer?.cancel();
+
+    // Evitar múltiples cargas simultáneas
+    if (_isLoadingRecommendations) {
+      print(
+        '📱 CartScreen: Carga de recomendaciones ya en progreso, saltando...',
+      );
+      return;
+    }
+
+    // Solo cargar si no tenemos recomendaciones
+    if (_recommendedDishes.isNotEmpty) {
+      print('📱 CartScreen: Recomendaciones ya cargadas, saltando...');
+      return;
+    }
+
+    // Debounce: Esperar 500ms antes de cargar
+    _recommendationsTimer = Timer(Duration(milliseconds: 500), () async {
+      await _loadRecommendationsInternal();
+    });
+  }
+
+  // Método interno para cargar recomendaciones
+  Future<void> _loadRecommendationsInternal() async {
+    if (_isLoadingRecommendations) return;
+
+    _isLoadingRecommendations = true;
+    try {
+      print('📱 CartScreen: Cargando recomendaciones...');
+      final recommendations = await _generateRecommendations();
+      if (mounted && recommendations.isNotEmpty) {
+        setState(() {
+          _recommendedDishes = recommendations.take(3).toList();
+        });
+        print(
+          '📱 CartScreen: ${_recommendedDishes.length} recomendaciones cargadas',
+        );
+      }
+    } catch (e) {
+      print('❌ Error al cargar recomendaciones: $e');
+    } finally {
+      _isLoadingRecommendations = false;
+    }
+  }
+
+  /// Método para registrar la navegación desde CartScreen a otra pantalla
+  Future<void> _registerNavigationFromCart(int toScreenIndex) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final timestamp = DateTime.now().toIso8601String();
+
+      // Registrar que estamos navegando desde el carrito
+      await prefs.setBool('navigating_from_cart_screen', true);
+      await prefs.setString('cart_exit_timestamp', timestamp);
+
+      // Registrar el contador actual de forma redundante
+      final cartService = CartService();
+      final currentCount = cartService.itemCount;
+
+      // Guardar en todas las claves posibles para máxima redundancia
+      await prefs.setInt('cart_count_before_navigation', currentCount);
+      await prefs.setInt('cart_item_count', currentCount);
+      await prefs.setInt('current_cart_count', currentCount);
+      await prefs.setInt('last_nav_cart_count', currentCount);
+      await prefs.setInt('nav_bar_badge_count', currentCount);
+
+      // Si navegamos específicamente a la pantalla de chat (índice 2)
+      if (toScreenIndex == 2) {
+        print(
+          '⚠️ CartScreen: Navegando a ChatScreen, guardando contador: $currentCount',
+        );
+        await prefs.setBool('coming_from_cart_screen', true);
+        await prefs.setString('cart_to_chat_timestamp', timestamp);
+
+        // Guardar información para asegurar que el contador se mantenga
+        await prefs.setInt('cart_count_for_chat', currentCount);
+        await prefs.setString(
+          'cart_items_backup',
+          jsonEncode(
+            cartService.items
+                .map(
+                  (item) => {
+                    'id': item.id,
+                    'name': item.name,
+                    'price': item.price,
+                    'imageUrl': item.imageUrl,
+                    'quantity': item.quantity,
+                    'notes': item.notes,
+                    'originalData': item.originalData,
+                  },
+                )
+                .toList(),
+          ),
+        );
+      }
+
+      print(
+        '✅ CartScreen: Navegación registrada a pantalla $toScreenIndex con contador: $currentCount',
+      );
+    } catch (e) {
+      print('❌ Error al registrar navegación desde carrito: $e');
+    }
+  }
+
+  // Método para intentar recuperar items del carrito desde SharedPreferences
+  Future<List<CartItem>> _tryRecoverItemsFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Buscar en las posibles claves de backup
+      final backupKeys = ['cart_items_backup', 'cart_backup_data'];
+      String? backupData;
+
+      for (final key in backupKeys) {
+        final data = prefs.getString(key);
+        if (data != null && data.isNotEmpty) {
+          backupData = data;
+          print('📱 CartScreen: Encontrado backup en $key');
+          break;
+        }
+      }
+
+      // Si encontramos datos de backup, intentar reconstruir los items
+      if (backupData != null && backupData.isNotEmpty) {
+        try {
+          final List<dynamic> decodedData = jsonDecode(backupData);
+          print(
+            '📱 CartScreen: Decodificados ${decodedData.length} items del backup',
+          );
+
+          // Reconstruir los items
+          final recoveredItems =
+              decodedData
+                  .map((itemData) {
+                    try {
+                      return CartItem(
+                        id: itemData['id'] ?? '',
+                        name: itemData['name'] ?? 'Item sin nombre',
+                        price: (itemData['price'] ?? 0.0).toDouble(),
+                        imageUrl: itemData['imageUrl'] ?? '',
+                        quantity: itemData['quantity'] ?? 1,
+                        notes: itemData['notes'],
+                        originalData: itemData['originalData'] ?? {},
+                      );
+                    } catch (e) {
+                      print('❌ Error al reconstruir item del backup: $e');
+                      return null;
+                    }
+                  })
+                  .whereType<CartItem>()
+                  .toList();
+
+          if (recoveredItems.isNotEmpty) {
+            // Si recuperamos items, también actualizarlos en el servicio
+            final cartService = CartService();
+
+            // Desactivar notificaciones durante la actualización masiva
+            cartService.setNotificationsEnabled(false);
+
+            // Limpiar el carrito actual
+            await cartService.clear();
+
+            // Añadir cada item recuperado
+            for (final item in recoveredItems) {
+              await cartService.addItem(
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                imageUrl: item.imageUrl,
+                quantity: item.quantity,
+                notes: item.notes,
+                originalData: item.originalData,
+              );
+            }
+
+            // Reactivar notificaciones
+            cartService.setNotificationsEnabled(true);
+
+            // Forzar actualización de todos los contadores
+            await cartService.saveCountToSharedPrefs();
+
+            print(
+              '✅ CartScreen: ${recoveredItems.length} items recuperados y sincronizados',
+            );
+            return recoveredItems;
+          }
+        } catch (e) {
+          print('❌ Error al decodificar backup: $e');
+        }
+      }
+
+      // Verificar contador en SharedPreferences
+      final storedCount = prefs.getInt('nav_bar_badge_count') ?? 0;
+
+      // Si hay un contador pero no hay items, hay discrepancia
+      if (storedCount > 0) {
+        print(
+          '⚠️ CartScreen: Contador en SharedPreferences: $storedCount pero no hay items recuperables',
+        );
+      }
+
+      return [];
+    } catch (e) {
+      print('❌ Error al recuperar items desde SharedPreferences: $e');
+      return [];
+    }
+  }
+
+  Future<int> _getCartCountFromBadge() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('nav_bar_badge_count') ?? 0;
+  }
+
+  /// Método para forzar la carga del carrito desde todas las claves de storage posibles
+  Future<void> _forceLoadFromAllStorageKeys() async {
+    try {
+      print('🔧 CartScreen: _forceLoadFromAllStorageKeys INICIANDO');
+      final prefs = await SharedPreferences.getInstance();
+
+      // Obtener userId actual
+      final currentUserId = prefs.getString('current_user_id');
+      final numericUserId = prefs.getInt('user_id');
+
+      print('🔍 Verificando con userIds: $currentUserId, $numericUserId');
+
+      // Lista de posibles claves de carrito a verificar
+      final possibleKeys = [
+        'cart_items_${numericUserId ?? 'unknown'}',
+        'cart_items_$currentUserId',
+        'cart_backup_${numericUserId ?? 'unknown'}',
+        'cart_backup_$currentUserId',
+        'cart_items_guest',
+        'cart_backup_guest',
+      ];
+
+      String? foundData;
+      String? foundKey;
+
+      // Buscar datos en cualquiera de las claves
+      for (final key in possibleKeys) {
+        final data = prefs.getString(key);
+        if (data != null && data.isNotEmpty && data != '[]') {
+          foundData = data;
+          foundKey = key;
+          print('✅ CartScreen: Datos encontrados en clave: $key');
+          break;
+        }
+      }
+
+      if (foundData != null && foundKey != null) {
+        print('🔧 CartScreen: Restaurando desde $foundKey...');
+
+        try {
+          final List<dynamic> decodedData = jsonDecode(foundData);
+          print('📦 CartScreen: Decodificados ${decodedData.length} items');
+
+          if (decodedData.isNotEmpty) {
+            // Forzar actualización del CartService con estos datos
+            _cartService.setNotificationsEnabled(false);
+            await _cartService.clear();
+
+            // Reconstituir y añadir cada item
+            for (final itemData in decodedData) {
+              await _cartService.addItem(
+                id:
+                    itemData['id'] ??
+                    DateTime.now().millisecondsSinceEpoch.toString(),
+                name: itemData['name'] ?? 'Item',
+                price: (itemData['price'] ?? 0.0).toDouble(),
+                imageUrl: itemData['imageUrl'] ?? '',
+                quantity: itemData['quantity'] ?? 1,
+                notes: itemData['notes'],
+                originalData: itemData['originalData'] ?? {},
+              );
+            }
+
+            _cartService.setNotificationsEnabled(true);
+            await _cartService.saveCart();
+
+            // Actualizar UI inmediatamente
+            setState(() {
+              _cartItems = List<CartItem>.from(_cartService.items);
+            });
+
+            print(
+              '✅ CartScreen: ${decodedData.length} items restaurados exitosamente',
+            );
+          }
+        } catch (e) {
+          print('❌ Error al decodificar datos del carrito: $e');
+        }
+      } else {
+        print(
+          '❌ CartScreen: No se encontraron datos de carrito en ninguna clave',
+        );
+      }
+    } catch (e) {
+      print('❌ Error en _forceLoadFromAllStorageKeys: $e');
+    }
+  }
+
+  /// Verifica si el usuario llegó a esta pantalla desde ChatScreen
+  Future<void> _checkIfCameFromChat() async {
+    try {
+      print('📱 CartScreen: Verificando si se navegó desde ChatScreen');
+      final prefs = await SharedPreferences.getInstance();
+
+      // Comprobar si tenemos la marca específica de navegación desde chat
+      final cameFromChat =
+          prefs.getBool('navigated_from_chat_to_cart') ?? false;
+      final chatToCartTimestamp = prefs.getString('chat_to_cart_timestamp');
+
+      if (cameFromChat && chatToCartTimestamp != null) {
+        // Calcular cuántos segundos han pasado desde la navegación
+        final now = DateTime.now();
+        final navigationTime = DateTime.parse(chatToCartTimestamp);
+        final secondsSinceNavigation = now.difference(navigationTime).inSeconds;
+
+        // Solo procesar si la navegación fue reciente (últimos 10 segundos)
+        if (secondsSinceNavigation <= 10) {
+          print(
+            '🔀 CartScreen: Detectada navegación reciente desde ChatScreen',
+          );
+
+          // Forzar actualización del carrito
+          await _refreshCart();
+
+          // Si acabamos de navegar desde chat, mostrar un mensaje de bienvenida
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Carrito actualizado con tus productos'),
+                duration: Duration(seconds: 2),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+
+          // Limpiar la bandera después de procesarla
+          await prefs.setBool('navigated_from_chat_to_cart', false);
+        }
+      }
+    } catch (e) {
+      print('❌ Error al verificar navegación desde chat: $e');
+    }
   }
 }

@@ -22,6 +22,7 @@ import '../Admin_Screens/Users/AdminUsersScreen.dart';
 import 'text_with_border.dart';
 import 'package:http/http.dart' as http;
 import '../../Api_services/cart_service.dart';
+import '../../services/cart_event_bus.dart';
 
 // PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
 class PlaceholderScreen extends StatelessWidget {
@@ -73,6 +74,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   late int _currentIndex;
   int _userRole = 0;
   String? _userName;
+  String? _userId; // Variable para almacenar el ID del usuario actual
   bool _isLoading = true;
   final GlobalKey<CurvedNavigationBarState> _navBarKey = GlobalKey();
   final storage = const FlutterSecureStorage();
@@ -86,12 +88,26 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
   // CartService para obtener la cantidad de elementos
   final CartService _cartService = CartService();
-  int _cartItemCount = 0;
+
+  // Usar ValueNotifier para el contador del carrito - esto permite actualizaciones más eficientes
+  final ValueNotifier<int> _cartItemCountNotifier = ValueNotifier<int>(0);
+
+  // Getter para acceder al valor actual
+  int get _cartItemCount => _cartItemCountNotifier.value;
+
+  // Timer para actualizar periódicamente el contador del carrito
+  Timer? _cartUpdateTimer;
+
+  // Suscripción a eventos del bus de carrito
+  StreamSubscription<CartEvent>? _cartEventSubscription;
+
+  // Variable para cachear el contador y reducir llamadas a SharedPreferences
+  int _cachedCartCount = 0;
+  DateTime _lastCartCountCheck = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    // Inicializar el índice con el valor proporcionado en el constructor
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: _currentIndex);
     _pageStreamController = StreamController<int>.broadcast();
@@ -99,93 +115,294 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     _loadUserData();
     _checkDebugMode();
 
-    // Forzar la actualización del carrito
-    _resetCartService();
+    // Configurar un temporizador para actualizar el contador del carrito más frecuentemente
+    _cartUpdateTimer = Timer.periodic(Duration(milliseconds: 1000), (_) async {
+      if (mounted) {
+        await _updateCartItemCount();
 
-    // Escuchar cambios en el carrito
-    _cartService.addListener(_updateCartItemCount);
+        // Verificar actualizaciones desde ChatScreen cada vez
+        await _checkPendingCartUpdatesFromChat();
+      }
+    });
+
+    // Registrar como listener prioritario para recibir notificaciones inmediatas
+    _cartService.addPriorityListener(_onCartChanged);
+
+    // También escuchar cambios normales para compatibilidad
+    _cartService.addListener(_onCartChanged);
+
+    // Suscribirse a eventos del CartEventBus
+    _cartEventSubscription = _cartService.cartEvents.listen(
+      _onCartEventReceived,
+    );
+    print('⚡ BottomNav: Suscrito a eventos del CartEventBus');
+
+    // Actualizar el contador inmediatamente
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _updateCartItemCount();
+
+      // Verificar actualizaciones desde ChatScreen inmediatamente
+      await _checkPendingCartUpdatesFromChat();
+
+      // Verificar si hay una solicitud de navegación pendiente
+      await _checkPendingNavigation();
+
+      // Suscribirse a eventos del carrito para mantener actualizado el badge
+      _subscribeToCartEvents();
+    });
   }
 
   @override
   void dispose() {
     _pageStreamController.close();
     _pageController.dispose();
-    _cartService.removeListener(_updateCartItemCount);
+
+    // Eliminar ambos tipos de listeners
+    _cartService.removePriorityListener(_onCartChanged);
+    _cartService.removeListener(_onCartChanged);
+
+    // Cancelar el temporizador al destruir el widget
+    _cartUpdateTimer?.cancel();
+
+    // NUEVO: Cancelar suscripción a eventos
+    _cartEventSubscription?.cancel();
+    print('⚡ BottomNav: Cancelada suscripción a eventos del CartEventBus');
+
     super.dispose();
   }
 
-  // Método para reiniciar el servicio de carrito
-  Future<void> _resetCartService() async {
-    await _cartService.resetService();
-    _updateCartItemCount();
-  }
-
-  // Actualizar el contador de elementos del carrito
-  void _updateCartItemCount() {
+  // Este método se ejecuta cuando hay cambios en el carrito
+  void _onCartChanged() async {
     if (mounted) {
-      setState(() {
-        _cartItemCount = _cartService.itemCount;
-        print('🔢 Contador del carrito actualizado: $_cartItemCount');
-      });
+      try {
+        // Flujo estándar: Acceder directamente al contador
+        final count = _cartService.itemCount;
+
+        // Actualizar el contador directamente sin setState
+        if (count != _cartItemCountNotifier.value) {
+          print('🛒 Cambio detectado en el carrito: $_cartItemCount → $count');
+          _cartItemCountNotifier.value = count;
+        }
+      } catch (e) {
+        print('❌ Error en _onCartChanged: $e');
+      }
     }
   }
 
-  // Método para cambiar de página
-  void _changePage(int index) {
+  // NUEVO: Método para recibir eventos de cart_event_bus.dart
+  void _onCartEventReceived(CartEvent event) {
+    if (mounted) {
+      print('📣 BottomNav: Evento del carrito recibido: ${event.type}');
+
+      // Actualizar contador para cualquier tipo de evento
+      _updateCartItemCount();
+    }
+  }
+
+  // Método para actualizar el contador del carrito desde el servicio
+  Future<void> _updateCartItemCount() async {
+    try {
+      // Resetear la caché para forzar una recarga fresca
+      _cachedCartCount = 0;
+
+      // Obtener el contador desde SharedPreferences
+      final count = await _getCartCountFromPrefs();
+
+      // Solo actualizar si es necesario para evitar ciclos
+      if (count != _cartItemCountNotifier.value) {
+        _cartItemCountNotifier.value = count;
+      }
+
+      // Si estamos montados, considerar una actualización de UI
+      if (mounted) {
+        // No actualizar el estado directamente para evitar reconstrucciones innecesarias
+        // Solo actualizar si hay un cambio significativo
+        final currentValue = _cartItemCountNotifier.value;
+        if ((currentValue == 0 && count > 0) ||
+            (currentValue > 0 && count == 0)) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      print('❌ Error al actualizar contador del carrito: $e');
+    }
+  }
+
+  // Método para cambiar de página de manera más eficiente
+  Future<void> _changePage(int index) async {
     if (index != _currentIndex) {
-      // Si estamos cambiando a la pestaña de carrito (Cliente, índice 3),
-      // forzar una actualización completa del carrito
-      if (_userRole == 1 && index == 3) {
-        _resetCartService();
-      }
+      try {
+        print('🧭 Navegando a página $index desde $_currentIndex');
 
-      setState(() {
-        _currentIndex = index;
-      });
-      _pageController.jumpToPage(index);
-      _pageStreamController.add(index);
+        // Guardar el índice anterior para referencia
+        final fromIndex = _currentIndex;
+
+        // Cambiar la página inmediatamente para mejor respuesta
+        setState(() {
+          _currentIndex = index;
+        });
+
+        // Actualizar PageController sin esperar
+        try {
+          _pageController.jumpToPage(index);
+        } catch (e) {
+          print('⚠️ Error en PageController: $e');
+          _pageController = PageController(initialPage: index);
+        }
+
+        // Actualizar contadores pero sin forzar múltiples sincronizaciones
+        final cartService = CartService();
+        await cartService.registerScreenNavigation(fromIndex, index);
+
+        // Una única actualización del contador después de cambiar de página
+        await _updateCartItemCount();
+      } catch (e) {
+        print('❌ Error al cambiar página: $e');
+      }
     }
   }
 
-  // Cargar datos del usuario desde preferencias
-  Future<void> _loadUserData() async {
+  // Verificar si hay una solicitud para navegar a una pestaña específica
+  Future<void> _checkPendingNavigation() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final roleId = prefs.getInt('user_rol');
-      final name = prefs.getString('user_name');
-      final userId = prefs.getInt('user_id');
+      final targetTab = prefs.getInt('navigate_to_tab');
+      final timestamp = prefs.getString('navigation_timestamp');
 
-      // Configurar el CartService con el ID del usuario actual
-      if (userId != null) {
-        _cartService.setUserId(userId.toString());
-        print('✅ CartService inicializado con ID de usuario: $userId');
-      } else {
-        print('⚠️ No se encontró ID de usuario en SharedPreferences');
+      // Solo procesar si hay un valor y el timestamp es reciente (últimos 5 segundos)
+      if (targetTab != null && timestamp != null) {
+        final navTime = DateTime.parse(timestamp);
+        final now = DateTime.now();
+        final diff = now.difference(navTime).inSeconds;
+
+        if (diff <= 5) {
+          // Considerar válidas las navegaciones de los últimos 5 segundos
+          print(
+            '🧭 CustomBottomNavigationBar: Navegando a pestaña $targetTab desde flag en SharedPreferences',
+          );
+
+          // Cambiar a la pestaña indicada
+          if (mounted && targetTab != _currentIndex) {
+            _changePage(targetTab);
+          }
+        }
+
+        // Limpiar los valores después de procesarlos
+        await prefs.remove('navigate_to_tab');
+        await prefs.remove('navigation_timestamp');
       }
 
-      setState(() {
-        _userRole = roleId ?? 0;
-        _userName = name;
-        _isLoading = false;
-      });
+      // NUEVO: Verificar si hay actualizaciones pendientes del carrito desde ChatScreen
+      await _checkPendingCartUpdatesFromChat();
     } catch (e) {
-      print('Error al cargar datos de usuario: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      print('❌ Error al verificar navegación pendiente: $e');
     }
   }
 
-  Future<void> _checkDebugMode() async {
+  // Método para verificar actualizaciones pendientes del carrito desde ChatScreen
+  Future<void> _checkPendingCartUpdatesFromChat() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final debugMode = prefs.getBool('debug_mode') ?? false;
-      setState(() {
-        showAdminSettings = debugMode;
-      });
+      bool needsUpdate = false;
+
+      // 1. Verificar todas las posibles marcas de tiempo de actualización
+      final possibleMarks = [
+        'chat_force_cart_update',
+        'force_cart_update',
+        'cart_force_update',
+        'bottom_nav_cart_update',
+      ];
+
+      // Buscar la marca de tiempo más reciente
+      DateTime? mostRecentUpdate;
+      for (final mark in possibleMarks) {
+        final updateMark = prefs.getString(mark);
+        if (updateMark != null) {
+          final updateTime = DateTime.parse(updateMark);
+          if (mostRecentUpdate == null ||
+              updateTime.isAfter(mostRecentUpdate)) {
+            mostRecentUpdate = updateTime;
+          }
+        }
+      }
+
+      // Si encontramos una marca de tiempo, verificar si es reciente (últimos 60 segundos)
+      if (mostRecentUpdate != null) {
+        final now = DateTime.now();
+        if (now.difference(mostRecentUpdate).inSeconds < 60) {
+          print(
+            '⚡ BottomNav: Detectada actualización reciente desde marca de tiempo',
+          );
+          needsUpdate = true;
+        }
+      }
+
+      // 2. Verificar si el contador actual es diferente del almacenado
+      final storedCount = prefs.getInt('cart_item_count') ?? 0;
+      final currentNavCount = _cartItemCountNotifier.value;
+
+      if (storedCount != currentNavCount) {
+        print(
+          '⚡ BottomNav: Discrepancia en contador: stored=$storedCount vs navBar=$currentNavCount',
+        );
+        needsUpdate = true;
+      }
+
+      // 3. También verificar el contador del servicio de carrito directamente
+      final serviceCount = _cartService.itemCount;
+      if (serviceCount != currentNavCount || serviceCount != storedCount) {
+        print(
+          '⚡ BottomNav: Discrepancia con servicio: service=$serviceCount, navBar=$currentNavCount, stored=$storedCount',
+        );
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        // Siempre usar el valor del servicio como fuente de verdad
+        if (serviceCount != _cartItemCountNotifier.value) {
+          // Actualizar el contador directamente
+          _cartItemCountNotifier.value = serviceCount;
+
+          // También actualizar prefs para mayor coherencia
+          await prefs.setInt('cart_item_count', serviceCount);
+          await prefs.setInt('current_cart_count', serviceCount);
+          await prefs.setInt('last_nav_cart_count', serviceCount);
+
+          // Forzar actualización del estado para reflejar cambios inmediatamente
+          if (mounted) {
+            setState(() {});
+          }
+
+          print(
+            '🔄 BottomNav: Contador actualizado a $serviceCount desde actualización pendiente',
+          );
+        }
+      }
     } catch (e) {
-      print('Error al verificar modo debug: $e');
+      print(
+        '❌ Error al verificar actualizaciones del carrito desde ChatScreen: $e',
+      );
     }
+  }
+
+  // Método para suscribirse a eventos del carrito
+  void _subscribeToCartEvents() {
+    // Cancelar suscripción anterior si existe
+    _cartEventSubscription?.cancel();
+
+    // Crear nueva suscripción
+    _cartEventSubscription = _cartService.cartEvents.listen((event) {
+      // Resetear caché para forzar recarga desde SharedPreferences
+      _cachedCartCount = 0;
+
+      // Actualizar el contador del carrito
+      _updateCartItemCount();
+
+      // Si es un evento de fuerza mayor, invalidar caché y forzar reconstrucción
+      if (event.type == CartEventType.forceRefresh) {
+        setState(() {}); // Forzar reconstrucción de la UI
+      }
+    });
   }
 
   @override
@@ -197,6 +414,13 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
     final backgroundColor = theme.colorScheme.surface;
+
+    // Forzar actualización del contador del carrito cada vez que se construye el widget
+    // para mantener sincronización entre todas las pantallas
+    if (_userRole == 1) {
+      // Solo para clientes
+      _updateCartItemCount();
+    }
 
     return WillPopScope(
       onWillPop: () async {
@@ -254,6 +478,8 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         return false; // Siempre retornar false para evitar la navegación hacia atrás
       },
       child: Scaffold(
+        extendBody: true,
+        backgroundColor: backgroundColor,
         appBar: AppBar(
           title: _buildAppBarTitle(),
           automaticallyImplyLeading: false,
@@ -302,6 +528,12 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
             setState(() {
               _currentIndex = index;
             });
+
+            // Actualizar contador del carrito cuando cambia la página
+            if (_userRole == 1) {
+              // Solo para clientes
+              _updateCartItemCount();
+            }
           },
           children: _getPagesForRole(_userRole),
         ),
@@ -312,10 +544,19 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           items: _getNavItemsForRole(_userRole, Colors.white),
           color: primaryColor,
           buttonBackgroundColor: primaryColor,
-          backgroundColor: backgroundColor,
+          backgroundColor: Colors.transparent,
           animationCurve: Curves.easeInOut,
           animationDuration: const Duration(milliseconds: 300),
-          onTap: _changePage,
+          onTap: (index) {
+            _changePage(index);
+
+            // Forzar actualización inmediata del contador cuando cambia la página
+            if (_userRole == 1) {
+              Future.delayed(Duration(milliseconds: 100), () {
+                if (mounted) _updateCartItemCount();
+              });
+            }
+          },
           letIndexChange: (index) => true,
         ),
       ),
@@ -502,49 +743,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
               ),
             ],
           ),
-          Stack(
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.shopping_cart, color: iconColor),
-                  Text(
-                    'Carrito',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontFamily: 'Lighthouse',
-                      color: iconColor,
-                    ),
-                  ),
-                ],
-              ),
-              if (_cartItemCount > 0)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      _cartItemCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          _buildCartItem(iconColor),
         ];
       case 2: // Cocinero
         return [
@@ -681,6 +880,120 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
             ],
           ),
         ];
+    }
+  }
+
+  // Método especializado para construir el ítem de carrito con el badge
+  Widget _buildCartItem(Color iconColor) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.shopping_cart_outlined, color: iconColor),
+            Text(
+              'Carrito',
+              style: TextStyle(
+                fontSize: 10,
+                fontFamily: 'Lighthouse',
+                color: iconColor,
+              ),
+            ),
+          ],
+        ),
+        // Badge del carrito usando FutureBuilder para leer siempre desde SharedPreferences
+        FutureBuilder<int>(
+          // Leer contador siempre desde SharedPreferences
+          future: _getCartCountFromPrefs(),
+          builder: (context, snapshot) {
+            // Mostrar contador solo si hay datos y es mayor que cero
+            final count = snapshot.data ?? 0;
+
+            // Usar post-frame callback para actualizar el notificador después del build
+            if (count != _cartItemCountNotifier.value) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _cartItemCountNotifier.value = count;
+              });
+            }
+
+            return count > 0
+                ? Positioned(
+                  top: -8,
+                  right: -8,
+                  child: Container(
+                    padding: EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text(
+                      count.toString(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+                : SizedBox.shrink();
+          },
+        ),
+      ],
+    );
+  }
+
+  // Método para obtener el contador del carrito desde SharedPreferences con caché temporal
+  Future<int> _getCartCountFromPrefs() async {
+    try {
+      // Si ha pasado menos de 500ms desde la última verificación, usar el valor en caché
+      final now = DateTime.now();
+      final timeSinceLastCheck =
+          now.difference(_lastCartCountCheck).inMilliseconds;
+
+      if (timeSinceLastCheck < 500 && _cachedCartCount > 0) {
+        return _cachedCartCount;
+      }
+
+      // Actualizar el timestamp de verificación
+      _lastCartCountCheck = now;
+
+      final prefs = await SharedPreferences.getInstance();
+
+      // Intentar leer de las múltiples claves, tomando el mayor valor por seguridad
+      final keys = [
+        'cart_item_count',
+        'current_cart_count',
+        'last_nav_cart_count',
+        'nav_bar_badge_count',
+      ];
+      int maxCount = 0;
+
+      for (final key in keys) {
+        final count = prefs.getInt(key) ?? 0;
+        if (count > maxCount) {
+          maxCount = count;
+        }
+      }
+
+      // Comparar también con el contador del servicio
+      final serviceCount = _cartService.itemCount;
+
+      // Tomar el mayor valor entre SharedPreferences y el servicio
+      final finalCount = maxCount > serviceCount ? maxCount : serviceCount;
+
+      // Cachear el resultado para futuras llamadas
+      _cachedCartCount = finalCount;
+
+      return finalCount;
+    } catch (e) {
+      print('❌ Error al leer contador desde SharedPreferences: $e');
+
+      // En caso de error, intentar leer directamente del servicio
+      return _cartService.itemCount;
     }
   }
 
@@ -1264,84 +1577,139 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   // Método para cerrar sesión
   Future<void> _logout() async {
     try {
+      // IMPORTANTE: Limpiar primero todos los datos de carrito, antes de cualquier otra cosa
+      try {
+        // Limpiar todos los datos del carrito con el método especializado
+        await _cartService.clearAllCarts();
+        print('🧹 Carrito limpiado completamente usando clearAllCarts');
+      } catch (e) {
+        print('❌ Error al limpiar el carrito: $e');
+      }
+
       // 1. Llamar al endpoint de logout en el backend
       final response = await http.post(
         Uri.parse('http://192.168.1.121:3000/logout'),
         headers: {"Content-Type": "application/json"},
       );
 
-      // IMPORTANTE: Limpiar primero todos los datos de carrito, antes de cualquier otra cosa
-      try {
-        // Limpiar completamente TODOS los carritos guardados en SharedPreferences
-        final prefs = await SharedPreferences.getInstance();
-        final allKeys = prefs.getKeys().toList();
+      // Limpiar completamente TODOS los datos del usuario en SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys().toList();
 
-        // Eliminar específicamente todas las claves relacionadas con carritos
-        for (final key in allKeys) {
-          if (key.startsWith('cart_')) {
-            await prefs.remove(key);
-            print('🗑️ Eliminada clave de carrito: $key');
-          }
+      // Eliminar todas las claves excepto las de configuración de la app
+      final keysToKeep = ['app_theme', 'app_language', 'first_run'];
+      for (final key in allKeys) {
+        // Preservar solo claves específicas de configuración de la app
+        if (!keysToKeep.contains(key)) {
+          await prefs.remove(key);
+          print('🗑️ Eliminada clave: $key');
         }
-
-        // También limpiar la memoria caché del carrito
-        await _cartService.clearAllCarts();
-        print(
-          '🧹 Todos los datos de carritos eliminados de SharedPreferences y memoria',
-        );
-      } catch (e) {
-        print('❌ Error al limpiar datos de carritos: $e');
       }
 
-      if (response.statusCode == 200) {
-        // 2. Limpiar todos los datos locales de forma segura
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(
-          'user_logged_out',
-          true,
-        ); // Marcar bandera para limpiar chat history
-        await prefs.remove('auth_token'); // Token específico
-        await prefs.remove('user_rol'); // Rol del usuario
-        await prefs.remove('user_name'); // Nombre del usuario
-        await prefs.remove('user_cedula');
-        await prefs.remove('user_id'); // Eliminar ID del usuario
-        await prefs.remove('gemini_connected');
-        await prefs.remove('debug_mode');
-        await prefs.remove('echo_mode');
-        await prefs.remove('persistent_chat_user_id');
-        await prefs.remove('temporary_chat_id');
+      // Limpiar las preferencias de platos del usuario
+      await prefs.remove('user_dish_preferences');
 
-        // Establecer el ID a 'guest' para el nuevo estado
-        await _cartService.setUserId('guest');
-        print('✅ CartService reiniciado y establecido como invitado');
+      // Establecer flags para indicar que se ha cerrado sesión
+      await prefs.setBool('user_logged_out', true);
+      await prefs.setBool('cart_cleared_on_logout', true);
 
-        // Actualizar el contador del carrito en la UI
-        _updateCartItemCount();
+      // Asegurarse que cualquier dato de chat se limpie al cerrar sesión
+      await prefs.remove('chat_history_global');
+      await prefs.remove('chat_history_timestamp');
+      await prefs.remove('persistent_chat_user_id');
 
-        // 3. Redirección segura a WelcomeScreen
-        if (mounted) {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/',
-            (Route<dynamic> route) =>
-                false, // Elimina toda la pila de navegación
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Error al cerrar sesión en el servidor"),
-            ),
-          );
-        }
+      // Forzar limpieza específica de chat en SharedPreferences
+      await prefs.remove('chat_messages');
+      await prefs.remove('chat_last_timestamp');
+      await prefs.remove('temporary_chat_id');
+      print('🧹 Historial de chat eliminado de SharedPreferences');
+
+      // Resetear el servicio de carrito completamente como respaldo adicional
+      await _cartService.resetService();
+
+      // Navegar a la pantalla de inicio de sesión (usando ruta nombrada)
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
       }
     } catch (e) {
+      print('❌ Error al cerrar sesión: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error de conexión: ${e.toString()}")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Error al cerrar sesión')));
       }
+    }
+  }
+
+  // Intentamos sincronizar números de carrito inconsistentes
+  Future<void> _attemptToSyncCartInconsistency() async {
+    // Verificar si hay diferencias entre estado local y servicio
+    final serviceCount = _cartService.itemCount;
+    if (serviceCount != _cartItemCount) {
+      print(
+        '⚠️ Inconsistencia detectada: NavBar=$_cartItemCount, Service=$serviceCount',
+      );
+
+      // Dar precedencia al servicio (fuente de verdad)
+      _cartItemCountNotifier.value = serviceCount;
+
+      // Guardar en SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('cart_item_count', serviceCount);
+      await prefs.setInt('current_cart_count', serviceCount);
+
+      // No necesitamos disparar evento aquí ya que ahora usamos eventos de CartService
+
+      // Forzar actualización del estado
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  // Cargar datos del usuario desde preferencias
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleId = prefs.getInt('user_rol');
+      final name = prefs.getString('user_name');
+      final userId = prefs.getInt('user_id');
+
+      // Guardar ID de usuario para referencia en CartService
+      if (userId != null) {
+        _userId = userId.toString();
+        // Usar el método setUserId para asegurar que el servicio esté sincronizado
+        await _cartService.setUserId(_userId!);
+        print('✅ ID de usuario actualizado en CartService: $_userId');
+      } else {
+        print('⚠️ No se encontró ID de usuario en SharedPreferences');
+        // Establecer como usuario invitado
+        _userId = 'guest';
+        await _cartService.setUserId('guest');
+      }
+
+      setState(() {
+        _userRole = roleId ?? 0;
+        _userName = name;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error al cargar datos de usuario: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _checkDebugMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final debugMode = prefs.getBool('debug_mode') ?? false;
+      setState(() {
+        showAdminSettings = debugMode;
+      });
+    } catch (e) {
+      print('Error al verificar modo debug: $e');
     }
   }
 }

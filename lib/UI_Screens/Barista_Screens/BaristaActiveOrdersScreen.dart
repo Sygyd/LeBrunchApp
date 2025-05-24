@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../Api_services/pedidos/orders_service.dart';
-import '../Widgets/shared_active_orders_screen.dart';
+import '../Shared/shared_active_orders_screen.dart';
 import '../../services/order_status_service.dart';
 
 class BaristaActiveOrdersScreen extends StatefulWidget {

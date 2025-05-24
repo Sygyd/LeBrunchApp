@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../Widgets/shared_profile_screen.dart';
+import '../Shared/shared_profile_screen.dart';
 
 class BaristaProfileScreen extends StatelessWidget {
   const BaristaProfileScreen({super.key});

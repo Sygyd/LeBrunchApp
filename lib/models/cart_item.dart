@@ -17,6 +17,36 @@ class CartItem {
     required this.originalData,
   });
 
+  // Factory constructor para crear una instancia desde un JSON
+  factory CartItem.fromJson(Map<String, dynamic> json) {
+    return CartItem(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      price:
+          (json['price'] as num)
+              .toDouble(), // Asegurar que el precio sea double
+      imageUrl:
+          json['imageUrl'] as String? ?? '', // Permitir imageUrl nulo o vacío
+      quantity: json['quantity'] as int,
+      notes: json['notes'] as String?,
+      // Si originalData no siempre está, proporcionar un fallback
+      originalData: json['originalData'] as Map<String, dynamic>? ?? {},
+    );
+  }
+
+  // Método para convertir la instancia a JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'price': price,
+      'imageUrl': imageUrl,
+      'quantity': quantity,
+      'notes': notes,
+      'originalData': originalData,
+    };
+  }
+
   CartItem copyWith({
     String? id,
     String? name,

@@ -16,6 +16,7 @@ class ChatMessage {
   final MessageSender sender;
   final DateTime timestamp;
   final bool isRead;
+  String? messageId; // ID único para prevenir duplicación de mensajes
 
   ChatMessage({
     required this.id,
@@ -25,38 +26,54 @@ class ChatMessage {
     required this.sender,
     required this.timestamp,
     this.isRead = false,
+    this.messageId,
   });
 
   // Método para crear un mensaje de texto del usuario
-  factory ChatMessage.fromUser({required String message, String? id}) {
+  factory ChatMessage.fromUser({
+    required String message,
+    String? id,
+    String? messageId,
+  }) {
     return ChatMessage(
       id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       message: message,
       type: MessageType.text,
       sender: MessageSender.user,
       timestamp: DateTime.now(),
+      messageId: messageId,
     );
   }
 
   // Método para crear un mensaje de texto del soporte
-  factory ChatMessage.fromSupport({required String message, String? id}) {
+  factory ChatMessage.fromSupport({
+    required String message,
+    String? id,
+    String? messageId,
+  }) {
     return ChatMessage(
       id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       message: message,
       type: MessageType.text,
       sender: MessageSender.support,
       timestamp: DateTime.now(),
+      messageId: messageId,
     );
   }
 
   // Método para crear un mensaje de texto del sistema
-  factory ChatMessage.fromSystem({required String message, String? id}) {
+  factory ChatMessage.fromSystem({
+    required String message,
+    String? id,
+    String? messageId,
+  }) {
     return ChatMessage(
       id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       message: message,
       type: MessageType.text,
       sender: MessageSender.system,
       timestamp: DateTime.now(),
+      messageId: messageId,
     );
   }
 
@@ -106,6 +123,7 @@ class ChatMessage {
       'sender': sender.toString(),
       'timestamp': timestamp.toIso8601String(),
       'isRead': isRead,
+      'messageId': messageId,
     };
   }
 
@@ -125,6 +143,7 @@ class ChatMessage {
       ),
       timestamp: DateTime.parse(json['timestamp']),
       isRead: json['isRead'] ?? false,
+      messageId: json['messageId'],
     );
   }
 }

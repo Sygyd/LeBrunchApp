@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../Api_services/pedidos/orders_service.dart';
-import '../Widgets/shared_active_orders_screen.dart';
+import '../Shared/shared_active_orders_screen.dart';
 
 class ActiveOrdersScreen extends StatefulWidget {
   const ActiveOrdersScreen({super.key});

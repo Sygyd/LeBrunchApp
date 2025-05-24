@@ -19,8 +19,14 @@ import 'custom_bottom_navigation_bar.dart';
 /// Clase para manejar las rutas de la aplicación
 class AppRoutes {
   static Route<dynamic> generateRoute(RouteSettings settings) {
-    // Extraer argumentos si existen
-    final args = settings.arguments as Map<String, dynamic>? ?? {};
+    // Extraer argumentos si existen - manejar tanto Map como int (para índices)
+    final dynamic rawArgs = settings.arguments;
+    final Map<String, dynamic> args =
+        rawArgs is Map<String, dynamic>
+            ? rawArgs
+            : rawArgs is int
+            ? {'initialIndex': rawArgs}
+            : {};
 
     switch (settings.name) {
       case '/splash':
@@ -31,6 +37,16 @@ class AppRoutes {
         return MaterialPageRoute(builder: (_) => const WelcomeScreen());
 
       case '/home':
+        return MaterialPageRoute(
+          builder:
+              (_) => CustomBottomNavigationBar(
+                initialIndex:
+                    args.containsKey('initialIndex') ? args['initialIndex'] : 0,
+              ),
+        );
+
+      case '/client_home':
+        // Usar CustomBottomNavigationBar con el índice proporcionado
         return MaterialPageRoute(
           builder:
               (_) => CustomBottomNavigationBar(

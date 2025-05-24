@@ -31,8 +31,12 @@ Future<void> main() async {
       if (isConnected) {
         // Intentar cargar el menú para tenerlo precargado
         unawaited(
-          geminiService.fetchMenu().then((menu) {
-            print('Menú precargado con ${menu.length} platos');
+          geminiService.getFullMenu().then((menu) {
+            if (menu != null) {
+              print('Menú precargado con ${menu.length} platos');
+            } else {
+              print('⚠️ No se pudo precargar el menú');
+            }
           }),
         );
       }
@@ -55,21 +59,23 @@ void setupLogoutCallback() async {
 Future<void> _testGeminiConnection() async {
   try {
     final geminiService = GeminiService();
-    bool isConnected = await geminiService.testGeminiConnection();
+    bool isConnected = await geminiService.checkServerConnection();
 
     print(
-      'Prueba de conexión con Gemini: ${isConnected ? 'EXITOSA' : 'FALLIDA'}',
+      'Prueba de conexión con Gemini/Servidor: ${isConnected ? 'EXITOSA' : 'FALLIDA'}',
     );
 
     if (isConnected) {
-      // Si hay conexión, también probar la conexión con el servidor
-      final serverConnected = await geminiService.checkServerConnection();
-      print(
-        'Conexión con el servidor: ${serverConnected ? 'EXITOSA' : 'FALLIDA'}',
-      );
+      // Si hay conexión, también intentar obtener el menú para verificar funcionalidad completa
+      final menu = await geminiService.getFullMenu();
+      if (menu != null) {
+        print('Verificación completa: Menú obtenido con ${menu.length} platos');
+      } else {
+        print('⚠️ Conexión establecida pero no se pudo obtener el menú');
+      }
     }
   } catch (e) {
-    print('Error al probar conexión con Gemini: $e');
+    print('Error al probar conexión con Gemini/Servidor: $e');
   }
 }
 

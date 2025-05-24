@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../Widgets/shared_home_screen.dart';
+import '../Shared/shared_home_screen.dart';
 
 class CookHomeScreen extends StatelessWidget {
   final String userName;
