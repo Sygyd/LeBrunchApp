@@ -4,6 +4,7 @@ import '../../../Api_services/user_service.dart';
 import './add_user_modal.dart';
 import './filter_chip.dart';
 import '../../../UI_Screens/Widgets/background_scaffold.dart';
+import '../../../UI_Screens/Widgets/custom_modal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -160,17 +161,19 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       // Mensaje informativo cuando no hay usuarios
       if (users.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              serverAlive
-                  ? 'No se encontraron usuarios en la base de datos. ¿Has registrado alguno?'
-                  : 'No se pudo conectar al servidor ($fixedIp:3000). Comprueba que el servidor esté activo.',
-            ),
-            backgroundColor: serverAlive ? Colors.orange : Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        if (serverAlive) {
+          CustomModal.showWarning(
+            context: context,
+            message:
+                'No se encontraron usuarios en la base de datos. ¿Has registrado alguno?',
+          );
+        } else {
+          CustomModal.showError(
+            context: context,
+            message:
+                'No se pudo conectar al servidor ($fixedIp:3000). Comprueba que el servidor esté activo.',
+          );
+        }
       }
     } catch (e) {
       print('❌ Error al cargar usuarios: $e');
@@ -178,25 +181,21 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         setState(() {
           _isLoading = false;
         });
-        _showErrorSnackBar(
+        _showErrorModal(
           'Error al cargar usuarios. Comprueba que el servidor esté activo (192.168.1.121:3000)',
         );
       }
     }
   }
 
-  // Mostrar SnackBar con mensaje de error
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+  // Mostrar modal con mensaje de error
+  void _showErrorModal(String message) {
+    CustomModal.showError(context: context, message: message);
   }
 
-  // Mostrar SnackBar con mensaje de éxito
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
-    );
+  // Mostrar modal con mensaje de éxito
+  void _showSuccessMessage(String message) {
+    CustomModal.showSuccess(context: context, message: message);
   }
 
   // Aplicar filtros de búsqueda, rol y ordenamiento a la lista de usuarios
@@ -754,7 +753,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   });
                 },
                 child: AnimatedOpacity(
-                  opacity: _isExpanded ? 0.5 : 0,
+                  opacity:
+                      _isExpanded
+                          ? 0.3
+                          : 0, // Menos opacidad para mejor visibilidad
                   duration: const Duration(milliseconds: 250),
                   child: Container(color: Colors.black),
                 ),
@@ -787,7 +789,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   // Administrador
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 1500),
                     curve: Curves.easeOutCubic,
                     // Delay para el primer botón
                     builder: (context, value, child) {
@@ -811,7 +813,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   // Cocinero
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 1500),
                     curve: Curves.easeOutCubic,
                     // Delay para el segundo botón
                     builder: (context, value, child) {
@@ -835,7 +837,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   // Barista
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 1500),
                     curve: Curves.easeOutCubic,
                     // Delay para el tercer botón
                     builder: (context, value, child) {
@@ -855,14 +857,19 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       );
                     },
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(
+                    height: 20,
+                  ), // Más espacio para evitar la bottom nav bar
                 ],
               ),
             ),
 
           // Botón principal (siempre visible y en posición fija)
           Container(
-            margin: const EdgeInsets.only(bottom: 20, right: 6),
+            margin: const EdgeInsets.only(
+              bottom: 80,
+              right: 6,
+            ), // Aumentado para evitar la bottom nav bar
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -927,8 +934,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     required String label,
   }) {
     return Container(
-      width: 200,
-      height: 46,
+      width: 180, // Reducido para mejor ajuste en pantallas pequeñas
+      height: 48, // Ligeramente más alto para mejor toque
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(23),
@@ -981,11 +988,17 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final Color deleteIconColor = isCurrentUser ? Colors.grey : Colors.red;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
+      margin: const EdgeInsets.symmetric(
+        horizontal: 0,
+        vertical: 6,
+      ), // Optimizado para mejor espaciado
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 3,
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 12,
+        ), // Más padding para mejor apariencia
         leading: CircleAvatar(
           backgroundColor: Color(user.rolColor),
           child: _getRoleIcon(user.rolIcono),
@@ -1043,13 +1056,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   isCurrentUser
                       ? () {
                         // Mostrar mensaje informativo si intentan eliminar al usuario actual
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
+                        CustomModal.showWarning(
+                          context: context,
+                          message:
                               'No puedes eliminar tu propia cuenta mientras estás conectado',
-                            ),
-                            backgroundColor: Colors.orange,
-                          ),
                         );
                       }
                       : () {
@@ -1600,6 +1610,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       // Llamar al servicio para actualizar el usuario
       await _userService.updateUser(userId.toString(), userData);
 
+      // Verificar si el widget sigue montado antes de usar Navigator
+      if (!mounted) return;
+
       // Cerrar el diálogo de carga
       Navigator.of(context, rootNavigator: true).pop();
 
@@ -1607,78 +1620,86 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       await _loadUsers();
 
       // Mostrar diálogo de éxito
-      showDialog(
-        context: context,
-        builder:
-            (successContext) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              title: Text(
-                '¡Cambios Realizados!',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder:
+              (successContext) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                textAlign: TextAlign.center,
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.check_circle_outline,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 70,
-                    ),
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                title: Text(
+                  '¡Cambios Realizados!',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                  SizedBox(height: 24),
-                  Text(
-                    'Los cambios al usuario han sido realizados exitosamente.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-              actions: [
-                Center(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      minimumSize: Size(120, 45),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                  textAlign: TextAlign.center,
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.check_circle_outline,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 70,
                       ),
                     ),
-                    onPressed: () {
-                      Navigator.pop(successContext);
-                    },
-                    child: Text(
-                      'Aceptar',
-                      style: TextStyle(fontFamily: 'MADE TOMMY'),
+                    SizedBox(height: 24),
+                    Text(
+                      'Los cambios al usuario han sido realizados exitosamente.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+                actions: [
+                  Center(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onPrimary,
+                        minimumSize: Size(120, 45),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(successContext);
+                      },
+                      child: Text(
+                        'Aceptar',
+                        style: TextStyle(fontFamily: 'MADE TOMMY'),
+                      ),
                     ),
                   ),
-                ),
-              ],
-              actionsAlignment: MainAxisAlignment.center,
-              actionsPadding: EdgeInsets.only(bottom: 16),
-            ),
-      );
+                ],
+                actionsAlignment: MainAxisAlignment.center,
+                actionsPadding: EdgeInsets.only(bottom: 16),
+              ),
+        );
+      }
     } catch (e) {
+      // Verificar si el widget sigue montado antes de usar Navigator
+      if (!mounted) return;
+
       // Cerrar el diálogo de carga
       Navigator.of(context, rootNavigator: true).pop();
 
       // Mostrar mensaje de error
-      _showErrorSnackBar('Error al actualizar usuario: $e');
+      if (mounted) {
+        _showErrorModal('Error al actualizar usuario: $e');
+      }
     }
   }
 
@@ -1805,6 +1826,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         user.id.toString(),
                       );
 
+                      // Verificar si el widget sigue montado antes de usar Navigator
+                      if (!mounted) return;
+
                       // Cerrar el diálogo de carga
                       Navigator.of(context, rootNavigator: true).pop();
 
@@ -1813,21 +1837,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         await _loadUsers();
 
                         // Mostrar mensaje de éxito
-                        _showSuccessSnackBar('Usuario eliminado con éxito');
+                        if (mounted) {
+                          _showSuccessMessage('Usuario eliminado con éxito');
+                        }
                       }
                     } catch (e) {
+                      // Verificar si el widget sigue montado antes de usar Navigator
+                      if (!mounted) return;
+
                       // Cerrar el diálogo de carga
                       Navigator.of(context, rootNavigator: true).pop();
 
                       // Manejo de errores específicos
                       if (e.toString().contains("propia cuenta") ||
                           e.toString().contains("logueado")) {
-                        _showErrorSnackBar(
-                          'No puedes eliminar tu propia cuenta mientras estás conectado',
-                        );
+                        if (mounted) {
+                          _showErrorModal(
+                            'No puedes eliminar tu propia cuenta mientras estás conectado',
+                          );
+                        }
                       } else {
                         // Mostrar mensaje de error genérico
-                        _showErrorSnackBar('Error al eliminar el usuario: $e');
+                        if (mounted) {
+                          _showErrorModal('Error al eliminar el usuario: $e');
+                        }
                       }
                     }
                   },
@@ -1850,8 +1883,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             child: ListView.builder(
               key: ValueKey<int>(_filteredUsers.length),
               padding: const EdgeInsets.only(
-                bottom: 20,
-              ), // Espacio para la navegación
+                bottom:
+                    120, // Aumentado para evitar que se oculte detrás del FAB y bottom nav
+                left: 16,
+                right: 16,
+                top: 8,
+              ),
               itemCount: _filteredUsers.length,
               itemBuilder: (context, index) {
                 final user = _filteredUsers[index];
@@ -1911,13 +1948,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   Navigator.pop(context);
 
                   // Mostrar mensaje de confirmación
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Usando la IP fija del servidor: 192.168.1.121',
-                      ),
-                      backgroundColor: Colors.green,
-                    ),
+                  CustomModal.showSuccess(
+                    context: context,
+                    message: 'Usando la IP fija del servidor: 192.168.1.121',
                   );
 
                   // Recargar los usuarios

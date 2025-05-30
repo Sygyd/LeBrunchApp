@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '/UI_Screens/Widgets/menu_view.dart';
+import '../Shared/shared_menu_view.dart';
 import '/UI_Screens/Widgets/background_scaffold.dart';
 
 class MenuScreen extends StatefulWidget {

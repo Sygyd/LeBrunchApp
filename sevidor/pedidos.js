@@ -51,8 +51,8 @@ router.get("/pedidos", async (req, res) => {
     // Obtener detalles de cada pedido en un solo paso
     const pedidosIds = pedidos.map(p => p.idpedido);
     const { rows: detalles } = await pool.query(
-      `SELECT pd.idpedido, pd.idplato, pd.cantidad, pd.precio_unitario, 
-              m.nombre as nombre
+      `SELECT pd.idpedido, pd.idplato, pd.cantidad, 
+              m.nombre as nombre, m.precio as precio_unitario
        FROM pedido_detalle pd
        INNER JOIN menu m ON pd.idplato = m.idplato
        WHERE pd.idpedido = ANY($1)`,
@@ -132,20 +132,20 @@ router.post("/pedidos", async (req, res) => {
     
     // 2. Insertar cada detalle del pedido
     for (const item of items) {
-      const { idplato, cantidad, precio_unitario } = item;
+      const { idplato, cantidad, notas } = item;
       
-      if (!idplato || !cantidad || !precio_unitario) {
+      if (!idplato || !cantidad) {
         await pool.query('ROLLBACK');
         return res.status(400).json({ 
-          error: "Cada item debe tener idplato, cantidad y precio_unitario" 
+          error: "Cada item debe tener idplato y cantidad" 
         });
       }
       
-      console.log(`📝 Insertando item: plato=${idplato}, cantidad=${cantidad}, precio=${precio_unitario}`);
+      console.log(`📝 Insertando item: plato=${idplato}, cantidad=${cantidad}, notas="${notas || ''}"`);
       
       await pool.query(
-        "INSERT INTO pedido_detalle (idpedido, idplato, cantidad, precio_unitario) VALUES ($1, $2, $3, $4)",
-        [idpedido, idplato, cantidad, precio_unitario]
+        "INSERT INTO pedido_detalle (idpedido, idplato, cantidad, notas) VALUES ($1, $2, $3, $4)",
+        [idpedido, idplato, cantidad, notas || '']
       );
     }
     
@@ -305,7 +305,7 @@ router.get("/pedidos/pendientes/count", async (req, res) => {
 router.get("/pedidos/ventas/hoy", async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"
+      "SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"
     );
     
     return res.status(200).json({
@@ -334,12 +334,14 @@ router.get("/pedidos/ventas/rango", async (req, res) => {
     
     const { rows } = await pool.query(
       `SELECT 
-        COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total,
+        COALESCE(SUM(m.precio * pd.cantidad), 0) as total,
         COUNT(DISTINCT p.idpedido) as cantidad_pedidos
       FROM 
         pedidos p 
       JOIN 
         pedido_detalle pd ON p.idpedido = pd.idpedido 
+      JOIN 
+        menu m ON pd.idplato = m.idplato
       WHERE 
         DATE(p.fecha) >= $1::date AND DATE(p.fecha) <= $2::date`,
       [startDate, endDate]
@@ -374,7 +376,7 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
         SELECT 
           pd.idplato,
           SUM(pd.cantidad) as cantidad_vendida,
-          AVG(pd.precio_unitario) as precio_promedio
+          AVG(m.precio) as precio_promedio
         FROM 
           pedido_detalle pd
         INNER JOIN 
@@ -474,11 +476,13 @@ router.get("/pedidos/stats/ventas-por-hora", async (req, res) => {
       `SELECT 
         EXTRACT(HOUR FROM p.fecha) as hora,
         COUNT(DISTINCT p.idpedido) as cantidad_pedidos,
-        SUM(pd.cantidad * pd.precio_unitario) as total_ventas
+        SUM(pd.cantidad * m.precio) as total_ventas
       FROM 
         pedidos p
       JOIN 
         pedido_detalle pd ON p.idpedido = pd.idpedido
+      JOIN 
+        menu m ON pd.idplato = m.idplato
       WHERE 
         DATE(p.fecha) = CURRENT_DATE
       GROUP BY 
@@ -575,7 +579,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       WITH pedidos_totales AS (
         SELECT 
           p.idpedido,
-          SUM(pd.cantidad * pd.precio_unitario) as total_pedido
+          SUM(pd.cantidad * m.precio) as total_pedido
         FROM 
           pedidos p
           INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
@@ -600,7 +604,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       SELECT 
         EXTRACT(HOUR FROM p.fecha)::integer as hora,
         COUNT(DISTINCT p.idpedido) as total_pedidos,
-        COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
+        COALESCE(SUM(pd.cantidad * m.precio), 0) as total_ventas
       FROM 
         pedidos p
         INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
@@ -619,7 +623,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       SELECT 
         m.categoria,
         COUNT(DISTINCT p.idpedido) as total_pedidos,
-        COALESCE(SUM(pd.cantidad * pd.precio_unitario), 0) as total_ventas
+        COALESCE(SUM(pd.cantidad * m.precio), 0) as total_ventas
       FROM 
         pedidos p
         INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
@@ -638,7 +642,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       SELECT 
         EXTRACT(DOW FROM p.fecha) as dia_semana,
         COUNT(DISTINCT p.idpedido) as total_pedidos,
-        SUM(pd.cantidad * pd.precio_unitario) as total_ventas,
+        SUM(pd.cantidad * m.precio) as total_ventas,
         ROUND(AVG(subquery.total_pedido), 2) as ticket_promedio
       FROM 
         pedidos p
@@ -647,9 +651,10 @@ router.get("/pedidos/resumen", async (req, res) => {
         INNER JOIN (
           SELECT 
             pd2.idpedido,
-            SUM(pd2.cantidad * pd2.precio_unitario) as total_pedido
+            SUM(pd2.cantidad * m2.precio) as total_pedido
           FROM 
             pedido_detalle pd2
+          INNER JOIN menu m2 ON pd2.idplato = m2.idplato
           GROUP BY 
             pd2.idpedido
         ) subquery ON p.idpedido = subquery.idpedido
@@ -801,8 +806,8 @@ router.get("/pedidos/:id", async (req, res) => {
     
     // Obtener detalles del pedido
     const detallesResult = await pool.query(
-      `SELECT pd.idplato, pd.cantidad, pd.precio_unitario, pd.notas,
-              m.nombre as nombre, m.imagen_url
+      `SELECT pd.idplato, pd.cantidad, pd.notas,
+              m.nombre as nombre, m.imagen_url, m.precio as precio_unitario
        FROM pedido_detalle pd
        INNER JOIN menu m ON pd.idplato = m.idplato
        WHERE pd.idpedido = $1`,
@@ -835,6 +840,392 @@ router.get("/pedidos/:id", async (req, res) => {
     console.error("❌ Error al obtener pedido:", error);
     return res.status(500).json({
       error: "Error al obtener pedido",
+      details: error.message
+    });
+  }
+});
+
+// Obtener historial de pedidos de un cliente específico
+router.get("/pedidos/cliente/:clienteId/historial", async (req, res) => {
+  try {
+    const { clienteId } = req.params;
+    const { limit = 20 } = req.query;
+    
+    console.log(`📋 Obteniendo historial para cliente ${clienteId}`);
+    
+    // Validar que el clienteId sea un número válido
+    if (!clienteId || isNaN(parseInt(clienteId))) {
+      return res.status(400).json({ 
+        error: "ID de cliente inválido" 
+      });
+    }
+    
+    const query = `
+      SELECT 
+        m.idplato,
+        m.nombre,
+        m.categoria,
+        m.precio,
+        m.tipo,
+        COUNT(pd.idplato) as veces_pedido,
+        MAX(p.fecha) as ultimo_pedido,
+        AVG(m.precio) as precio_promedio
+      FROM 
+        pedidos p
+      INNER JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      INNER JOIN 
+        menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.idpersona = $1 
+        AND p.estado = 'completado'
+        AND m.isDelete = FALSE
+      GROUP BY 
+        m.idplato, m.nombre, m.categoria, m.precio, m.tipo
+      ORDER BY 
+        veces_pedido DESC, ultimo_pedido DESC
+      LIMIT $2
+    `;
+    
+    const { rows } = await pool.query(query, [clienteId, limit]);
+    
+    const formattedRows = rows.map(row => ({
+      ...row,
+      veces_pedido: parseInt(row.veces_pedido),
+      precio_promedio: parseFloat(row.precio_promedio),
+      ultimo_pedido: row.ultimo_pedido
+    }));
+    
+    console.log(`📋 Historial encontrado: ${formattedRows.length} platos únicos`);
+    
+    return res.status(200).json({
+      clienteId: parseInt(clienteId),
+      historial: formattedRows,
+      total_platos_unicos: formattedRows.length
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al obtener historial del cliente:", error);
+    return res.status(500).json({
+      error: "Error al obtener historial del cliente",
+      details: error.message
+    });
+  }
+});
+
+// Obtener recomendaciones personalizadas para un cliente
+router.get("/pedidos/cliente/:clienteId/recomendaciones", async (req, res) => {
+  try {
+    const { clienteId } = req.params;
+    const { limit = 5 } = req.query;
+    
+    console.log(`🤖 Generando recomendaciones para cliente ${clienteId}`);
+    
+    // Validar que el clienteId sea un número válido
+    if (!clienteId || isNaN(parseInt(clienteId))) {
+      return res.status(400).json({ 
+        error: "ID de cliente inválido" 
+      });
+    }
+    
+    // Obtener platos favoritos del cliente (los que más ha pedido)
+    const historialQuery = `
+      SELECT 
+        m.idplato,
+        m.nombre,
+        m.categoria,
+        m.precio,
+        m.tipo,
+        COUNT(pd.idplato) as veces_pedido
+      FROM 
+        pedidos p
+      INNER JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      INNER JOIN 
+        menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.idpersona = $1 
+        AND p.estado = 'completado'
+        AND m.isDelete = FALSE
+        AND m.disponibilidad = TRUE
+      GROUP BY 
+        m.idplato, m.nombre, m.categoria, m.precio, m.tipo
+      ORDER BY 
+        veces_pedido DESC
+      LIMIT 10
+    `;
+    
+    // Obtener platos populares generales que el cliente no ha probado
+    const popularesNoProbadasQuery = `
+      WITH cliente_platos AS (
+        SELECT DISTINCT pd.idplato
+        FROM pedidos p
+        INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+        WHERE p.idpersona = $1 AND p.estado = 'completado'
+      ),
+      platos_populares AS (
+        SELECT 
+          pd.idplato,
+          SUM(pd.cantidad) as total_vendido
+        FROM 
+          pedido_detalle pd
+        INNER JOIN 
+          pedidos p ON pd.idpedido = p.idpedido
+        WHERE 
+          p.estado = 'completado'
+        GROUP BY 
+          pd.idplato
+        ORDER BY 
+          total_vendido DESC
+      )
+      SELECT 
+        m.idplato,
+        m.nombre,
+        m.categoria,
+        m.precio,
+        m.tipo,
+        pp.total_vendido
+      FROM 
+        menu m
+      INNER JOIN 
+        platos_populares pp ON m.idplato = pp.idplato
+      WHERE 
+        m.isDelete = FALSE
+        AND m.disponibilidad = TRUE
+        AND m.idplato NOT IN (SELECT idplato FROM cliente_platos)
+      ORDER BY 
+        pp.total_vendido DESC
+      LIMIT $2
+    `;
+    
+    // Obtener platos similares (misma categoría) a los que le gustan al cliente
+    const similaresQuery = `
+      WITH categorias_favoritas AS (
+        SELECT 
+          m.categoria,
+          m.tipo,
+          COUNT(*) as preferencia
+        FROM 
+          pedidos p
+        INNER JOIN 
+          pedido_detalle pd ON p.idpedido = pd.idpedido
+        INNER JOIN 
+          menu m ON pd.idplato = m.idplato
+        WHERE 
+          p.idpersona = $1 
+          AND p.estado = 'completado'
+        GROUP BY 
+          m.categoria, m.tipo
+        ORDER BY 
+          preferencia DESC
+        LIMIT 3
+      ),
+      cliente_platos AS (
+        SELECT DISTINCT pd.idplato
+        FROM pedidos p
+        INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+        WHERE p.idpersona = $1 AND p.estado = 'completado'
+      )
+      SELECT 
+        m.idplato,
+        m.nombre,
+        m.categoria,
+        m.precio,
+        m.tipo,
+        cf.preferencia as categoria_score
+      FROM 
+        menu m
+      INNER JOIN 
+        categorias_favoritas cf ON (m.categoria = cf.categoria AND m.tipo = cf.tipo)
+      WHERE 
+        m.isDelete = FALSE
+        AND m.disponibilidad = TRUE
+        AND m.idplato NOT IN (SELECT idplato FROM cliente_platos)
+      ORDER BY 
+        cf.preferencia DESC, RANDOM()
+      LIMIT $2
+    `;
+    
+    // Ejecutar todas las consultas
+    const [historialResult, popularesResult, similaresResult] = await Promise.all([
+      pool.query(historialQuery, [clienteId]),
+      pool.query(popularesNoProbadasQuery, [clienteId, limit]),
+      pool.query(similaresQuery, [clienteId, limit])
+    ]);
+    
+    // Combinar y formatear resultados
+    const recomendaciones = {
+      clienteId: parseInt(clienteId),
+      favoritos_cliente: historialResult.rows.map(row => ({
+        ...row,
+        veces_pedido: parseInt(row.veces_pedido),
+        motivo: "Tu plato favorito"
+      })),
+      populares_nuevos: popularesResult.rows.map(row => ({
+        ...row,
+        total_vendido: parseInt(row.total_vendido),
+        motivo: "Popular entre otros clientes"
+      })),
+      similares_gustos: similaresResult.rows.map(row => ({
+        ...row,
+        categoria_score: parseInt(row.categoria_score),
+        motivo: `Te gusta la categoría ${row.categoria}`
+      }))
+    };
+    
+    // Crear una lista unificada de recomendaciones
+    const recomendacionesUnificadas = [];
+    
+    // Agregar hasta 2 favoritos del cliente
+    recomendaciones.favoritos_cliente.slice(0, 2).forEach(plato => {
+      recomendacionesUnificadas.push(plato);
+    });
+    
+    // Agregar hasta 2 populares nuevos
+    recomendaciones.populares_nuevos.slice(0, 2).forEach(plato => {
+      recomendacionesUnificadas.push(plato);
+    });
+    
+    // Agregar hasta 1 similar a sus gustos
+    recomendaciones.similares_gustos.slice(0, 1).forEach(plato => {
+      recomendacionesUnificadas.push(plato);
+    });
+    
+    // Limitar al número solicitado
+    const recomendacionesFinales = recomendacionesUnificadas.slice(0, parseInt(limit));
+    
+    console.log(`🤖 Recomendaciones generadas: ${recomendacionesFinales.length} platos`);
+    
+    return res.status(200).json({
+      ...recomendaciones,
+      recomendaciones_unificadas: recomendacionesFinales,
+      total_recomendaciones: recomendacionesFinales.length
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al generar recomendaciones:", error);
+    return res.status(500).json({
+      error: "Error al generar recomendaciones",
+      details: error.message
+    });
+  }
+});
+
+// Obtener estadísticas de preferencias del cliente
+router.get("/pedidos/cliente/:clienteId/estadisticas", async (req, res) => {
+  try {
+    const { clienteId } = req.params;
+    
+    console.log(`📊 Obteniendo estadísticas para cliente ${clienteId}`);
+    
+    // Validar que el clienteId sea un número válido
+    if (!clienteId || isNaN(parseInt(clienteId))) {
+      return res.status(400).json({ 
+        error: "ID de cliente inválido" 
+      });
+    }
+    
+    // Estadísticas generales del cliente
+    const estadisticasQuery = `
+      SELECT 
+        COUNT(DISTINCT p.idpedido) as total_pedidos,
+        COUNT(pd.idplato) as total_items_pedidos,
+        SUM(m.precio * pd.cantidad) as gasto_total,
+        AVG(m.precio * pd.cantidad) as gasto_promedio_por_item,
+        MAX(p.fecha) as ultimo_pedido
+      FROM 
+        pedidos p
+      INNER JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      INNER JOIN 
+        menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.idpersona = $1 
+        AND p.estado = 'completado'
+    `;
+    
+    // Preferencias por tipo (comida vs bebida)
+    const preferenciasTipoQuery = `
+      SELECT 
+        m.tipo,
+        COUNT(pd.idplato) as cantidad_pedidos,
+        SUM(m.precio * pd.cantidad) as gasto_en_tipo
+      FROM 
+        pedidos p
+      INNER JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      INNER JOIN 
+        menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.idpersona = $1 
+        AND p.estado = 'completado'
+      GROUP BY 
+        m.tipo
+      ORDER BY 
+        cantidad_pedidos DESC
+    `;
+    
+    // Preferencias por categoría
+    const preferenciasCategoriaQuery = `
+      SELECT 
+        m.categoria,
+        m.tipo,
+        COUNT(pd.idplato) as cantidad_pedidos,
+        SUM(m.precio * pd.cantidad) as gasto_en_categoria
+      FROM 
+        pedidos p
+      INNER JOIN 
+        pedido_detalle pd ON p.idpedido = pd.idpedido
+      INNER JOIN 
+        menu m ON pd.idplato = m.idplato
+      WHERE 
+        p.idpersona = $1 
+        AND p.estado = 'completado'
+      GROUP BY 
+        m.categoria, m.tipo
+      ORDER BY 
+        cantidad_pedidos DESC
+    `;
+    
+    // Ejecutar todas las consultas
+    const [estadisticasResult, tipoResult, categoriaResult] = await Promise.all([
+      pool.query(estadisticasQuery, [clienteId]),
+      pool.query(preferenciasTipoQuery, [clienteId]),
+      pool.query(preferenciasCategoriaQuery, [clienteId])
+    ]);
+    
+    const estadisticas = {
+      clienteId: parseInt(clienteId),
+      resumen: {
+        total_pedidos: parseInt(estadisticasResult.rows[0]?.total_pedidos || 0),
+        total_items_pedidos: parseInt(estadisticasResult.rows[0]?.total_items_pedidos || 0),
+        gasto_total: parseFloat(estadisticasResult.rows[0]?.gasto_total || 0),
+        gasto_promedio_por_item: parseFloat(estadisticasResult.rows[0]?.gasto_promedio_por_item || 0),
+        ultimo_pedido: estadisticasResult.rows[0]?.ultimo_pedido
+      },
+      preferencias_tipo: tipoResult.rows.map(row => ({
+        tipo: row.tipo,
+        cantidad_pedidos: parseInt(row.cantidad_pedidos),
+        gasto_en_tipo: parseFloat(row.gasto_en_tipo),
+        porcentaje: tipoResult.rows.length > 0 ? 
+          Math.round((parseInt(row.cantidad_pedidos) / tipoResult.rows.reduce((sum, r) => sum + parseInt(r.cantidad_pedidos), 0)) * 100) : 0
+      })),
+      preferencias_categoria: categoriaResult.rows.map(row => ({
+        categoria: row.categoria,
+        tipo: row.tipo,
+        cantidad_pedidos: parseInt(row.cantidad_pedidos),
+        gasto_en_categoria: parseFloat(row.gasto_en_categoria)
+      }))
+    };
+    
+    console.log(`📊 Estadísticas generadas para cliente ${clienteId}`);
+    
+    return res.status(200).json(estadisticas);
+    
+  } catch (error) {
+    console.error("❌ Error al obtener estadísticas del cliente:", error);
+    return res.status(500).json({
+      error: "Error al obtener estadísticas del cliente",
       details: error.message
     });
   }

@@ -1,0 +1,534 @@
+CAPÍTULO II
+MARCO TEÓRICO
+En este capítulo se presenta la información recopilada de diferentes
+trabajos científicos que sustenta la investigación y las bases teóricas que
+aportan datos para conocer todo lo relacionado con el tema de estudio.
+2.1 Antecedentes de la investigación
+En la empresa M&A Bienes Raíces y Avalúos no se han realizado
+investigaciones previas relacionadas al tema desarrollado en este proyecto.
+Se presentan a continuación los diferentes trabajos de investigación
+consultados con el objetivo de adquirir un mayor nivel de conocimientos
+referentes al tema de estudio, y que lleguen a constituir un gran aporte en
+el desarrollo de este.
+Bautista P. (2022). “Aplicación Móvil Usando El Framework
+Flutter Para El Control De Las Tutorías Académicas Del Sistema
+Integrado De La Universidad Técnica De Ambato”, Universidad
+Técnica De Ambato, Ambato, Ecuador. Tesis de grado para optar al título
+de ingeniero en tecnologías de la información.
+38
+El presente proyecto de tesis inició con el estudio de la situación
+actual del Sistema Integrado para servicios académicos y administrativos
+de la Universidad Técnica de Ambato, encontrando como problema su uso
+restrictivo, donde solo se podía validar en un tiempo limitado al final del
+parcial los registros de tutorías, más no solicitar o registrar una tutoría
+dependiendo de la fecha y tema que se esté llevando a cabo según conste
+en el sílabo, causado falta de interés por parte de los estudiantes con las
+tutorías y por lo tanto insatisfacción con el módulo. Debido a la
+problemática observada durante los análisis, se contempló como objetivo
+principal mejorar el sistema actual aplicando las Tecnologías de
+Información por medio de una aplicación móvil.
+La Aplicación Móvil fue creada en base a la Metodología Mobile-D
+consiguiendo flexibilidad y rapidez durante el desarrollo, utilizando el
+framework Flutter con el lenguaje de programación Dart, ASP.NET Core
+5 como backend, que está conectado a una base de datos diseñada en SQL
+Server.
+Se tomó una población de 246 docentes tutores y 376 estudiantes
+pertenecientes a la Universidad Técnica de Ambato
+La tesis de grado se seleccionó como antecedente importante debido
+a que proporcionó más información sobre el desarrollo de aplicaciones
+móviles a través del uso de herramientas multiplataforma para conservar
+una sola base de código para múltiples sistemas operativos, además
+proporcionó información del uso de REST API como interfaz para la
+comunicación de la aplicación móvil con el backend.
+39
+Anton A. (2023) “Sistema De Información Para La Venta
+De Boletos Y Visualización De Contenido Exclusivo En Línea De Una
+Orquesta. Lechería, Municipio Urbaneja, Estado Anzoátegui 2023.”,
+Universidad Santa María – Núcleo Oriente, Anzoátegui, Venezuela. Tesis
+de grado para optar al título de ingeniero de sistemas.
+En esta investigación, el objetivo principal fue desarrollar un
+sistema de información que permita a la fundación orquesta filarmónica
+metropolitana del Estado Anzoátegui, vender boletos para sus conciertos
+y distribuir contenido exclusivo de forma digital.
+La utilidad del sistema a desarrollar radica en ofrecer una alternativa
+para facilitar la monetización que nace de la interacción entre la orquesta
+y su público. Dentro de las herramientas implementadas para delimitar los
+problemas, se utilizó la entrevista no estructurada y la observación directa
+para la obtención de los parámetros necesarios en la solución del problema
+presentado. Para el desarrollo del proyecto se empleó la metodología
+Proceso Racional Unificado (RUP) Y EL Lenguaje Unificado de
+Modelado (UML), como técnica de diagramación para representar el
+diseño del sistema. Se utilizaron los framework Nest.js, Angular y Flutter,
+en conjunto con el sistema de gestión de base de datos PostgreSQL para
+desarrollar el sistema de información.
+La población estuvo conformada por 5 personas del área
+administrativa de la Orquesta Filarmónica Metropolitana de Anzoátegui,
+así como también por una población indeterminada de oyentes, tomada en
+cuenta como infinita. Se tomó como base el muestro intencional, partiendo
+de una muestra de un total de 5 personas pertenecientes al personal
+40
+administrativo y 20 oyentes de la Orquesta Filarmónica, representando el
+número promedio de oyentes que asisten a una presentación.
+Esta Tesis de Grado se seleccionó como antecedente debido a que
+su contenido trata sobre un sistema de información, proporcionando para
+la aplicación del problema planteado, la metodología de Proceso Unificado
+Racional (RUP), junto con el Lenguaje Unificado de Modelado (UML),
+para su correcto desarrollo.
+Chutas R. (2022) “Aplicación Móvil Realizado Con Flutter
+Para El Control De Inventario Usando La Metodología Mobile-D En
+La Empresa Baenz Constructora & Servicios Generales S.AC., Lima
+2022”, Universidad César Vallejo, Facultad de Ingeniería y Arquitectura,
+Lima, Perú. Tesis de grado para optar al título de Ingeniero de Sistemas.
+El objetivo principal de esta Tesis de Grado fue determinar la
+influencia de una aplicación móvil realizado en Flutter para el control de
+inventario. La aplicación móvil se desarrolló con base en la metodología
+Mobile-D, ya que permite un resultado rápido, utilizando ciclos de
+desarrollo cortos que se enfocan en requisitos y pruebas, optimizando
+tiempo y recursos durante el desarrollo del proyecto, la base de datos SQL
+server, como también se usó el marco de trabajo Flutter con el lenguaje de
+programación DART.
+La investigación fue de tipo aplicada con diseño preexperimental y
+enfoque cuantitativo. Para tasa de precisión y rotación de inventario se
+tomó como población 28 artículos de mayor movimiento en la empresa.
+Para la muestra, se tomó 26 artículos evaluados en 26 días. La técnica de
+41
+recolección de datos fue el fichaje y el instrumento la ficha de registro
+tomada de otras investigaciones ya validadas por expertos.
+El autor concluyó, que gracias al uso de la aplicación móvil mejoró
+la rotación de inventario en un 28,11%, según el análisis posterior
+realizado a la empresa Baenz Constructora & Servicios Generales S.A.C,
+afirmándose de esta manera que se optimizó los procesos de control de
+inventario en la organización.
+Esta Tesis de Grado se seleccionó como antecedente debido a que
+su contenido trata sobre un sistema de información, proporcionando para
+la aplicación del problema planteado, el framework Flutter, para su
+correcto desarrollo.
+Ceballos G. (2023) “Sistema De Información Para La Gestión
+Administrativa De Agentes De Bienes Raíces. Municipio Diego
+Bautista Urbaneja, Lechería, Estado Anzoátegui 2023.”, Universidad
+Santa María – Núcleo Oriente, Anzoátegui, Venezuela. Tesis de grado para
+optar al título de ingeniero de sistemas.
+Esta investigación se enfocó en encontrar las herramientas
+tecnológicas necesarias para mejorar la gestión administrativa de los
+agentes de bienes raíces en Lechería, Estado Anzoátegui. Se evidenció la
+necesidad de un sistema de información que centralice la información
+inmobiliaria y optimice la forma en que los agentes promocionan
+inmuebles y atienden a sus clientes.
+Para el desarrollo del sistema se utilizaron metodologías como RUP
+(Proceso Unificado Racional) y Design Thinking. Se aplicaron técnicas de
+42
+recolección de datos como cuestionarios, entrevistas no estructuradas y
+observación participante para comprender las necesidades de los usuarios
+y el contexto del mercado inmobiliario. El sistema se basa en una base de
+datos relacional con 10 tablas, utilizando PostgreSQL. Para el diseño de la
+interfaz de usuario se emplearon técnicas de UX/UI, incluyendo
+brainstorming, benchmarking, user persona y wireframes. El desarrollo se
+realizó utilizando JavaScript.
+La población de estudio fueron 300 asesores inmobiliarios afiliados
+en Lechería. Se utilizó una muestra intencional de 26 asesores debido a la
+dificultad para obtener la colaboración de un mayor número de
+participantes.
+Este Trabajo Especial de Grado se seleccionó como antecedente por
+su enfoque en el desarrollo de un sistema de información para el sector
+inmobiliario, utilizando metodologías de desarrollo de software como
+RUP y técnicas de UX/UI, aspectos relevantes para el presente proyecto.
+2.2 Bases teóricas
+Las bases teóricas son el conjunto de conceptos, teorías y postulados
+que sirven como punto de partida para una investigación.
+43
+2.2.1 Sistemas de información
+Andreu, Ricart y Valor (1991) definen al sistema de información
+como un conjunto formal de procesos que, operando sobre una colección
+de datos estructurada de acuerdo a las necesidades de la empresa, recopila,
+elabora y distribuyen selectivamente la información necesaria para la
+operación de dicha empresa y para las actividades de dirección y control
+correspondientes, apoyando, al menos en parte, los procesos de toma de
+decisiones necesarios para desempeñar funciones de negocio de la empresa
+de acuerdo con su estrategia.
+2.2.1.1 Requisitos funcionales y no funcionales
+Arias (2007), explica que los requerimientos de software pueden
+dividirse en dos categorías: requerimientos funcionales y requerimientos
+no funcionales.
+Los requisitos funcionales según el autor son los que definen las
+funciones que el sistema será capaz de realizar.
+Por otra parte, los requerimientos no funcionales tienen que ver con
+características que de una u otra forma puedan limitar el sistema, como,
+por ejemplo, el rendimiento, interfaces de usuario, fiabilidad,
+mantenimiento, seguridad, portabilidad, estándares, etc.
+44
+2.2.1.2 Diseño de un sistema de información
+De acuerdo con los autores Whitten, Bentley y Dittman (s. f), un
+sistema de información es un conjunto de personas, datos, procesos y
+tecnología que interactúan para recopilar, procesar, almacenar y
+proporcionar información.
+El diseño de un sistema de información es el proceso de definir la
+arquitectura, interfaces, módulos y datos del sistema para cumplir con
+requisitos específicos. En esta etapa, los ingenieros de software analizan
+los requisitos e identifican las mejores soluciones para crear el software.
+El diseño de un sistema de información se puede ver como la
+aplicación de la teoría de sistemas al desarrollo de un nuevo producto.
+2.2.1.3 Construcción de un sistema de información
+Según Kendall & Kendall (2005) un sistema de información es un
+trabajo que se realiza a partir de la interacción entre los usuarios y la
+computadora.
+La construcción de un sistema de información (CSI) se basa en las
+especificaciones lógicas y físicas del sistema que se obtienen en el proceso
+de diseño del sistema de información (DSI). El objetivo de la CSI es
+construir y probar los componentes del sistema de información.
+45
+En la fase de construcción del sistema de información se aplican las
+normas de codificación, se integran los componentes desarrollados y se
+utilizan herramientas que apoyen las tareas de esta fase.
+2.2.1.4 Pruebas de sistemas de información
+Roger Pressman (s.f) Propone un modelo de ciclo de vida de
+desarrollo de software que incluye una fase de pruebas exhaustiva. Destaca
+la importancia de las pruebas unitarias, de integración, de sistema y de
+aceptación.
+Las pruebas de sistemas de información son fundamentales para
+garantizar que un sistema funcione correctamente y cumpla con los
+requisitos establecidos. Diferentes autores han propuesto diversas
+metodologías y enfoques para llevar a cabo estas pruebas.
+2.2.1.5 Manuales
+Rivero (s.f.) aclara que los manuales son el conjunto de información
+que dice qué hacen los sistemas, cómo lo hacen y para quién lo hacen,
+además explica las características técnicas y las operaciones de dicho
+sistema. Por otra parte, dicho manual es esencial para proporcionar
+entendimiento a quien lo vaya a usar para mantenerlo, para permitir
+auditoria y para enseñar a los usuarios como interactuar con el sistema y a
+46
+otros desarrolladores como hacerlo funcionar en tal caso que este falle. Por
+las consideraciones anteriores, se recomienda ir realizando el manual en el
+momento que se va desarrollando el sistema para hacerlo lo más completo
+posible.
+2.2.2 RUP
+Según Ortega (s.f.), RUP es un acrónimo y significa el Proceso
+Unificado Racional. Este proceso se usa preferiblemente para proyectos
+complejos con equipos grandes. En la gestión de un proyecto, el sistema
+RUP promueve una solución disciplinada, que consiste en organizar las
+tareas y responsabilidades de todos dentro de una organización.
+Según RUP, el ciclo de vida del proyecto se divide en cuatro fases
+secuenciales, denominadas: inicio, elaboración, construcción y transición.
+2.2.2.1 Fase de inicio
+Esta etapa se realiza en un corto período de tiempo. Se debe definir
+el modelo del negocio y el alcance del proyecto. Se identifican todos los
+actores y Casos de Uso, y se diseñan los Casos de Uso más esenciales
+(aproximadamente el 20% del modelo completo). Se desarrolla un plan de
+negocio para determinar qué recursos deben ser asignados al proyecto.
+47
+2.2.2.2 Fase de elaboración
+Esta fase busca analizar el dominio del problema, establecer los
+cimientos de la arquitectura, desarrollar el plan del proyecto y eliminar los
+mayores riesgos. En esta fase se construye un prototipo de la arquitectura,
+que debe evolucionar en iteraciones sucesivas hasta convertirse en el
+sistema final. Este prototipo debe contener los Casos de Uso críticos
+identificados en la fase de inicio. También debe demostrarse que se han
+evitado los riesgos más graves.
+2.2.2.3 Fase de construcción
+En esta fase es cuando se termina la construcción del proyecto, por
+eso tiene ese nombre. El principal objetivo es la elaboración del producto.
+Además, es en esta etapa que se realizan las primeras pruebas para que se
+prepare la base inicial para la etapa de transición. Durante esta fase todos
+los componentes, características y requisitos deben ser implementados,
+integrados y probados en su totalidad, obteniendo una versión aceptable
+del producto.
+48
+2.2.2.4 Fase de transición
+Esta fase comprende desde el punto de prueba hasta la
+implementación. Después de todas las pruebas realizadas y con el producto
+listo, llega el momento de ponerlo a disposición del usuario final, es decir,
+la entrega del proyecto.
+Además de la entrega, esta fase incluye la realización de
+capacitaciones y asegurar que el objeto final resuelva todos los problemas
+de las partes interesadas.
+2.2.3 UML
+UML (Unified Modeling Language), definido por Booch,
+Rumbaugh y Jacobson (2005), es un lenguaje de propósito general usado
+para especificar, visualizar y construir artefactos de sistemas de software.
+Un artefacto se corresponde a un modelo o pieza de información producida
+en el proceso de desarrollo de software.
+UML es un lenguaje para hacer modelos y es independiente de los
+métodos de análisis y diseño. Existen diferencias importantes entre un
+método y un lenguaje de modelado. Un método es una manera explícita de
+estructurar el pensamiento y las acciones de cada individuo. Además, el
+método le dice al usuario qué hacer, cómo hacerlo, cuándo hacerlo y por
+qué hacerlo; mientras que el lenguaje de modelado carece de estas
+49
+instrucciones. Los métodos contienen modelos y esos modelos son
+utilizados para describir algo y comunicar los resultados del uso del
+método.
+2.2.4 Aplicaciones móviles
+Las aplicaciones móviles, también conocidas como apps, son
+programas informáticos diseñados para funcionar en dispositivos móviles,
+como teléfonos y tablets. Suelen ser útiles, fáciles de instalar y dinámicas.
+Las aplicaciones se desarrollan en distintos lenguajes de programación y
+se ejecutan en sistemas operativos como Android o iOS. Para funcionar, la
+mayoría de las aplicaciones requieren una conexión estable a internet,
+aunque algunas pueden funcionar sin conexión.
+Las aplicaciones se descargan en tiendas virtuales de los gestores de
+sistemas operativos. Al desarrollar una aplicación, es importante tener en
+cuenta las características y limitaciones del dispositivo en el que se va a
+utilizar.
+2.2.4.1 Android
+Android es un sistema operativo móvil basado en el núcleo de Linux
+y otros softwares de código abierto. Diseñado principalmente para
+dispositivos con pantalla táctil, como teléfonos inteligentes, tabletas,
+50
+relojes inteligentes, automóviles y televisores, Android ha revolucionado
+la forma en que interactuamos con la tecnología.
+2.2.4.2 Aplicación multiplataforma
+Las aplicaciones multiplataforma son aplicaciones que pueden
+funcionar en diferentes sistemas operativos y dispositivos sin necesidad de
+ser desarrolladas desde cero para cada uno. Esto significa que una misma
+aplicación puede ejecutarse en un iPhone, un teléfono Android, una tablet,
+una computadora Windows, una Mac, y hasta en un sitio web, todo con un
+solo código base.
+2.2.4.3 Flutter
+Flutter es un SDK (kit de desarrollo de software) de código abierto
+creado por Google. Permite a los desarrolladores crear aplicaciones nativas
+para múltiples plataformas (Android y iOS) a partir de una única base de
+código. Esto significa que puedes escribir una sola vez tu aplicación y
+desplegarla tanto en dispositivos iOS como Android, ahorrando tiempo y
+recursos.
+51
+2.2.5 API
+API significa “interfaz de programación de aplicaciones”. En el
+contexto de las API, la palabra aplicación se refiere a cualquier software
+con una función distinta. La interfaz puede considerarse como un contrato
+de servicio entre dos aplicaciones. Este contrato define cómo se comunican
+entre sí mediante solicitudes y respuestas. La documentación de su API
+contiene información sobre cómo los desarrolladores deben estructurar
+esas solicitudes y respuestas.
+2.2.5.1 API REST
+REST significa transferencia de estado representacional. REST
+define un conjunto de funciones como GET, PUT, DELETE, etc. que los
+clientes pueden utilizar para acceder a los datos del servidor. Los clientes
+y los servidores intercambian datos mediante HTTP.
+La principal característica de la API de REST es que no tiene estado.
+La ausencia de estado significa que los servidores no guardan los datos del
+cliente entre las solicitudes. Las solicitudes de los clientes al servidor son
+similares a las URL que se escriben en el navegador para visitar un sitio
+web. La respuesta del servidor son datos simples, sin la típica
+representación gráfica de una página web.
+52
+2.2.6 Experiencia de usuario
+La experiencia de usuario, también conocida como UX, se refiere a
+la forma en que una persona se siente al interactuar con un producto,
+servicio o plataforma digital. Esta experiencia abarca todos los aspectos de
+interacción, desde la navegación y la apariencia visual, hasta la facilidad
+de uso y la satisfacción del usuario. En otras palabras, se trata de cómo se
+siente un usuario al usar un sitio web, una aplicación móvil o cualquier
+otro producto digital
+2.2.6.1 Usabilidad
+Es la medida de la facilidad con la que un usuario puede utilizar un
+producto, servicio o sitio web para lograr un objetivo. Se trata de un factor
+importante en el diseño de la experiencia de usuario (UX) y en el éxito de
+un producto o servicio.
+La usabilidad se cumple cuando el diseño es intuitivo, eficiente,
+satisfactorio y accesible para todo tipo de usuarios. Para ello, se busca que
+los usuarios puedan interactuar de forma intuitiva sin tantas instrucciones,
+y que ahorren tiempo.
+53
+2.2.6.2 Las 10 reglas de la usabilidad de Steve Krug
+Krug establece 10 claves de usabilidad donde se explica cómo
+empezar con la usabilidad en el web, las cuales son las siguientes:
+● Usabilidad significa asegurarse de que algo funciona bien, y
+que una persona de habilidad o experiencia intermedia puede
+usarlo para el propósito que se pretende sin sentirse frustrado.
+● En la medida humanamente posible, cuando se navega por
+una página web, esta debería ser evidente. Que sea obvia, que
+se explique por sí misma.
+● Por regla general, a la gente no le gusta romperse la cabeza
+pensando sobre cómo hacer las cosas. Si las personas que
+construyen un sitio no se preocupan lo suficiente para hacer
+las cosas obvias, pueden hacer perder la confianza en el sitio
+y sus creadores.
+● Gran parte de nuestro uso de la web está motivado por el
+deseo de ahorrar tiempo. Como resultado, los usuarios de la
+web tienden a actuar como tiburones. Tienen que seguir
+moviéndose o morirán.
+● No es difícil equivocarse en una web. A diferencia de la lucha
+contra incendios, el castigo de errar en un sitio web se
+soluciona con sólo un clic o dos del botón “volver”. El botón
+de retroceso es la característica más utilizada de los
+navegadores web.
+54
+● Si encontramos algo que funcione, lo seguiremos. Una vez
+que encontramos algo que funciona, tendemos a no buscar
+una mejor manera. Utilizaremos un mejor camino si
+tropezamos con uno, pero raramente lo buscamos.
+● La charla en la web es como la pequeña charla libre,
+básicamente sólo una manera de ser sociable. Pero la mayoría
+de los usuarios no tienen tiempo para charlar; Quieren ir
+directos al grano. Usted puede y debe eliminar tanta
+conversación como sea posible.
+● Algunas personas, casi siempre buscarán un cuadro de
+búsqueda en el momento en que ingresan a un sitio. Puede ser
+como las personas que buscan al empleado más cercano en
+cuanto entran en una tienda.
+● Cuando volvemos atrás en un sitio web, en lugar de responder
+en un sentido físico de dónde está, tenemos que recordar
+dónde está en la jerarquía conceptual y volver sobre nuestros
+pasos.
+● Tener un botón de inicio a la vista en todo momento ofrece
+tranquilidad de que no importa lo perdido que pueda llegar a
+estar, siempre puedo empezar de nuevo, presionando un botón
+de restablecimiento.
+Aunque el texto está enfocado a la usabilidad para sitios web, la
+teoría puede ser utilizada también en aplicaciones móviles.
+55
+2.2.6.3 Arquitectura de la información
+La arquitectura de la información es la disciplina encargada de
+organizar, estructurar y etiquetar la información dentro de un producto
+digital, con el objetivo de que los usuarios puedan encontrar fácilmente lo
+que buscan. Es como crear un mapa mental de un sitio web o una
+aplicación, donde cada elemento tiene su lugar y función.
+2.2.7 Inmobiliaria
+Es una empresa o profesional que se dedica a intermediar en la
+compra, venta y alquiler de propiedades. Actúan como un puente entre el
+comprador y el vendedor, facilitando todo el proceso desde la búsqueda
+del inmueble ideal hasta la firma de la escritura.
+2.2.8 Transacción Inmobiliaria
+Una transacción inmobiliaria es la compra, venta o alquiler de un
+bien inmueble, como una casa, un terreno, un local comercial, un hotel, un
+garaje, un edificio de oficinas, entre otros. En esta transacción, el
+comprador y el vendedor acuerdan un precio y firman un contrato.
+56
+2.2.8.1 Compra -Venta
+La compra - venta es un contrato por el cual una persona (vendedor)
+transfiere la propiedad de un bien inmueble a otra persona (comprador) a
+cambio de un precio acordado. La venta se formaliza mediante la firma de
+un contrato de compraventa y la escritura pública, que registran la
+transferencia de la propiedad. Es una inversión a largo plazo, y la
+compraventa suele ser un proceso complejo que involucra múltiples
+trámites y gestiones.
+2.2.8.2 Alquiler
+El alquiler es un contrato por el cual una persona (arrendador) cede
+el uso y disfrute de un bien inmueble a otra persona (arrendatario) a cambio
+de una renta periódica (pago mensual, trimestral, etc.). Se regula por un
+contrato que establece los términos y condiciones del alquiler, incluyendo
+duración, precio, obligaciones del arrendador y del arrendatario. Es una
+opción para acceder a una propiedad sin comprarla, ideal para quienes
+buscan vivienda temporal, residencias de estudiantes, locales comerciales
+para un negocio temporal, etc.
+57
+2.2.8.3 Ciclo de Vida de una Transacción Inmobiliaria
+El ciclo de vida de una transacción inmobiliaria se compone de
+varias etapas, entre ellas:
+• Período previo al contrato: Incluye todas las negociaciones previas
+a la firma del contrato (Captación, Promoción)
+• Período de diligencia debida: Se realizan las inspecciones.
+• Período de financiación: Se realizan los acuerdos financieros
+finales. (Reserva, Cierre)
+• Período de preparación del cierre: Se proporciona toda la
+documentación a todas las partes.
+Algunos pasos importantes en el cierre de una transacción
+inmobiliaria son:
+• Cuenta de garantía bloqueada.
+• Verificación de la autoridad de firma por parte del asesor jurídico.
+• Firma y tramitación del acuerdo de compraventa.
+• Firma y tramitación del título de propiedad.
+• Firma y tramitación de los documentos del préstamo.
+• Firma y tramitación de los documentos de cierre.
+En una transacción inmobiliaria, es importante revisar
+minuciosamente todos los documentos antes de firmar para evitar
+problemas futuros
+58
+2.2.9 Normativa Legal en Bienes Raíces
+La normativa legal en bienes raíces, también conocida como
+derecho inmobiliario, es el conjunto de normas y leyes que regulan las
+transacciones de bienes inmuebles. Esto incluye la compra, venta, uso, y
+administración de terrenos, edificios, casas, departamentos, y locales
+comerciales.
+La legislación inmobiliaria es compleja y varía según el país y la
+región. Sin embargo, algunos aspectos comunes son:
+• Leyes de propiedad: Regulan los derechos de propiedad, las formas
+de adquirirla (compraventa, herencia, donación) y las limitaciones
+al derecho de propiedad.
+• Impuestos inmobiliarios: Incluyen el Impuesto sobre Bienes
+Inmuebles (IBI), el Impuesto de Transmisiones Patrimoniales (ITP),
+el Impuesto sobre el Valor Añadido (IVA) en algunas operaciones,
+y otros impuestos locales.
+• Contratos: Existen diferentes tipos de contratos en el ámbito
+inmobiliario, como los contratos de compraventa, alquiler,
+arrendamiento, etc. Cada uno tiene sus propias cláusulas y requisitos
+legales.
+• Urbanismo: Las normas urbanísticas regulan el uso del suelo, las
+edificaciones y las reformas que se pueden realizar en un inmueble
+59
+2.2.10 Avalúo Inmobiliario
+Un avalúo inmobiliario es una evaluación técnica y objetiva del
+valor de un inmueble en un momento determinado, considerando un
+conjunto de características intrínsecas y extrínsecas que influyen en su
+valor de mercado. Estas características abarcan desde aspectos físicos del
+inmueble, como su tamaño, estado de conservación y calidad de
+construcción, hasta factores externos como la ubicación, la demanda del
+mercado y las condiciones económicas generales.
+2.2.11 Gestión de Propiedades
+Es un servicio que implica la administración y cuidado de bienes
+inmuebles en representación de un propietario. Abarca un conjunto de
+actividades destinadas a maximizar el valor y el rendimiento de una
+propiedad, ya sea residencial, comercial o industrial. Estas actividades
+pueden incluir desde la búsqueda y selección de inquilinos, la gestión de
+contratos de arrendamiento y el cobro de rentas, hasta el mantenimiento y
+las reparaciones necesarias para mantener la propiedad en óptimas
+condiciones.
+60
+2.2.12 Bienes
+Son aquellas propiedades tangibles que pueden ser objeto de
+compra, venta, alquiler o cualquier otra transacción legal. Estos bienes
+abarcan desde viviendas, terrenos, edificios comerciales, locales
+comerciales, bodegas, garajes, etc. Su valor se determina por factores
+como la ubicación, tamaño, estado de conservación, características
+especiales y la demanda del mercado.
+2.2.12.1 Bien Mueble
+Un bien mueble es aquel que se puede mover o trasladar de
+un lugar a otro sin que pierda su naturaleza o función, puede ser
+transportado fácilmente sin causar daño o alteración significativa al bien.
+En el contexto inmobiliario, los bienes muebles no son el foco principal,
+pero pueden formar parte de una transacción inmobiliaria (como en el caso
+de la venta de una vivienda que incluye electrodomésticos).
+2.2.12.2 Bien Inmueble
+Un bien inmueble, por el contrario, es aquel que no se puede
+mover o trasladar de un lugar a otro sin que pierda su naturaleza o función,
+está permanentemente fijo a un terreno. Se caracteriza por su inmovilidad,
+61
+su posición fija y su conexión al terreno. Ejemplos de bienes inmuebles
+son una casa, un edificio de apartamentos, un terreno, un local comercial,
+etc. En el sector inmobiliario, son el objeto principal de compraventa y
+alquiler.
+2.2.13 Documentación de los Bienes
+Son todos los documentos y registros que acreditan la titularidad,
+estado legal y físico de un inmueble. Estos documentos son esenciales para
+cualquier operación inmobiliaria, ya sea compraventa, alquiler, hipoteca o
+cualquier otro tipo de transacción.
+Entre los documentos requeridos o usualmente solicitados para las
+Transacciones Inmobiliarias en Venezuela están:
+• Documento de Propiedad: Es el documento legal que acredita la
+titularidad de un inmueble a favor de una persona o entidad.
+• Ficha Catastral: Es el documento que identifica y describe las
+características de un inmueble (ubicación, dimensiones,
+superficie, etc.) en el Registro Catastral de la localidad.
+• Solvencia Municipal: Es un certificado que comprueba que el
+inmueble está libre de deudas con la Municipalidad.
+• Declaración de Vivienda Principal: Es un documento
+que declara que el inmueble es la vivienda habitual del
+propietario y que se cumple con los requisitos para acceder a
+62
+ciertos beneficios fiscales, emitido por el SENIAT. Solo aplica
+en caso de que el Inmueble sea Residencial
+• Forma 33: Es una Planilla de Pago emitida por el SENIAT que
+aplica a Inmuebles Residenciales siempre y cuando no sean
+Vivienda Principal y a Comerciales. Representa el 0.5% del
+Monto de Enajenación
+• Poder Registrado: Es un documento que otorga a una persona
+(apoderado) la facultad de actuar en nombre de otra
+(mandante) en un acto jurídico relacionado con el inmueble.
+• Planos Topográficos y de Construcción: Documentos que
+representan la ubicación, dimensiones y características físicas
+del inmueble.
+• Documento de Liberación de Hipoteca: Es un documento legal
+que certifica que una hipoteca ha sido cancelada y que el
+inmueble está libre de cargas hipotecarias.
+• Copia de Cedula de Identidad y RIF Actualizadas: Copia del
+Documento de Identidad y Registro de Información Fiscal de los
+Involucrados en la Transacción.

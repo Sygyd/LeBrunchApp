@@ -26,22 +26,34 @@ class CreateOrderService {
         'estado': 'pendiente',
         'items':
             items.map((item) {
-              // Manejar caso donde id no sea un entero válido
+              // Manejar IDs únicos que pueden tener formato "ID_HASH" para items con notas
               int itemId;
+              String originalId = item.id;
+
+              // Si el ID contiene un guión bajo, extraer solo la parte antes del guión
+              if (originalId.contains('_')) {
+                originalId = originalId.split('_')[0];
+                print(
+                  '🔧 ID único detectado: ${item.id} -> ID original: $originalId',
+                );
+              }
+
               try {
-                itemId = int.parse(item.id);
+                itemId = int.parse(originalId);
+                print('✅ ID de plato procesado exitosamente: $itemId');
               } catch (e) {
                 print(
-                  '❌ Error al convertir ID de plato: ${item.id}. Error: $e',
+                  '❌ Error al convertir ID de plato: $originalId (ID completo: ${item.id}). Error: $e',
                 );
                 // Usar un valor alternativo o reportar el error
-                throw Exception('ID de plato inválido: ${item.id}');
+                throw Exception(
+                  'ID de plato inválido: $originalId (original: ${item.id})',
+                );
               }
 
               return {
                 'idplato': itemId,
                 'cantidad': item.quantity,
-                'precio_unitario': item.price,
                 'notas': item.notes ?? '',
               };
             }).toList(),
@@ -132,97 +144,83 @@ class CreateOrderService {
       }
 
       print('🔍 FALLBACK: Creando pedido para usuario ID: $userId');
-      print('🔍 FALLBACK: Intentando método alternativo...');
+      print('🔍 FALLBACK: Usando endpoint directo /pedidos-direct...');
 
-      // 1. Crear el pedido principal
-      final orderQuery = {
-        'query':
-            "INSERT INTO pedidos (idpersona, estado, fecha) VALUES ($userId, 'pendiente', NOW()) RETURNING idpedido",
+      // Preparar los datos del pedido igual que en el método principal
+      final orderData = {
+        'idpersona': userId,
+        'estado': 'pendiente',
+        'items':
+            items.map((item) {
+              // Manejar IDs únicos que pueden tener formato "ID_HASH" para items con notas
+              int itemId;
+              String originalId = item.id;
+
+              // Si el ID contiene un guión bajo, extraer solo la parte antes del guión
+              if (originalId.contains('_')) {
+                originalId = originalId.split('_')[0];
+                print(
+                  '🔧 ID único detectado: ${item.id} -> ID original: $originalId',
+                );
+              }
+
+              try {
+                itemId = int.parse(originalId);
+                print('✅ ID de plato procesado exitosamente: $itemId');
+              } catch (e) {
+                print(
+                  '❌ FALLBACK: Error al convertir ID de plato: $originalId (ID completo: ${item.id}). Error: $e',
+                );
+                // Usar un valor alternativo o reportar el error
+                throw Exception(
+                  'ID de plato inválido: $originalId (original: ${item.id})',
+                );
+              }
+
+              return {
+                'idplato': itemId,
+                'cantidad': item.quantity,
+                'notas': item.notes ?? '',
+              };
+            }).toList(),
       };
 
-      print(
-        '🔍 FALLBACK: Consulta SQL para crear pedido: ${orderQuery['query']}',
-      );
-      print('🔍 FALLBACK: URL para consulta SQL: $baseUrl/db/query');
+      print('🔍 FALLBACK: URL de la petición: $baseUrl/pedidos-direct');
+      print('🔍 FALLBACK: Datos a enviar: ${json.encode(orderData)}');
 
-      final orderResponse = await http.post(
-        Uri.parse('$baseUrl/db/query'),
+      // Enviar la solicitud al endpoint directo
+      final response = await http.post(
+        Uri.parse('$baseUrl/pedidos-direct'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode(orderQuery),
+        body: json.encode(orderData),
       );
 
       print(
-        '🔍 FALLBACK: Código de estado de respuesta: ${orderResponse.statusCode}',
+        '🔍 FALLBACK: Código de estado de respuesta: ${response.statusCode}',
       );
-      print('🔍 FALLBACK: Cuerpo de respuesta: ${orderResponse.body}');
+      print('🔍 FALLBACK: Cuerpo de respuesta: ${response.body}');
 
-      if (orderResponse.statusCode != 200) {
+      if (response.statusCode == 201) {
+        // El pedido se creó correctamente
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'message': 'Pedido creado con éxito (método fallback)',
+          'orderData': data,
+        };
+      } else {
         return {
           'success': false,
           'message':
-              'Error al crear el pedido en la base de datos: status ${orderResponse.statusCode}',
+              'Error en fallback: ${response.statusCode} - ${response.body}',
         };
       }
-
-      final orderData = json.decode(orderResponse.body);
-      if (orderData['result'] == null || orderData['result'].isEmpty) {
-        return {
-          'success': false,
-          'message': 'No se pudo obtener el ID del pedido creado',
-        };
-      }
-
-      final orderId = orderData['result'][0]['idpedido'];
-      print('🔍 FALLBACK: Pedido creado con ID: $orderId');
-
-      // 2. Insertar los detalles del pedido
-      print('🔍 FALLBACK: Insertando ${items.length} items...');
-
-      for (var item in items) {
-        int itemId;
-        try {
-          itemId = int.parse(item.id);
-        } catch (e) {
-          print(
-            '❌ FALLBACK: Error al convertir ID de plato: ${item.id}. Error: $e',
-          );
-          continue; // Saltar este item si hay error con el ID
-        }
-
-        final detailQuery = {
-          'query':
-              "INSERT INTO pedido_detalle (idpedido, idplato, cantidad, precio_unitario, notas, completado_cocinero, completado_barista, fecha_completado_cocinero, fecha_completado_barista) VALUES ($orderId, $itemId, ${item.quantity}, ${item.price}, '${item.notes ?? ''}', false, false, NULL, NULL)",
-        };
-
-        print(
-          '🔍 FALLBACK: Consulta SQL para insertar item: ${detailQuery['query']}',
-        );
-
-        final detailResponse = await http.post(
-          Uri.parse('$baseUrl/db/query'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode(detailQuery),
-        );
-
-        if (detailResponse.statusCode != 200) {
-          print(
-            '❌ FALLBACK: Error al insertar detalle: ${detailResponse.body}',
-          );
-          // Continuar con otros items aunque haya error
-        } else {
-          print('✅ FALLBACK: Item insertado correctamente');
-        }
-      }
-
-      print('✅ FALLBACK: Pedido creado exitosamente con ID: $orderId');
-      return {
-        'success': true,
-        'message': 'Pedido creado con éxito (método alternativo)',
-        'orderData': {'idpedido': orderId},
-      };
     } catch (e) {
-      print('❌ FALLBACK: Error en fallback de creación de pedido: $e');
-      return {'success': false, 'message': 'Error al crear el pedido: $e'};
+      print('❌ FALLBACK: Error al crear pedido: $e');
+      return {
+        'success': false,
+        'message': 'Error al crear el pedido (fallback): $e',
+      };
     }
   }
 }

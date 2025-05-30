@@ -7,11 +7,15 @@ import 'dart:convert';
 
 import '../../Api_services/gemini_service.dart';
 import '../../Api_services/cart_service.dart';
+import '../../Api_services/audio_service.dart';
 import '../../models/chat_message.dart';
 import '../Widgets/chat_message_bubble.dart';
 import '../Widgets/custom_modal.dart';
+import '../Widgets/audio_recorder_widget.dart';
 import '../Client_Screens/CartScreen.dart';
 import '../../services/user_preferences_service.dart';
+import '../Widgets/background_scaffold.dart';
+import '../Widgets/chat_config_modal_content.dart';
 
 class SharedChatScreen extends StatefulWidget {
   final bool isAdmin;
@@ -38,6 +42,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
   final CartService _cartService = CartService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final AudioService _audioService = AudioService();
 
   // Lista de mensajes
   List<ChatMessage> _messages = [];
@@ -46,6 +51,8 @@ class _SharedChatScreenState extends State<SharedChatScreen>
   bool _isTyping = false;
   bool _showConnectionStatusInAppBar = true;
   bool _debugMode = false;
+  bool _showAudioRecorder = false;
+  bool _audioInitialized = false;
 
   // Timers y controladores
   Timer? _typingTimer;
@@ -53,12 +60,13 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
   // Variables para personalización de administrador
   String _serverIp = "192.168.1.121";
-  String _currentModelName = "gemini-1.5-flash";
+  String _currentModelName = "gemini-2.0-flash";
   bool _showSystemMessages = true;
 
   // ID de usuario
   String? _userId;
   String _sessionId = '';
+  int? _userRole; // Rol del usuario para mostrar el avatar correcto
 
   // Lista para detectar taps para activar modo debug
   final List<DateTime> _debugTaps = [];
@@ -82,6 +90,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
       if (!widget.isAdmin) {
         _startCartSyncTimer();
       }
+      _initializeAudio();
     });
   }
 
@@ -105,19 +114,27 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
       // Intentar obtener el ID del usuario actual
       final int? currentUserId = prefs.getInt('user_id');
+      final int? currentUserRole = prefs.getInt('user_rol');
 
       if (currentUserId != null) {
         _userId = currentUserId.toString();
-        print('📱 Chat: ID de usuario cargado: $_userId');
+        _userRole =
+            currentUserRole ??
+            1; // Por defecto cliente si no se encuentra el rol
+        print('📱 Chat: ID de usuario cargado: $_userId, Rol: $_userRole');
       } else {
         // Si no hay usuario logueado, usar el sessionId como userId
         _userId = _sessionId;
-        print('📱 Chat: Usando sessionId como userId: $_userId');
+        _userRole = 1; // Por defecto cliente para usuarios invitados
+        print(
+          '📱 Chat: Usando sessionId como userId: $_userId, Rol por defecto: $_userRole',
+        );
       }
     } catch (e) {
       print('❌ Error al inicializar userId: $e');
       // En caso de error, usar sessionId como fallback
       _userId = _sessionId;
+      _userRole = 1; // Por defecto cliente
     }
   }
 
@@ -171,7 +188,11 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
         if (_messages.isEmpty || wasLoggedOut || userChanged) {
           if (wasLoggedOut) await prefs.remove('user_logged_out');
-          if (userChanged) await prefs.remove('user_changed');
+          if (userChanged) {
+            await prefs.remove('user_changed');
+            // Recargar información del usuario cuando hay cambios
+            await _initializeUserId();
+          }
         }
       } else {
         if (widget.isAdmin || _showSystemMessages) {
@@ -248,6 +269,285 @@ class _SharedChatScreenState extends State<SharedChatScreen>
     if (mounted) setState(() => _isTyping = false);
   }
 
+  /// Inicializa el servicio de audio
+  Future<void> _initializeAudio() async {
+    if (!mounted) return;
+
+    try {
+      print('🎤 SharedChatScreen: Iniciando inicialización de AudioService...');
+
+      // Verificar si el servicio ya está inicializado
+      if (_audioService.isInitialized) {
+        print('✅ AudioService ya estaba inicializado');
+        if (mounted) {
+          setState(() {
+            _audioInitialized = true;
+          });
+        }
+        return;
+      }
+
+      final initialized = await _audioService.initialize();
+
+      if (!mounted) return;
+
+      setState(() {
+        _audioInitialized = initialized;
+      });
+
+      if (initialized) {
+        print('✅ AudioService inicializado correctamente en SharedChatScreen');
+      } else {
+        print('❌ No se pudo inicializar AudioService en SharedChatScreen');
+      }
+    } catch (e) {
+      print('❌ Error al inicializar AudioService en SharedChatScreen: $e');
+      if (mounted) {
+        setState(() {
+          _audioInitialized = false;
+        });
+      }
+    }
+  }
+
+  /// Muestra el modal de grabación de audio
+  void _showAudioRecorderModal() async {
+    print('🎤 SharedChatScreen: Intentando mostrar modal de grabación...');
+    print('🎤 SharedChatScreen: _audioInitialized = $_audioInitialized');
+    print(
+      '🎤 SharedChatScreen: _audioService.isInitialized = ${_audioService.isInitialized}',
+    );
+
+    // Verificar si el servicio está realmente disponible
+    if (!_audioInitialized || !_audioService.isInitialized) {
+      print(
+        '⚠️ AudioService no está inicializado, intentando reinicializar...',
+      );
+
+      // Intentar reinicializar el servicio
+      await _initializeAudio();
+
+      // Verificar nuevamente después de la reinicialización
+      if (!_audioInitialized || !_audioService.isInitialized) {
+        print('❌ No se pudo inicializar AudioService después del reintento');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'El servicio de audio no está disponible. Verifica los permisos.',
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+    }
+
+    print('✅ AudioService listo, mostrando modal...');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Container(
+              margin: const EdgeInsets.all(20),
+              child: AudioRecorderWidget(
+                sessionId: _sessionId,
+                onAudioRecorded: (String text) {
+                  Navigator.of(context).pop();
+                  _handleAudioMessage(text);
+                },
+                onAudioProcessed: (Map<String, dynamic> response) {
+                  Navigator.of(context).pop();
+                  _handleCompleteAudioResponse(response);
+                },
+                onCancel: () {
+                  Navigator.of(context).pop();
+                },
+                primaryColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+              ),
+            ),
+          ),
+    );
+  }
+
+  /// Maneja el mensaje de audio convertido a texto
+  void _handleAudioMessage(String text) {
+    if (text.isNotEmpty) {
+      _messageController.text = text;
+      _handleSendMessage();
+    }
+  }
+
+  /// Maneja la respuesta completa del procesamiento de audio con Gemini
+  void _handleCompleteAudioResponse(Map<String, dynamic> response) async {
+    print('🎵 SharedChatScreen: Procesando respuesta completa de audio');
+
+    // Extraer información de la respuesta con manejo robusto
+    String textResponse = response['text_response'] as String? ?? '';
+
+    // Limpiar texto de respuesta si contiene JSON malformado
+    if (textResponse.contains('```json') ||
+        textResponse.contains('"action":')) {
+      // Extraer solo el texto limpio del text_response si está embebido en JSON
+      final textMatch = RegExp(
+        r'"text_response":\s*"([^"]+)"',
+      ).firstMatch(textResponse);
+      if (textMatch != null) {
+        textResponse = textMatch.group(1) ?? textResponse;
+        // Decodificar caracteres escapados
+        textResponse = textResponse
+            .replaceAll(r'\"', '"')
+            .replaceAll(r'\\', '\\')
+            .replaceAll(r'\n', '\n')
+            .replaceAll(r'\t', '\t');
+        print('🔧 SharedChatScreen: Texto limpio extraído: "$textResponse"');
+      } else {
+        // Si no se puede extraer, usar un mensaje por defecto
+        textResponse = 'Brunchy procesó tu pedido correctamente.';
+        print(
+          '⚠️ SharedChatScreen: No se pudo extraer texto limpio, usando mensaje por defecto',
+        );
+      }
+    }
+
+    final String? action = response['action'] as String?;
+    final List<dynamic>? items = response['items'] as List<dynamic>?;
+    final String? transcribedText = response['transcribed_text'] as String?;
+    final String? originalAudioPath =
+        response['original_audio_path'] as String?;
+    final int? audioDuration = response['audio_duration'] as int?;
+
+    // Crear mensaje de audio del usuario
+    if (originalAudioPath != null) {
+      final userMsgId = const Uuid().v4();
+      final audioMessage = ChatMessage.audioFromUser(
+        audioPath: originalAudioPath,
+        transcribedText: transcribedText ?? 'Mensaje de audio',
+        audioDuration:
+            audioDuration != null
+                ? Duration(milliseconds: audioDuration)
+                : null,
+        messageId: userMsgId,
+      );
+
+      if (mounted) {
+        setState(() {
+          _messages.add(audioMessage);
+          _isTyping = true;
+        });
+        _scrollToBottom();
+        await _saveMessageHistory();
+      }
+    }
+
+    // Crear respuesta de Brunchy
+    final brunchyResponseText = textResponse;
+
+    final brunchyMsgId = const Uuid().v4();
+    final brunchyMessage = ChatMessage.fromSupport(
+      message: brunchyResponseText,
+      messageId: brunchyMsgId,
+    );
+
+    if (mounted) {
+      setState(() {
+        _messages.add(brunchyMessage);
+        _isTyping = false;
+      });
+      _scrollToBottom();
+      await _saveMessageHistory();
+
+      // Manejar acciones de carrito usando método centralizado
+      await _handleCartAction(action, items, 'audio');
+    }
+  }
+
+  /// Método centralizado para manejar acciones de carrito
+  Future<void> _handleCartAction(
+    String? action,
+    List<dynamic>? items,
+    String source,
+  ) async {
+    if (action == 'add_to_cart') {
+      print('🎯 SharedChatScreen: Detectada acción add_to_cart desde $source');
+      print('🎯 SharedChatScreen: Items recibidos: $items');
+      print('🎯 SharedChatScreen: Cantidad de items: ${items?.length ?? 0}');
+
+      String snackBarMessage = 'Brunchy está procesando tu pedido.';
+      if (items != null && items.isNotEmpty) {
+        print(
+          '🎯 SharedChatScreen: Items válidos, procediendo a agregar al carrito',
+        );
+
+        // AGREGAR ITEMS AL CARRITO REAL
+        try {
+          print(
+            '🛒 SharedChatScreen: Agregando ${items.length} items al carrito desde $source',
+          );
+
+          // Convertir los items al formato esperado por CartService
+          final List<Map<String, dynamic>> cartItems =
+              items.map((item) {
+                final Map<String, dynamic> cartItem = {
+                  'name': item['name'] as String? ?? 'Producto',
+                  'quantity': item['quantity'] as int? ?? 1,
+                  'notes': item['notes'] as String? ?? '',
+                };
+                return cartItem;
+              }).toList();
+
+          // Agregar al carrito usando CartService
+          await _cartService.addItemsFromBrunchy(cartItems);
+
+          print('✅ SharedChatScreen: Items agregados al carrito exitosamente');
+        } catch (e) {
+          print('❌ SharedChatScreen: Error al agregar items al carrito: $e');
+        }
+
+        // Actualizar preferencias del usuario para cada item añadido
+        try {
+          for (final item in items) {
+            final String? itemName = item['name'] as String?;
+            if (itemName != null && itemName.isNotEmpty) {
+              await _userPreferencesService.updateOrderedDish(itemName);
+              print('📝 Preferencias actualizadas para: $itemName');
+            }
+          }
+        } catch (e) {
+          print('❌ Error al actualizar preferencias de usuario: $e');
+        }
+
+        final itemNames = items
+            .map((item) => item['name'] as String? ?? 'un producto')
+            .take(2)
+            .join(', ');
+        final additionalItems = items.length > 2 ? ' y más...' : '';
+        snackBarMessage =
+            'Brunchy añadió $itemNames$additionalItems a tu carrito.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(snackBarMessage),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+      }
+      _cartService.forceNotifyListeners();
+    } else if (action == 'error') {
+      _addSystemMessage("Brunchy dice: Ha ocurrido un error.");
+    }
+  }
+
   Future<void> _handleSendMessage() async {
     print('🟡 SharedChatScreen._handleSendMessage: INICIANDO');
 
@@ -288,9 +588,24 @@ class _SharedChatScreenState extends State<SharedChatScreen>
       print(
         '📤 SharedChatScreen: Llamando a _geminiService.sendMessageToBrunchy...',
       );
+
+      // Convertir _userId a int para usarlo como clientId
+      int? clientId;
+      if (_userId != null && _userId != _sessionId) {
+        try {
+          clientId = int.parse(_userId!);
+          print('👤 SharedChatScreen: Usando clientId: $clientId');
+        } catch (e) {
+          print(
+            '⚠️ SharedChatScreen: No se pudo convertir _userId a int: $_userId',
+          );
+        }
+      }
+
       final responseMap = await _geminiService.sendMessageToBrunchy(
         messageText,
         _sessionId,
+        clientId: clientId,
       );
 
       print(
@@ -317,44 +632,8 @@ class _SharedChatScreenState extends State<SharedChatScreen>
         _scrollToBottom();
         await _saveMessageHistory();
 
-        if (action == 'add_to_cart') {
-          String snackBarMessage = 'Brunchy está procesando tu pedido.';
-          if (items != null && items.isNotEmpty) {
-            // Actualizar preferencias del usuario para cada item añadido
-            try {
-              for (final item in items) {
-                final String? itemName = item['name'] as String?;
-                if (itemName != null && itemName.isNotEmpty) {
-                  await _userPreferencesService.updateOrderedDish(itemName);
-                  print('📝 Preferencias actualizadas para: $itemName');
-                }
-              }
-            } catch (e) {
-              print('❌ Error al actualizar preferencias de usuario: $e');
-            }
-
-            final itemNames = items
-                .map((item) => item['name'] as String? ?? 'un producto')
-                .take(2)
-                .join(', ');
-            final additionalItems = items.length > 2 ? ' y más...' : '';
-            snackBarMessage =
-                'Brunchy añadió $itemNames$additionalItems a tu carrito.';
-          }
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(snackBarMessage),
-                duration: const Duration(seconds: 3),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-              ),
-            );
-          }
-          _cartService.forceNotifyListeners();
-        } else if (action == 'error') {
-          _addSystemMessage("Brunchy dice: $brunchyResponseText");
-        }
+        // Manejar acciones de carrito usando método centralizado
+        await _handleCartAction(action, items, 'chat');
       }
     } catch (e) {
       if (mounted) {
@@ -489,7 +768,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
     final bool aktuellenIsConnected = _geminiService.isConnected;
     final bool aktuellenIsGeminiWorking = aktuellenIsConnected;
 
-    return Scaffold(
+    return BackgroundScaffold(
       appBar: AppBar(
         title: Row(
           children: [
@@ -503,9 +782,10 @@ class _SharedChatScreenState extends State<SharedChatScreen>
               children: [
                 Text(
                   widget.isAdmin ? 'Brunchy (Admin)' : 'Brunchy Asistente',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 if (_showConnectionStatusInAppBar || widget.isAdmin)
@@ -521,33 +801,48 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                       fontSize: 12,
                       color:
                           _geminiService.isCheckingConnection
-                              ? Theme.of(context).colorScheme.outline
+                              ? Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.7)
                               : aktuellenIsConnected
                               ? (aktuellenIsGeminiWorking
                                   ? Colors.green.shade700
-                                  : Theme.of(context).colorScheme.error)
-                              : Theme.of(
-                                context,
-                              ).colorScheme.error.withOpacity(0.7),
+                                  : Colors.red.shade700)
+                              : Colors.red.shade700,
                     ),
                   ),
               ],
             ),
           ],
         ),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 1,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           if (widget.isAdmin)
             IconButton(
-              icon: const Icon(Icons.settings_applications),
+              icon: Icon(
+                Icons.settings_applications,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               onPressed: () {
-                /* Lógica para admin settings */
+                CustomModal.showFullScreenConfig(
+                  context: context,
+                  title: 'Configuración del Asistente',
+                  content: ChatConfigModalContent(
+                    onConfigSaved: () {
+                      // Recargar configuraciones si es necesario
+                      _loadSettings();
+                    },
+                  ),
+                );
               },
             ),
           if (_debugMode)
             IconButton(
-              icon: const Icon(Icons.bug_report_outlined),
+              icon: Icon(
+                Icons.bug_report_outlined,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               onPressed: () {
                 /* Lógica para debug options */
               },
@@ -564,92 +859,79 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                   FocusScope.of(context).unfocus();
                   _handleDebugTap();
                 },
-                child: Container(
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: const AssetImage("assets/images/fondolb.jpg"),
-                      fit: BoxFit.cover,
-                      colorFilter: ColorFilter.mode(
-                        Colors.white.withOpacity(0.85),
-                        BlendMode.lighten,
-                      ),
-                    ),
-                  ),
-                  child:
-                      _messages.isEmpty
-                          ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  _geminiService.isCheckingConnection ||
-                                          !aktuellenIsConnected
-                                      ? Icons.wifi_off_rounded
-                                      : Icons.chat_bubble_outline_rounded,
-                                  size: 70,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withOpacity(0.6),
+                child:
+                    _messages.isEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _geminiService.isCheckingConnection ||
+                                        !aktuellenIsConnected
+                                    ? Icons.wifi_off_rounded
+                                    : Icons.chat_bubble_outline_rounded,
+                                size: 70,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.6),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _geminiService.isCheckingConnection
+                                    ? 'Conectando con Brunchy...'
+                                    : (aktuellenIsConnected
+                                        ? 'Envíame un mensaje para empezar'
+                                        : 'Buscando a Brunchy...'),
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  color:
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  _geminiService.isCheckingConnection
-                                      ? 'Conectando con Brunchy...'
-                                      : (aktuellenIsConnected
-                                          ? 'Envíame un mensaje para empezar'
-                                          : 'Buscando a Brunchy...'),
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    color:
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                              if (_geminiService.isCheckingConnection)
+                                const CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                )
+                              else if (!aktuellenIsConnected)
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.primary,
+                                    foregroundColor:
                                         Theme.of(
                                           context,
-                                        ).colorScheme.onSurfaceVariant,
+                                        ).colorScheme.onSecondary,
                                   ),
-                                  textAlign: TextAlign.center,
+                                  onPressed: _retryConnection,
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 20,
+                                  ),
+                                  label: const Text('Reintentar Conexión'),
                                 ),
-                                const SizedBox(height: 12),
-                                if (_geminiService.isCheckingConnection)
-                                  const CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                  )
-                                else if (!aktuellenIsConnected)
-                                  ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          Theme.of(
-                                            context,
-                                          ).colorScheme.secondary,
-                                      foregroundColor:
-                                          Theme.of(
-                                            context,
-                                          ).colorScheme.onSecondary,
-                                    ),
-                                    onPressed: _retryConnection,
-                                    icon: const Icon(
-                                      Icons.refresh_rounded,
-                                      size: 20,
-                                    ),
-                                    label: const Text('Reintentar Conexión'),
-                                  ),
-                              ],
-                            ),
-                          )
-                          : ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 16,
-                            ),
-                            itemCount: _messages.length,
-                            itemBuilder: (context, index) {
-                              final message = _messages[index];
-                              return ChatMessageBubble(
-                                key: ValueKey(message.messageId ?? message.id),
-                                message: message,
-                              );
-                            },
+                            ],
                           ),
-                ),
+                        )
+                        : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 16,
+                          ),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            return ChatMessageBubble(
+                              key: ValueKey(message.messageId ?? message.id),
+                              message: message,
+                              userRole: _userRole,
+                            );
+                          },
+                        ),
               ),
             ),
             if (_isTyping)
@@ -677,26 +959,19 @@ class _SharedChatScreenState extends State<SharedChatScreen>
               height: 1,
               color: Theme.of(context).dividerColor.withOpacity(0.5),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              margin: EdgeInsets.only(
+            Padding(
+              padding: EdgeInsets.only(
+                left: 12,
+                right: 12,
+                top: 12,
                 bottom:
                     MediaQuery.of(context).viewInsets.bottom > 0
                         ? MediaQuery.of(context).viewInsets.bottom -
                             (widget.isAdmin
                                 ? 0
-                                : (kBottomNavigationBarHeight * 0.6))
-                        : 8,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 5,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
+                                : (kBottomNavigationBarHeight * 0.6)) +
+                            12
+                        : 20,
               ),
               child: Row(
                 children: [
@@ -736,7 +1011,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                         filled: true,
                         fillColor: Theme.of(
                           context,
-                        ).colorScheme.surfaceVariant.withOpacity(0.7),
+                        ).colorScheme.surface.withOpacity(0.9),
                       ),
                       minLines: 1,
                       maxLines: 4,
@@ -752,7 +1027,32 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                       onTap: _scrollToBottom,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+                  // Botón de audio
+                  Material(
+                    color:
+                        _audioInitialized
+                            ? Theme.of(context).colorScheme.secondary
+                            : Colors.grey[400],
+                    borderRadius: BorderRadius.circular(25),
+                    child: InkWell(
+                      onTap: _audioInitialized ? _showAudioRecorderModal : null,
+                      borderRadius: BorderRadius.circular(25),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Icon(
+                          Icons.mic_rounded,
+                          color:
+                              _audioInitialized
+                                  ? Theme.of(context).colorScheme.onSecondary
+                                  : Colors.grey[600],
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Botón de envío
                   Material(
                     color: Theme.of(context).colorScheme.primary,
                     borderRadius: BorderRadius.circular(25),

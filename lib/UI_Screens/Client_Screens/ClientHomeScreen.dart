@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'ChatScreen.dart';
 import '../Widgets/background_scaffold.dart';
+import '../Widgets/recommendations_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ClientHomeScreen extends StatelessWidget {
   final String userName;
@@ -13,6 +15,16 @@ class ClientHomeScreen extends StatelessWidget {
     this.userCedula = '',
     this.onNavigate,
   });
+
+  Future<int?> _getCurrentUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt('user_id');
+    } catch (e) {
+      print('Error al obtener ID del usuario: $e');
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +93,24 @@ class ClientHomeScreen extends StatelessWidget {
                 _buildBrunchyCard(context, theme),
 
                 const SizedBox(height: 24),
+
+                // Widget de recomendaciones personalizadas
+                FutureBuilder<int?>(
+                  future: _getCurrentUserId(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData && snapshot.data != null) {
+                      return Column(
+                        children: [
+                          RecommendationsWidget(clientId: snapshot.data!),
+                          const SizedBox(height: 24),
+                        ],
+                      );
+                    } else {
+                      // Si no hay usuario logueado, no mostrar recomendaciones
+                      return const SizedBox(height: 8);
+                    }
+                  },
+                ),
 
                 // Sección de promociones
                 Text(

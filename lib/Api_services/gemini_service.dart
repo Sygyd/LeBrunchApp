@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -90,15 +91,18 @@ class GeminiService extends ChangeNotifier {
   /// y, opcionalmente, acciones para el carrito.
   Future<Map<String, dynamic>> sendMessageToBrunchy(
     String message,
-    String sessionId,
-  ) async {
+    String sessionId, {
+    int? clientId,
+  }) async {
     print('🔵 GeminiService.sendMessageToBrunchy: INICIANDO');
     print('📨 GeminiService: Mensaje: "$message"');
     print('🆔 GeminiService: SessionId: "$sessionId"');
+    print('👤 GeminiService: ClientId: ${clientId ?? "No proporcionado"}');
 
     final responseData = await _geminiApiClient.generateContent(
       message,
       sessionId: sessionId,
+      clientId: clientId,
     );
 
     print('📬 GeminiService: Respuesta cruda del servidor:');
@@ -113,7 +117,6 @@ class GeminiService extends ChangeNotifier {
       print('📝 GeminiService: text_response extraído: "$textResponse"');
       print('⚡ GeminiService: action extraído: "$action"');
 
-      // Si la acción es añadir al carrito, procesar los ítems
       if (action == 'add_to_cart' && responseData['items'] is List) {
         final List<dynamic> items = responseData['items'];
 
@@ -130,190 +133,91 @@ class GeminiService extends ChangeNotifier {
         final menuItems = await getFullMenu();
         if (menuItems == null) {
           print(
-            '❌ GeminiService: No se pudo obtener el menú, no se añadirán items al carrito',
+            '❌ GeminiService: No se pudo obtener el menú, items serán procesados por la UI',
           );
-          return responseData; // Devolver sin procesar carrito
+          // No procesar carrito aquí, dejar que la UI lo maneje
+          return responseData;
         }
 
         print(
           '✅ GeminiService: Menú obtenido con ${menuItems.length} items disponibles',
         );
 
-        // Debug: Imprimir algunos items del menú para verificar formato
-        print('🔍 GeminiService: Muestra de items del menú:');
-        for (
-          int i = 0;
-          i < (3 < menuItems.length ? 3 : menuItems.length);
-          i++
-        ) {
-          print('   Item $i: ${menuItems[i]}');
-        }
+        // RESTAURADA: Lógica inteligente de búsqueda y validación
+        List<Map<String, dynamic>> processedItems = [];
 
-        // Completar información de cada item
-        final List<Map<String, dynamic>> itemsToAdd = [];
-        print(
-          '🔄 GeminiService: Iniciando procesamiento de ${items.length} items...',
-        );
-
-        for (final item in items) {
-          print('🔄 GeminiService: Procesando item raw: $item');
-
-          final String itemName = item['name'] as String? ?? '';
+        for (int i = 0; i < items.length; i++) {
+          final item = items[i];
+          final String itemName = item['name'] as String? ?? 'Sin nombre';
           final int quantity = item['quantity'] as int? ?? 1;
           final String notes = item['notes'] as String? ?? '';
 
-          print(
-            '🔍 GeminiService: Procesando item "$itemName" (cantidad: $quantity, notas: "$notes")',
+          print('🔍 GeminiService: Procesando item $i: "$itemName" x$quantity');
+
+          // Buscar el item en el menú con lógica inteligente
+          final Map<String, dynamic>? menuItem = _findBestMatchingMenuItem(
+            menuItems,
+            itemName,
           );
-
-          // Buscar el item en el menú (búsqueda flexible)
-          print(
-            '🔍 GeminiService: Buscando "$itemName" en menú de ${menuItems.length} items...',
-          );
-          dynamic menuItem;
-          try {
-            menuItem = menuItems.firstWhere((menuItem) {
-              final menuName =
-                  (menuItem['nombre'] as String? ?? '').toLowerCase();
-              final searchName = itemName.toLowerCase();
-
-              // Búsqueda exacta o parcial
-              final matches =
-                  menuName == searchName ||
-                  menuName.contains(searchName) ||
-                  searchName.contains(menuName);
-
-              if (matches) {
-                print(
-                  '🎯 GeminiService: Coincidencia encontrada: "$menuName" para "$searchName"',
-                );
-              }
-
-              return matches;
-            });
-          } catch (e) {
-            print(
-              '❌ GeminiService: No se encontró coincidencia para "$itemName" - Error: $e',
-            );
-            print(
-              '❌ GeminiService: Revisando nombres disponibles en el menú...',
-            );
-            for (
-              int i = 0;
-              i < (5 < menuItems.length ? 5 : menuItems.length);
-              i++
-            ) {
-              print('   Menú item $i: ${menuItems[i]['nombre']}');
-            }
-            menuItem = null;
-          }
 
           if (menuItem != null) {
-            print('✅ GeminiService: Item encontrado en menú:');
-            print('   ID: ${menuItem['idplato']}');
-            print('   Nombre: ${menuItem['nombre']}');
-            print('   Precio: \$${menuItem['precio']}');
-            print('   Imagen: ${menuItem['imagen_url']}');
-
-            // Crear item completo con datos del menú
-            // Manejo seguro del precio - puede venir como String o num
-            double itemPrice = 0.0;
-            final precioRaw = menuItem['precio'];
-
-            print(
-              '🔍 GeminiService: Precio raw del menú: $precioRaw (tipo: ${precioRaw.runtimeType})',
-            );
-
-            if (precioRaw is num) {
-              itemPrice = precioRaw.toDouble();
-            } else if (precioRaw is String) {
-              itemPrice = double.tryParse(precioRaw) ?? 0.0;
-            }
-
-            print(
-              '💰 GeminiService: Precio procesado: \$${itemPrice.toStringAsFixed(2)}',
-            );
-
-            // NUEVO: Generar ID único para items con mismo nombre pero diferentes notas
-            String uniqueId = menuItem['idplato']?.toString() ?? '';
-            if (notes.isNotEmpty) {
-              // Si hay notas, añadir un sufijo único basado en las notas
-              final notesHash = notes.hashCode.abs().toString();
-              uniqueId = '${uniqueId}_${notesHash}';
-              print(
-                '🆔 GeminiService: ID único generado para item con notas: $uniqueId',
-              );
-            }
-
-            final completeItem = {
-              'id': uniqueId,
-              'name': menuItem['nombre'] ?? itemName,
-              'price': itemPrice,
+            // Crear item procesado con información completa
+            final processedItem = {
+              'name': menuItem['nombre'], // Usar nombre exacto del menú
               'quantity': quantity,
               'notes': notes,
-              'imageUrl': menuItem['imagen_url'] ?? '',
-              'originalData': menuItem,
-              // Campos adicionales por compatibilidad
-              'item_price': itemPrice,
-              'idplato': menuItem['idplato']?.toString() ?? '',
+              'id': menuItem['idplato']?.toString() ?? '',
+              'price': _parseDoubleSafely(menuItem['precio']),
+              'image_url': menuItem['imagen_url'] ?? '',
+              'categoria': menuItem['categoria'] ?? '',
+              'disponibilidad': menuItem['disponibilidad'] ?? true,
+              'originalName':
+                  itemName, // Guardar nombre original por referencia
+              'matchScore':
+                  menuItem['_matchScore'] ?? 1.0, // Score de coincidencia
             };
 
-            itemsToAdd.add(completeItem);
-            print('📦 GeminiService: Item preparado para carrito exitosamente');
+            processedItems.add(processedItem);
             print(
-              '   📊 Resumen: ${completeItem['name']} x${completeItem['quantity']} = \$${completeItem['price']}',
+              '✅ GeminiService: "${itemName}" → "${menuItem['nombre']}" (score: ${menuItem['_matchScore']?.toStringAsFixed(2) ?? '1.00'})',
             );
           } else {
-            print('❌ GeminiService: Item "$itemName" no encontrado en el menú');
-            print(
-              '⚠️ GeminiService: SALTANDO item inexistente - no se añadirá al carrito',
-            );
-
-            // NO crear items que no existen en el menú
-            // El servidor debería haber validado esto, pero por seguridad adicional
-            // no añadimos items inexistentes al carrito
+            print('❌ GeminiService: Item "$itemName" NO encontrado en el menú');
+            // Aún así, mantener el item original para que la UI lo maneje
+            processedItems.add({
+              'name': itemName,
+              'quantity': quantity,
+              'notes': notes,
+              'id': '',
+              'price': 0.0,
+              'image_url': '',
+              'categoria': 'Desconocida',
+              'disponibilidad': false,
+              'originalName': itemName,
+              'matchScore': 0.0,
+              'notFound': true,
+            });
           }
         }
 
-        print('🛒 GeminiService: PREPARANDO PARA ENVIAR AL CartService');
+        // Devolver respuesta con items procesados pero SIN agregar al carrito
+        final enhancedResponse = Map<String, dynamic>.from(responseData);
+        enhancedResponse['items'] = processedItems;
+        enhancedResponse['originalItems'] =
+            items; // Mantener items originales por referencia
+
         print(
-          '📊 GeminiService: Total de items preparados: ${itemsToAdd.length}',
+          '🔚 GeminiService: Procesamiento completado - ${processedItems.length} items validados',
         );
 
-        // Debug: Mostrar resumen de todos los items
-        for (int i = 0; i < itemsToAdd.length; i++) {
-          final item = itemsToAdd[i];
-          print(
-            '   Item $i: ${item['name']} (\$${item['price']}) x${item['quantity']}',
-          );
-        }
-
-        // Llamar al CartService con los items completos
-        try {
-          print(
-            '📤 GeminiService: Llamando a CartService.addItemsFromBrunchy...',
-          );
-          await _cartService.addItemsFromBrunchy(itemsToAdd);
-          print(
-            '✅ GeminiService: CartService.addItemsFromBrunchy COMPLETADO EXITOSAMENTE',
-          );
-        } catch (e) {
-          print(
-            '❌ GeminiService: ERROR al llamar CartService.addItemsFromBrunchy: $e',
-          );
-          print('❌ GeminiService: StackTrace: ${StackTrace.current}');
-        }
-
-        print('🔚 GeminiService: Proceso de añadir al carrito FINALIZADO');
+        return enhancedResponse;
       } else {
         print(
           'ℹ️ GeminiService: No hay acción de carrito (action: "$action", items: ${responseData['items']})',
         );
       }
 
-      print(
-        '🔵 GeminiService.sendMessageToBrunchy: FINALIZANDO - devolviendo responseData',
-      );
+      print('🔵 GeminiService: Respuesta procesada completamente');
       return responseData; // Devuelve el Map completo tal como lo envió el servidor
     } else {
       // Si la respuesta es nula (ej. error de conexión del cliente en GeminiApiClient),
@@ -425,6 +329,113 @@ class GeminiService extends ChangeNotifier {
     } catch (e) {
       print('❌ GeminiService: Error al limpiar historial de chat: $e');
     }
+  }
+
+  // MÉTODO RESTAURADO: Búsqueda inteligente de items en el menú
+  Map<String, dynamic>? _findBestMatchingMenuItem(
+    List<dynamic> menuItems,
+    String searchName,
+  ) {
+    if (searchName.isEmpty) return null;
+
+    final String normalizedSearch = searchName.toLowerCase().trim();
+    Map<String, dynamic>? bestMatch;
+    double bestScore = 0.0;
+
+    for (var menuItem in menuItems) {
+      final String menuName =
+          (menuItem['nombre'] as String? ?? '').toLowerCase().trim();
+      if (menuName.isEmpty) continue;
+
+      // Calcular score de similitud
+      double score = _calculateSimilarityScore(normalizedSearch, menuName);
+
+      // Bonus por coincidencia exacta
+      if (normalizedSearch == menuName) {
+        score = 1.0;
+      }
+      // Bonus por coincidencia de inicio
+      else if (menuName.startsWith(normalizedSearch) ||
+          normalizedSearch.startsWith(menuName)) {
+        score *= 1.2;
+      }
+      // Bonus por contener todas las palabras importantes
+      else if (_containsAllKeyWords(normalizedSearch, menuName)) {
+        score *= 1.1;
+      }
+
+      if (score > bestScore && score > 0.3) {
+        // Umbral mínimo de similitud
+        bestScore = score;
+        bestMatch = Map<String, dynamic>.from(menuItem);
+        bestMatch!['_matchScore'] = score; // Agregar score para referencia
+      }
+    }
+
+    return bestMatch;
+  }
+
+  // MÉTODO RESTAURADO: Cálculo de score de similitud
+  double _calculateSimilarityScore(String search, String target) {
+    if (search == target) return 1.0;
+    if (search.isEmpty || target.isEmpty) return 0.0;
+
+    // Algoritmo de distancia de Levenshtein simplificado
+    final searchWords = search.split(' ').where((w) => w.isNotEmpty).toList();
+    final targetWords = target.split(' ').where((w) => w.isNotEmpty).toList();
+
+    if (searchWords.isEmpty || targetWords.isEmpty) return 0.0;
+
+    int matches = 0;
+    int totalWords = searchWords.length;
+
+    for (String searchWord in searchWords) {
+      for (String targetWord in targetWords) {
+        if (targetWord.contains(searchWord) ||
+            searchWord.contains(targetWord)) {
+          matches++;
+          break;
+        }
+      }
+    }
+
+    // Score basado en proporción de palabras coincidentes
+    double score = matches / totalWords;
+
+    // Bonus por longitud similar
+    final lengthDiff = (search.length - target.length).abs();
+    final maxLength = math.max(search.length, target.length);
+    final lengthSimilarity = 1.0 - (lengthDiff / maxLength);
+
+    return (score * 0.7) + (lengthSimilarity * 0.3);
+  }
+
+  // MÉTODO RESTAURADO: Verificar si contiene todas las palabras clave
+  bool _containsAllKeyWords(String search, String target) {
+    final searchWords = search.split(' ').where((w) => w.length > 2).toList();
+    if (searchWords.isEmpty) return false;
+
+    for (String word in searchWords) {
+      if (!target.contains(word)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // MÉTODO RESTAURADO: Parsing seguro de double
+  double _parseDoubleSafely(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        return 0.0;
+      }
+    }
+    return 0.0;
   }
 
   // Dispose para limpiar recursos (muy importante)

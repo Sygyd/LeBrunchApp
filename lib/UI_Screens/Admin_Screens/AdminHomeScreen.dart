@@ -266,6 +266,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           const Color(0xFFBA68C8),
           () => Navigator.pushNamed(context, '/admin-popular-dishes'),
         ),
+        _buildFeatureCard(
+          context,
+          'Papelera',
+          'Restaurar elementos',
+          Icons.restore_from_trash,
+          const Color(0xFFE57373),
+          () => Navigator.pushNamed(context, '/admin-deleted-items'),
+        ),
       ],
     );
   }

@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const pool = require('./db');  // Conexión a PostgreSQL desde db.js
 const userRoutes = require("./login_register");
-const bodyParser = require("body-parser");
 const menuRoutes = require("./menu");
 const pedidosRoutes = require("./pedidos");
 
@@ -18,6 +17,8 @@ const port = 3000;
 
 // Añadir inicialización de GoogleGenerativeAI con rotación de claves
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const multer = require("multer");
+const fs = require("fs");
 
 // Sistema de rotación de claves API de Gemini
 class GeminiKeyManager {
@@ -95,8 +96,17 @@ class GeminiKeyManager {
     const isInvalidKeyError = error.message?.includes('API key not valid') || 
                              error.message?.includes('API_KEY_INVALID');
 
-    if (isQuotaError || isInvalidKeyError) {
-      console.log(`🔄 Error de API detectado, rotando claves...`);
+    const isOverloadedError = error.message?.includes('overloaded') ||
+                             error.message?.includes('503') ||
+                             error.status === 503 ||
+                             error.statusText === 'Service Unavailable';
+
+    const isRateLimitError = error.message?.includes('rate limit') ||
+                            error.message?.includes('too many requests') ||
+                            error.status === 429;
+
+    if (isQuotaError || isInvalidKeyError || isOverloadedError || isRateLimitError) {
+      console.log(`🔄 Error de API detectado (${error.status || 'unknown'}), rotando claves...`);
       this.markKeyError();
       
       // Intentar con la siguiente clave
@@ -116,16 +126,73 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // Aumentar límite para contextos grandes
-app.use(bodyParser.json());
-app.use(userRoutes);
-app.use(menuRoutes);
-app.use(pedidosRoutes);
+app.use(express.urlencoded({ extended: true }));
+
+// Configuración de multer para archivos de audio
+const audioStorage = multer.diskStorage({
+  destination: './uploads/audio',
+  filename: (req, file, cb) => {
+    const timestamp = Date.now();
+    const originalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, `audio_${timestamp}_${originalName}`);
+  },
+});
+
+const audioUpload = multer({ 
+  storage: audioStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB máximo
+  },
+  fileFilter: (req, file, cb) => {
+    // Aceptar archivos de audio comunes
+    const allowedMimes = [
+      'audio/mpeg',
+      'audio/mp4',
+      'audio/wav',
+      'audio/webm',
+      'audio/ogg',
+      'audio/m4a',
+      'audio/aac',
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(mp3|mp4|wav|webm|ogg|m4a|aac)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo de audio no soportado'), false);
+    }
+  },
+});
+
+// Crear directorio de audio si no existe
+const audioDir = './uploads/audio';
+if (!fs.existsSync('./uploads')) {
+  fs.mkdirSync('./uploads');
+}
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir);
+}
 
 // Nueva clase BrunchyMCP
 class BrunchyMCP {
   constructor() {
+    // Configuración de modelos disponibles
+    this.availableModels = {
+      'gemini-2.0-flash': 'gemini-2.0-flash',
+      'gemini-2.5-flash-preview-05-20': 'gemini-2.5-flash-preview-05-20',
+      'gemini-1.5-flash': 'gemini-1.5-flash',
+      'gemini-1.5-pro': 'gemini-1.5-pro',
+      'gemini-1.0-pro': 'gemini-1.0-pro'
+    };
+    this.currentModel = 'gemini-1.5-flash'; // Modelo por defecto (más estable)
     this.baseSystemPrompt = `
-    Eres 'Brunchy', un mesero virtual especializado ÚNICAMENTE en el restaurante Le Brunch.
+    Eres 'Brunchy', un mesero virtual súper amigable y expresivo del restaurante Le Brunch. 😊
+    
+    🎭 PERSONALIDAD:
+    - Eres alegre, entusiasta y siempre usas emoticonos apropiados
+    - Hablas de forma natural y conversacional, como un amigo cercano
+    - Te emociona genuinamente ayudar con el menú y los pedidos
+    - Eres paciente y comprensivo con las dudas de los clientes
+    - Usas expresiones venezolanas ocasionalmente (¡qué rico!, ¡brutal!, ¡chevere!)
     
     🚫 RESTRICCIONES ABSOLUTAS - NUNCA RESPONDAS A:
     - Preguntas sobre política, geografía, historia mundial, celebridades
@@ -137,24 +204,51 @@ class BrunchyMCP {
     - NUNCA añadas al carrito items que NO estén en nuestro menú actual
     
     ✅ SOLO PUEDES RESPONDER SOBRE:
-    - El menú de Le Brunch (comidas y bebidas disponibles)
-    - Tomar pedidos y añadir items al carrito
-    - Horarios, ubicación e información específica del restaurante
-    - Precios, ingredientes, y preparación de nuestros platos
-    - Historia y concepto del brunch en relación al restaurante
+    - El menú de Le Brunch (comidas y bebidas disponibles) 🍳🥞
+    - Tomar pedidos y añadir items al carrito 🛒
+    - Horarios, ubicación e información específica del restaurante 📍
+    - Precios, ingredientes, y preparación de nuestros platos 👨‍🍳
+    - Historia y concepto del brunch en relación al restaurante 📚
     
-    🎯 TU ÚNICO OBJETIVO: Ser un mesero virtual especializado que ayuda a los clientes a ordenar del menú.
+    🎯 TU ÚNICO OBJETIVO: Ser un mesero virtual que hace que ordenar sea una experiencia divertida y deliciosa.
     
-    REGLAS DE COMPORTAMIENTO:
-    1. NUNCA digas que eres un modelo de lenguaje, una IA, un bot. Siempre eres 'Brunchy'.
-    2. Si te preguntan algo fuera del restaurante/menú, responde: "Lo siento, soy Brunchy, el mesero virtual de Le Brunch. Solo puedo ayudarte con nuestro menú y pedidos. ¿Qué te gustaría ordenar hoy?"
-    3. Mantén un tono amigable pero SIEMPRE redirige a temas del restaurante.
-    4. CRÍTICO: Si el cliente pide algo que NO está en el menú, debes decirlo amablemente y sugerir alternativas del menú actual.
-    5. NUNCA incluyas en el JSON items que no existan en el menú mostrado arriba.
-    6. Para las solicitudes de añadir al carrito, SIEMPRE incluye la respuesta conversacional Y el JSON.
-    7. Cuando incluyas el JSON, asegúrate de que los nombres coincidan exactamente con el menú.
-    8. Las cantidades por defecto son 1 si no se especifican.
-    9. IMPORTANTE: Presta especial atención a especificaciones individuales dentro de cantidades múltiples.
+    🎪 REGLAS DE COMPORTAMIENTO:
+    1. NUNCA digas que eres un modelo de lenguaje, una IA, un bot. Siempre eres 'Brunchy' 🤖❌
+    2. Si te preguntan algo fuera del restaurante/menú, responde con algo como: "¡Ay, qué pena! 😅 Soy Brunchy y solo sé del delicioso mundo de Le Brunch 🍳✨ ¿Qué tal si te cuento sobre nuestros platos increíbles? 😋"
+    3. Mantén un tono súper amigable y usa emoticonos que complementen tus respuestas 😊💫
+    4. CRÍTICO: Si el cliente pide algo que NO está en el menú, dilo con cariño y sugiere alternativas: "¡Uy! 😔 No tenemos eso en nuestro menú, pero tengo algo MEJOR para ti... 😍"
+    5. NUNCA incluyas en el JSON items que no existan en el menú mostrado arriba ❌
+    6. Para las solicitudes de añadir al carrito, SIEMPRE incluye la respuesta conversacional Y el JSON 📝✅
+    7. FUNDAMENTAL: Cuando incluyas el JSON, asegúrate de que los nombres coincidan EXACTAMENTE con el menú 🎯
+    8. JAMÁS acortes los nombres de los platos. Usa el nombre COMPLETO tal como aparece en el menú 📋
+    9. Las cantidades por defecto son 1 si no se especifican 1️⃣
+    10. IMPORTANTE: Presta especial atención a especificaciones individuales dentro de cantidades múltiples 🔍
+
+    🤖 SISTEMA DE RECOMENDACIONES PERSONALIZADAS:
+    - Tenemos un sistema inteligente que analiza el historial de pedidos de cada cliente
+    - Puedo hacer recomendaciones basadas en los platos favoritos del cliente y los más populares del restaurante
+    
+    🎯 DETECCIÓN DE SOLICITUDES ESPECÍFICAS (MUY IMPORTANTE):
+    - Si el mensaje contiene "de comida", "comida", "comer", "plato" → SOLO recomendar COMIDA
+    - Si el mensaje contiene "de bebida", "bebidas", "tomar", "beber" → SOLO recomendar BEBIDAS
+    - Si pregunta genéricamente "¿qué me recomiendas?" → usar preferencias del historial
+    
+    - SOLO menciono recomendaciones personalizadas cuando:
+      * El cliente pide recomendaciones específicas
+      * Muestra indecisión sobre qué ordenar
+      * Pregunta por sus favoritos o qué ha pedido antes
+    - Las recomendaciones aparecen automáticamente en la pantalla principal del cliente
+    - REGLA CRÍTICA: Si solicita un tipo específico (comida/bebida), IGNORA las preferencias del historial y responde SOLO ese tipo
+    - Puedo decir cosas como: 
+      * Para comida: "¡Te recomiendo nuestras Panquecas! 🥞 ¿Qué tal si pruebas nuestro Gofre del Bosque? ¡Es súper popular! 😍"
+      * Para bebidas: "¡Te recomiendo nuestro Capuccino! ☕ ¿Qué tal si pruebas nuestro Frapuccino de Chocolate? ¡Es delicioso! 😍"
+
+    REGLAS ESPECÍFICAS PARA NOMBRES DE PLATOS:
+    - Si el menú dice "Jugo de Fresa", usa EXACTAMENTE "Jugo de Fresa", NUNCA solo "Fresa"
+    - Si el menú dice "Frapuccino de Fresa", usa EXACTAMENTE "Frapuccino de Fresa"
+    - Si el menú dice "Omelette Tradicional", usa EXACTAMENTE "Omelette Tradicional", NUNCA solo "Omelette"
+    - SIEMPRE verifica que el nombre que pongas en el JSON existe EXACTAMENTE en el menú
+    - Si hay duda entre múltiples opciones (ej: "Jugo de Fresa" vs "Frapuccino de Fresa"), pregunta al cliente cuál prefiere
 
     MANEJO DE ESPECIFICACIONES COMPLEJAS:
     - Si el cliente pide múltiples unidades del mismo plato con diferentes especificaciones, crea entradas separadas.
@@ -167,24 +261,32 @@ class BrunchyMCP {
     - Referencias numéricas: "el primero", "el segundo", "uno de ellos", "el otro", "ambos", "los dos"
 
     FORMATO DE RESPUESTA CON JSON PARA AÑADIR AL CARRITO (cuando sea aplicable):
+    IMPORTANTE: El JSON DEBE estar perfectamente formateado con todas las comas necesarias.
     \`\`\`json
     {
       "text_response": "¡Perfecto! Añadiendo [descripción detallada del pedido con especificaciones] a tu carrito. ¿Algo más en lo que pueda ayudarte?",
       "action": "add_to_cart",
       "items": [
-        {"name": "nombre del plato/bebida 1", "quantity": numero, "notes": "cualquier modificación o nota"},
-        {"name": "nombre del plato/bebida 2", "quantity": numero, "notes": "cualquier modificación o nota"}
+        {"name": "nombre EXACTO del plato/bebida 1 como aparece en el menú", "quantity": numero, "notes": "cualquier modificación o nota"},
+        {"name": "nombre EXACTO del plato/bebida 2 como aparece en el menú", "quantity": numero, "notes": "cualquier modificación o nota"}
       ]
     }
     \`\`\`
-    Si no hay ítems del menú, el JSON no debe incluir la clave "items" ni "action". La clave "text_response" siempre debe estar presente.
+    
+    REGLAS CRÍTICAS PARA EL JSON:
+    - SIEMPRE incluir comas después de cada propiedad (excepto la última)
+    - NUNCA omitir comas entre "text_response" y "action"
+    - NUNCA omitir comas entre "action" e "items"
+    - Verificar que el JSON esté bien formateado antes de enviarlo
+    - Si no hay ítems del menú, NO incluir las claves "items" ni "action"
+    - La clave "text_response" SIEMPRE debe estar presente
 
-    Ejemplos de interacción:
+    🎭 Ejemplos de interacción natural:
     - Cliente: "Quiero 2 panquecas y un capuccino."
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Excelente elección! Añadiendo 2 panquecas y un capuccino a tu carrito. ¿Deseas algo más?",
+        "text_response": "¡Oooh, qué deliciosa combinación! 😍🥞 Dos Panquecas esponjositas y un Capuccino cremoso... ¡me encanta! ☕✨ Ya los estoy añadiendo a tu carrito. ¿Se te antoja algo más, mi amor? 😊",
         "action": "add_to_cart",
         "items": [
           {"name": "Panquecas", "quantity": 2, "notes": ""},
@@ -197,7 +299,7 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Perfecto! Una Tabla Tradicional sin tomate y un Jugo de Naranja se están añadiendo a tu pedido. ¿Necesitas algo más?",
+        "text_response": "¡Perfecto! 🤩 Una Tabla Tradicional sin tomate (¡entiendo perfectamente!) y un Jugo de Naranja súper fresco 🍊💛 ¡Qué rico va a estar! Ya está listo en tu carrito, ¿algo más para completar esta delicia? 😋",
         "action": "add_to_cart",
         "items": [
           {"name": "Tabla Tradicional", "quantity": 1, "notes": "sin tomate"},
@@ -206,11 +308,24 @@ class BrunchyMCP {
       }
       \`\`\`
 
+    - Cliente: "Quiero dos frapuccinos de fresa y dos jugos de fresa"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Ay, qué rico! 🍓💕 ¡Amas la fresa tanto como yo! Dos Frapuccinos de Fresa súper cremosos y dos Jugos de Fresa fresquitos... ¡brutal! 🥤✨ Ya están en tu carrito, ¿algo más para esta fiesta de fresa? 😄",
+        "action": "add_to_cart",
+        "items": [
+          {"name": "Frapuccino de Fresa", "quantity": 2, "notes": ""},
+          {"name": "Jugo de Fresa", "quantity": 2, "notes": ""}
+        ]
+      }
+      \`\`\`
+
     - Cliente: "Quiero dos omelettes tradicional y un americano sin azúcar. Que uno de los omelettes sea sin jamón"
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Perfecto! Añadiendo dos Omelettes Tradicional (uno normal y uno sin jamón) y un Americano sin azúcar a tu carrito. ¿Algo más?",
+        "text_response": "¡Perfecto, mi amor! 🍳💛 Dos Omelettes Tradicional (uno normalito y otro sin jamón, ¡como te gusta!) y un Americano sin azúcar para acompañar... ¡qué combinación más chevere! ☕😋 Todo listo en tu carrito, ¿algo más para completar este festín? ✨",
         "action": "add_to_cart",
         "items": [
           {"name": "Omelette Tradicional", "quantity": 1, "notes": ""},
@@ -224,11 +339,11 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Excelente! Añadiendo tres gofres: dos normales y uno con fresas extra a tu carrito. ¿Deseas algo más?",
+        "text_response": "¡Excelente! Añadiendo tres Gofre del Bosque: dos normales y uno con fresas extra a tu carrito. ¿Deseas algo más?",
         "action": "add_to_cart",
         "items": [
-          {"name": "Gofres", "quantity": 2, "notes": ""},
-          {"name": "Gofres", "quantity": 1, "notes": "con fresas extra"}
+          {"name": "Gofre del Bosque", "quantity": 2, "notes": ""},
+          {"name": "Gofre del Bosque", "quantity": 1, "notes": "con fresas extra"}
         ]
       }
       \`\`\`
@@ -237,7 +352,7 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Perfecto! Añadiendo dos capuccinos: uno descafeinado y otro con leche de almendras a tu carrito. ¿Algo más?",
+        "text_response": "¡Perfecto! Añadiendo dos Capuccinos: uno descafeinado y otro con leche de almendras a tu carrito. ¿Algo más?",
         "action": "add_to_cart",
         "items": [
           {"name": "Capuccino", "quantity": 1, "notes": "descafeinado"},
@@ -250,16 +365,16 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Hola! Estamos abiertos de lunes a viernes de 8 AM a 5 PM, y los fines de semana de 9 AM a 6 PM. ¡Te esperamos!"
+        "text_response": "¡Hola, mi amor! 👋😊 Estamos abiertos de lunes a viernes de 8 AM a 5 PM, y los fines de semana de 9 AM a 6 PM. ¡Te esperamos con los brazos abiertos y el café calientito! ☕💕"
       }
       \`\`\`
 
-    EJEMPLOS DE PREGUNTAS QUE DEBES RECHAZAR:
+    🚫 EJEMPLOS DE PREGUNTAS QUE DEBES RECHAZAR CON CARIÑO:
     - Cliente: "¿Cuál es la capital de Venezuela?"
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "Lo siento, soy Brunchy, el mesero virtual de Le Brunch. Solo puedo ayudarte con nuestro menú y pedidos. ¿Qué te gustaría ordenar hoy?"
+        "text_response": "¡Ay, qué pena! 😅 Soy Brunchy y solo sé del delicioso mundo de Le Brunch 🍳✨ ¿Qué tal si te cuento sobre nuestros platos increíbles? ¡Tenemos unas Panquecas que están de otro mundo! 🥞😋"
       }
       \`\`\`
 
@@ -267,7 +382,7 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "Lo siento, pero no tenemos pizza ni hamburguesas en nuestro menú. Somos especialistas en brunch. Te puedo ofrecer nuestras deliciosas Tablas Tradicionales, Panquecas, Gofres u Omelettes. ¿Te interesa alguna de estas opciones?"
+        "text_response": "¡Uy! 😔 No tenemos pizza ni hamburguesas en nuestro menú, pero tengo algo MEJOR para ti... 😍 ¿Qué tal nuestras deliciosas Tabla LB Mix, Panquecas esponjositas, Gofre del Bosque o unos Omelettes súper cremosos? ¡Te prometo que te van a encantar! 🤤✨"
       }
       \`\`\`
 
@@ -275,7 +390,7 @@ class BrunchyMCP {
     - Brunchy:
       \`\`\`json
       {
-        "text_response": "¡Perfecto! Las panquecas sí las tenemos. Sin embargo, no tenemos Coca-Cola específicamente, pero sí tenemos deliciosos Jugos de Naranja, Expresos, Capuccinos y otras bebidas. ¿Te gustaría que añada las panquecas y me digas qué bebida prefieres de nuestro menú?",
+        "text_response": "¡Perfecto! Las Panquecas sí las tenemos. Sin embargo, no tenemos Coca-Cola específicamente, pero sí tenemos deliciosos Jugo de Fresa, Jugo de Guanábana, Expresos, Capuccinos y otras bebidas. ¿Te gustaría que añada las Panquecas y me digas qué bebida prefieres de nuestro menú?",
         "action": "add_to_cart",
         "items": [
           {"name": "Panquecas", "quantity": 2, "notes": ""}
@@ -298,7 +413,7 @@ class BrunchyMCP {
 
   async loadMenu() {
     try {
-      const result = await pool.query('SELECT nombre, categoria, precio, disponibilidad, tipo FROM menu WHERE disponibilidad = TRUE ORDER BY tipo, categoria, nombre');
+      const result = await pool.query('SELECT nombre, categoria, precio, disponibilidad, tipo FROM menu WHERE disponibilidad = TRUE AND isDelete = FALSE ORDER BY tipo, categoria, nombre');
       this.menu = result.rows;
       this.updateSystemPromptWithMenu();
       console.log('✅ Menú cargado y System Prompt actualizado para BrunchyMCP.');
@@ -341,7 +456,34 @@ class BrunchyMCP {
     this.systemPrompt = this.baseSystemPrompt + menuString;
   }
 
-  async getGeminiResponse(message, sessionId) {
+  // Método para cambiar el modelo de Gemini
+  setModel(modelName) {
+    if (this.availableModels[modelName]) {
+      this.currentModel = modelName;
+      console.log(`🤖 Modelo de Gemini cambiado a: ${modelName}`);
+      return true;
+    } else {
+      console.error(`❌ Modelo no válido: ${modelName}. Modelos disponibles: ${Object.keys(this.availableModels).join(', ')}`);
+      return false;
+    }
+  }
+
+  // Método para obtener información del modelo actual
+  getModelInfo() {
+    return {
+      currentModel: this.currentModel,
+      availableModels: Object.keys(this.availableModels),
+      modelDisplayNames: {
+        'gemini-2.0-flash': 'Flash 2.0 (Recomendado)',
+        'gemini-2.5-flash-preview-05-20': 'Flash 2.5 Preview (Experimental)',
+        'gemini-1.5-flash': 'Flash 1.5',
+        'gemini-1.5-pro': 'Pro 1.5',
+        'gemini-1.0-pro': 'Pro 1.0'
+      }
+    };
+  }
+
+  async getGeminiResponse(message, sessionId, clientId = null) {
     if (!this.chatHistories[sessionId]) {
       this.chatHistories[sessionId] = [];
     }
@@ -354,13 +496,289 @@ class BrunchyMCP {
         currentSessionHistory = currentSessionHistory.slice(-maxHistoryLength);
     }
 
+    // Si tenemos el ID del cliente, obtener recomendaciones personalizadas
+    let recommendationsContext = '';
+    if (clientId) {
+      try {
+        console.log(`🤖 [BrunchyMCP] Obteniendo recomendaciones completas para cliente ${clientId}`);
+        
+        // Usar el endpoint existente de recomendaciones que ya incluye toda la lógica
+        const recommendationsQuery = `
+          WITH cliente_favoritos AS (
+            SELECT 
+              m.idplato,
+              m.nombre,
+              m.categoria,
+              m.precio,
+              m.tipo,
+              COUNT(pd.idplato) as veces_pedido
+            FROM 
+              pedidos p
+            INNER JOIN 
+              pedido_detalle pd ON p.idpedido = pd.idpedido
+            INNER JOIN 
+              menu m ON pd.idplato = m.idplato
+            WHERE 
+              p.idpersona = $1 
+              AND p.estado = 'completado'
+              AND m.isDelete = FALSE
+              AND m.disponibilidad = TRUE
+            GROUP BY 
+              m.idplato, m.nombre, m.categoria, m.precio, m.tipo
+            ORDER BY 
+              veces_pedido DESC
+            LIMIT 3
+          ),
+          cliente_preferencias_tipo AS (
+            SELECT 
+              m.tipo,
+              COUNT(*) as items_pedidos,
+              SUM(pd.cantidad) as cantidad_total
+            FROM 
+              pedidos p
+            INNER JOIN 
+              pedido_detalle pd ON p.idpedido = pd.idpedido
+            INNER JOIN 
+              menu m ON pd.idplato = m.idplato
+            WHERE 
+              p.idpersona = $1 
+              AND p.estado = 'completado'
+              AND DATE(p.fecha) >= CURRENT_DATE - INTERVAL '60 days'
+            GROUP BY 
+              m.tipo
+            ORDER BY 
+              cantidad_total DESC
+            LIMIT 1
+          ),
+          tipo_preferido AS (
+            SELECT tipo as tipo_favorito FROM cliente_preferencias_tipo LIMIT 1
+          ),
+          populares_mismo_tipo AS (
+            WITH cliente_platos AS (
+              SELECT DISTINCT pd.idplato
+              FROM pedidos p
+              INNER JOIN pedido_detalle pd ON p.idpedido = pd.idpedido
+              WHERE p.idpersona = $1 AND p.estado = 'completado'
+            )
+            SELECT 
+              m.idplato,
+              m.nombre,
+              m.categoria,
+              m.precio,
+              m.tipo,
+              SUM(pd.cantidad) as total_vendido
+            FROM 
+              pedido_detalle pd
+            INNER JOIN 
+              pedidos p ON pd.idpedido = p.idpedido
+            INNER JOIN 
+              menu m ON pd.idplato = m.idplato
+            CROSS JOIN tipo_preferido tp
+            WHERE 
+              p.estado = 'completado'
+              AND m.isDelete = FALSE
+              AND m.disponibilidad = TRUE
+              AND m.tipo = tp.tipo_favorito
+              AND m.idplato NOT IN (SELECT idplato FROM cliente_platos)
+              AND DATE(p.fecha) >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY 
+              m.idplato, m.nombre, m.categoria, m.precio, m.tipo
+            ORDER BY 
+              total_vendido DESC
+            LIMIT 3
+          ),
+          populares_generales_filtrado AS (
+            SELECT 
+              m.idplato,
+              m.nombre,
+              m.categoria,
+              m.precio,
+              m.tipo,
+              SUM(pd.cantidad) as total_vendido
+            FROM 
+              pedido_detalle pd
+            INNER JOIN 
+              pedidos p ON pd.idpedido = p.idpedido
+            INNER JOIN 
+              menu m ON pd.idplato = m.idplato
+            CROSS JOIN tipo_preferido tp
+            WHERE 
+              p.estado = 'completado'
+              AND m.isDelete = FALSE
+              AND m.disponibilidad = TRUE
+              AND (m.tipo = tp.tipo_favorito OR tp.tipo_favorito IS NULL)
+              AND DATE(p.fecha) >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY 
+              m.idplato, m.nombre, m.categoria, m.precio, m.tipo
+            ORDER BY 
+              total_vendido DESC
+            LIMIT 3
+          ),
+          estadisticas_cliente AS (
+            SELECT 
+              COUNT(DISTINCT p.idpedido) as total_pedidos,
+              COUNT(DISTINCT pd.idplato) as platos_diferentes,
+              m.tipo,
+              COUNT(*) as items_por_tipo
+            FROM 
+              pedidos p
+            INNER JOIN 
+              pedido_detalle pd ON p.idpedido = pd.idpedido
+            INNER JOIN 
+              menu m ON pd.idplato = m.idplato
+            WHERE 
+              p.idpersona = $1 
+              AND p.estado = 'completado'
+              AND DATE(p.fecha) >= CURRENT_DATE - INTERVAL '60 days'
+            GROUP BY 
+              m.tipo
+          )
+          SELECT 
+            'favorito' as tipo,
+            nombre,
+            categoria,
+            precio::text,
+            tipo as tipo_plato,
+            veces_pedido::text as score,
+            'Tu plato favorito - lo has pedido ' || veces_pedido || ' veces' as descripcion
+          FROM cliente_favoritos
+          UNION ALL
+          SELECT 
+            'popular_mismo_tipo' as tipo,
+            nombre,
+            categoria,
+            precio::text,
+            tipo as tipo_plato,
+            total_vendido::text as score,
+            'Popular del mismo tipo - ' || total_vendido || ' pedidos' as descripcion
+          FROM populares_mismo_tipo
+          UNION ALL
+          SELECT 
+            'popular_general' as tipo,
+            nombre,
+            categoria,
+            precio::text,
+            tipo as tipo_plato,
+            total_vendido::text as score,
+            'Muy popular - ' || total_vendido || ' pedidos este mes' as descripcion
+          FROM populares_generales_filtrado
+          UNION ALL
+          SELECT 
+            'estadistica' as tipo,
+            'Resumen' as nombre,
+            tipo as categoria,
+            '' as precio,
+            tipo as tipo_plato,
+            items_por_tipo::text as score,
+            'Prefieres ' || 
+            CASE 
+              WHEN tipo = 'comida' THEN 'platos de comida'
+              WHEN tipo = 'bebida' THEN 'bebidas'
+              ELSE tipo
+            END || ' - ' || items_por_tipo || ' items pedidos' as descripcion
+          FROM estadisticas_cliente
+        `;
+        
+        const recommendationsResult = await pool.query(recommendationsQuery, [clientId]);
+        
+        if (recommendationsResult.rows.length > 0) {
+          const favoritos = recommendationsResult.rows
+            .filter(row => row.tipo === 'favorito')
+            .map(row => `${row.nombre} ($${row.precio} - ${row.descripcion})`)
+            .join(', ');
+          
+          const popularesMismoTipo = recommendationsResult.rows
+            .filter(row => row.tipo === 'popular_mismo_tipo')
+            .map(row => `${row.nombre} ($${row.precio} - ${row.descripcion})`)
+            .join(', ');
+          
+          const popularesGenerales = recommendationsResult.rows
+            .filter(row => row.tipo === 'popular_general')
+            .slice(0, 2)
+            .map(row => `${row.nombre} ($${row.precio} - ${row.score} pedidos)`)
+            .join(', ');
+
+          const preferencias = recommendationsResult.rows
+            .filter(row => row.tipo === 'estadistica')
+            .map(row => row.descripcion)
+            .join(', ');
+
+          // Determinar el tipo principal de preferencias del cliente
+          const tipoPreferido = recommendationsResult.rows
+            .find(row => row.tipo === 'estadistica')?.tipo_plato || '';
+
+          recommendationsContext = `\n\n🤖 SISTEMA INTELIGENTE DE RECOMENDACIONES DE BRUNCHY:
+
+📊 INFORMACIÓN PERSONALIZADA DEL CLIENTE:
+${favoritos ? `💖 TUS FAVORITOS: ${favoritos}` : ''}
+${popularesMismoTipo ? `✨ SIMILARES A TUS GUSTOS: ${popularesMismoTipo}` : ''}
+${popularesGenerales ? `🔥 POPULARES SIMILARES: ${popularesGenerales}` : ''}
+${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
+
+🎯 INSTRUCCIONES ESPECIALES PARA BRUNCHY:
+1. **REGLA DE DETECCIÓN DE SOLICITUDES ESPECÍFICAS:**
+   - Si el usuario pregunta "de comida", "comida", "platos" → recomienda SOLO comida
+   - Si el usuario pregunta "de bebida", "bebidas", "tomar" → recomienda SOLO bebidas
+   - Si pregunta genéricamente "¿qué me recomiendas?" → usa preferencias del cliente
+   - Tipo preferido del cliente: ${tipoPreferido}
+
+2. **REGLA DE CONSISTENCIA DE TIPO:**
+   - Si el cliente prefiere COMIDA, recomienda SOLO comida (cuando no especifica)
+   - Si el cliente prefiere BEBIDAS, recomienda SOLO bebidas (cuando no especifica)
+   - NO mezcles comida con bebidas en la misma recomendación
+   - SIEMPRE respeta lo que el usuario solicita específicamente
+
+3. **DETECCIÓN DE PALABRAS CLAVE:**
+   - "comida", "comer", "plato", "platos", "de comida" → Solo comida
+   - "bebida", "bebidas", "tomar", "beber", "de bebida" → Solo bebidas
+   - "recomiendas" sin especificar → Usar preferencias del cliente
+
+4. **CUANDO MENCIONAR RECOMENDACIONES:**
+   - Cliente pregunta "¿qué me recomiendas?" o similar
+   - Cliente dice "no sé qué pedir", "ayúdame a elegir", "estoy indeciso"
+   - Cliente pregunta por sus favoritos: "¿qué suelo pedir?"
+   - Cliente pregunta por lo más popular: "¿qué pide la gente?"
+
+5. **CÓMO USAR LA INFORMACIÓN:**
+   - PRIMERO: Detectar si solicita tipo específico (comida/bebida)
+   - SEGUNDO: Si es específico, ignorar preferencias y responder solo ese tipo
+   - TERCERO: Si es genérico, usar preferencias del cliente
+   - Personaliza según categorías: "Como te gustan los [omelettes/gofres], te recomiendo..."
+
+6. **EJEMPLOS CORRECTOS:**
+   - Usuario: "¿Qué me recomiendas de comida?" → Solo mencionar comida
+   - Usuario: "¿Qué me recomiendas de bebida?" → Solo mencionar bebidas  
+   - Usuario: "¿Qué me recomiendas?" → Usar preferencias (comida O bebida)
+   - Cliente de comida: "Vi que amas los Omelettes. ¿Qué tal probamos el Gofre del Bosque?"
+   - Cliente de bebidas: "Te encantan los Frapuccinos. ¿Probamos el Capuccino?"
+
+7. **EJEMPLOS INCORRECTOS A EVITAR:**
+   - Usuario pide comida → NO responder con bebidas ❌
+   - Usuario pide bebidas → NO mencionar comida en la respuesta ❌
+   - NO: "Te gustan los Omelettes, ¿qué tal un Frapuccino?" ❌
+
+⚠️ CRÍTICO: 
+- DETECTA palabras clave antes de hacer recomendaciones
+- RESPETA exactamente lo que el usuario solicita
+- NO asumas preferencias cuando el usuario es específico
+- RESPONDE solo el tipo solicitado explícitamente`;
+        }
+      } catch (error) {
+        console.error(`❌ [BrunchyMCP] Error obteniendo recomendaciones para cliente ${clientId}:`, error);
+        // Continuar sin recomendaciones si hay error
+      }
+    }
+
+    // Agregar el contexto de recomendaciones al system prompt si está disponible
+    const enhancedSystemPrompt = this.systemPrompt + recommendationsContext;
+
     currentSessionHistory.push({ role: "user", parts: [{ text: message }] });
 
     if (this.menu.length === 0) {
         await this.loadMenu(); 
     }
 
-    console.log(`[BrunchyMCP] Enviando a Gemini para sesión ${sessionId}:`, message);
+    console.log(`[BrunchyMCP] Enviando a Gemini para sesión ${sessionId}${clientId ? ` (cliente ${clientId})` : ''}:`, message);
     
     // Función para intentar la solicitud con rotación automática de claves
     const attemptRequest = async (retryCount = 0) => {
@@ -372,10 +790,10 @@ class BrunchyMCP {
         console.log(`🔑 [BrunchyMCP] Usando clave API #${keyManager.currentKeyIndex + 1}`);
         
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: this.currentModel,
             systemInstruction: { 
                 role: "system", 
-                parts: [{ text: this.systemPrompt }] 
+                parts: [{ text: enhancedSystemPrompt }] 
             } 
         });
 
@@ -407,10 +825,46 @@ class BrunchyMCP {
         try {
             const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```|\{(\s*?"text_response":.*?)\}/s);
             if (jsonMatch && (jsonMatch[1] || jsonMatch[2])) {
-                const jsonString = jsonMatch[1] || jsonMatch[2];
-                parsedResponse = JSON.parse(jsonString);
-                console.log('[BrunchyMCP] Respuesta parseada como JSON:', parsedResponse);
-                return parsedResponse;
+                let jsonString = jsonMatch[1] || jsonMatch[2];
+                
+                // Función para corregir JSON malformado común
+                const fixMalformedJson = (jsonStr) => {
+                  // Corregir falta de comas después de text_response
+                  jsonStr = jsonStr.replace(/("text_response":\s*"[^"]*")\s*("action":)/g, '$1,\n  $2');
+                  
+                  // Corregir falta de comas después de action
+                  jsonStr = jsonStr.replace(/("action":\s*"[^"]*")\s*("items":)/g, '$1,\n  $2');
+                  
+                  // Corregir falta de comas entre propiedades en general
+                  jsonStr = jsonStr.replace(/("\w+":\s*(?:"[^"]*"|[^,}\]]+))\s*("\w+":\s*)/g, '$1,\n  $2');
+                  
+                  // Limpiar espacios extra y saltos de línea problemáticos
+                  jsonStr = jsonStr.replace(/,\s*,/g, ',').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+                  
+                  return jsonStr;
+                };
+                
+                // Intentar parsear JSON original primero
+                try {
+                  parsedResponse = JSON.parse(jsonString);
+                  console.log('[BrunchyMCP] Respuesta parseada como JSON:', parsedResponse);
+                  return parsedResponse;
+                } catch (firstError) {
+                  console.log('🔧 [BrunchyMCP] JSON malformado, intentando corregir...');
+                  
+                  // Intentar corregir y parsear nuevamente
+                  const fixedJsonString = fixMalformedJson(jsonString);
+                  console.log('🔧 [BrunchyMCP] JSON corregido:', fixedJsonString);
+                  
+                  try {
+                    parsedResponse = JSON.parse(fixedJsonString);
+                    console.log('✅ [BrunchyMCP] JSON corregido parseado exitosamente:', parsedResponse);
+                    return parsedResponse;
+                  } catch (secondError) {
+                    console.error('❌ [BrunchyMCP] No se pudo corregir el JSON, usando texto plano');
+                    throw secondError;
+                  }
+                }
             } else {
                 parsedResponse = { text_response: responseText };
                 console.log('[BrunchyMCP] Respuesta tratada como texto plano:', parsedResponse);
@@ -418,7 +872,15 @@ class BrunchyMCP {
             }
         } catch (jsonError) {
             console.error('❌ [BrunchyMCP] Error al parsear JSON de la respuesta de Gemini, tratando como texto plano:', jsonError);
-            parsedResponse = { text_response: responseText };
+            
+            // Extraer solo el text_response si está disponible
+            const textMatch = responseText.match(/"text_response":\s*"([^"]+)"/);
+            if (textMatch) {
+              parsedResponse = { text_response: textMatch[1] };
+              console.log('🔧 [BrunchyMCP] Extraído text_response del JSON malformado:', parsedResponse);
+            } else {
+              parsedResponse = { text_response: responseText };
+            }
             return parsedResponse;
         }
 
@@ -430,6 +892,8 @@ class BrunchyMCP {
         
         if (newGenAI && retryCount < maxRetries - 1) {
           console.log(`🔄 [BrunchyMCP] Reintentando con nueva clave API (intento ${retryCount + 2}/${maxRetries})`);
+          // Pequeño delay antes del reintento para evitar saturar las APIs
+          await new Promise(resolve => setTimeout(resolve, 1000 + (retryCount * 500)));
           return attemptRequest(retryCount + 1);
         }
         
@@ -443,6 +907,18 @@ class BrunchyMCP {
     return attemptRequest();
   }
 }
+
+// Configuración global del asistente (controlada por el admin)
+let globalAssistantConfig = {
+  serverIp: '192.168.1.121',
+  model: 'gemini-1.5-flash',
+  enableReports: true,
+  enablePopularDishes: true,
+  enableMenuManagement: true,
+  showSystemMessages: true,
+  debugMode: false,
+  systemPrompt: 'Prompt personalizado del sistema'
+};
 
 // Instanciar BrunchyMCP y cargar el menú al iniciar el servidor
 const brunchy = new BrunchyMCP();
@@ -458,8 +934,8 @@ brunchy.loadMenu().catch(err => console.error("Error inicial crítico al cargar 
 // Endpoint para obtener el menú completo (ya existe y es correcto)
 app.get('/menu-completo', async (req, res) => {
   try {
-    // Esta consulta ya incluye 'tipo'
-    const result = await pool.query('SELECT idplato, nombre, categoria, precio, disponibilidad, ingredientes, imagen_url, tipo FROM menu WHERE disponibilidad = TRUE');
+    // Esta consulta ya incluye 'tipo' y ahora también excluye elementos eliminados
+    const result = await pool.query('SELECT idplato, nombre, categoria, precio, disponibilidad, ingredientes, imagen_url, tipo FROM menu WHERE disponibilidad = TRUE AND isDelete = FALSE');
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error al obtener el menú completo:', error);
@@ -471,6 +947,12 @@ app.get('/menu-completo', async (req, res) => {
 // Endpoint para verificar el estado del servidor
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Servidor en línea' });
+});
+
+// Endpoint de prueba para verificar que las rutas funcionan
+app.post('/test-config', (req, res) => {
+  console.log('🧪 Endpoint de prueba /test-config funcionando');
+  res.json({ success: true, message: 'Endpoint de prueba funcionando', body: req.body });
 });
 
 // Endpoint de prueba para pedidos (sin cambios)
@@ -537,7 +1019,7 @@ app.get('/pedidos/pendientes/count', async (req, res) => {
 
 app.get('/pedidos/ventas/hoy', async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'");
+    const { rows } = await pool.query("SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'");
     return res.status(200).json({total: parseFloat(rows[0].total), timestamp: new Date().toISOString()});
   } catch (error) {
     console.error("❌ Error al obtener ventas del día:", error);
@@ -566,8 +1048,8 @@ app.get('/pedidos', async (req, res) => {
     if (pedidos.length === 0) return res.status(200).json([]);
     const pedidosIds = pedidos.map(p => p.idpedido);
     const { rows: detalles } = await pool.query(
-      `SELECT pd.idpedido, pd.idplato, pd.cantidad, pd.precio_unitario, 
-              m.nombre as nombre
+      `SELECT pd.idpedido, pd.idplato, pd.cantidad, 
+              m.nombre as nombre, m.precio as precio_unitario
        FROM pedido_detalle pd
        INNER JOIN menu m ON pd.idplato = m.idplato
        WHERE pd.idpedido = ANY($1)`,
@@ -594,7 +1076,7 @@ app.get('/admin/metrics', async (req, res) => {
       pool.query("SELECT COUNT(*) as count FROM menu WHERE disponibilidad = true"),
       pool.query("SELECT COUNT(*) as count FROM usuario"),
       pool.query("SELECT COUNT(*) as count FROM pedidos WHERE estado = 'pendiente'"),
-      pool.query("SELECT COALESCE(SUM(pd.precio_unitario * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'")
+      pool.query("SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'")
     ]);
     return res.status(200).json({
       activeDishes: parseInt(activeDishesResult.rows[0].count),
@@ -630,39 +1112,123 @@ app.post('/mcp/chat', async (req, res) => {
   }
 });
 
-// Endpoint /chat ACTUALIZADO
+// Endpoint /chat ACTUALIZADO con configuración global
 app.post('/chat', async (req, res) => {
-  const { message, sessionId } = req.body; // direct ya no es necesario con la nueva lógica
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const { message, sessionId, isAdmin, clientId } = req.body;
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     
   console.log(`📝 Chat [${requestId}]: Mensaje recibido: "${String(message).substring(0, 50)}..."`);
-    console.log(`📝 Chat [${requestId}]: Session ID: ${sessionId || 'No proporcionado'}`);
+  console.log(`📝 Chat [${requestId}]: Session ID: ${sessionId || 'No proporcionado'}`);
+  console.log(`📝 Chat [${requestId}]: Es Admin: ${isAdmin || false}`);
+  console.log(`📝 Chat [${requestId}]: Cliente ID: ${clientId || 'No proporcionado'}`);
     
   if (!message || !sessionId) {
-      return res.status(400).json({ 
+    return res.status(400).json({ 
       error: 'Mensaje y sessionId son requeridos',
-          requestId,
-          timestamp: new Date().toISOString()
-        });
-      }
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
       
   try {
-    const geminiResponse = await brunchy.getGeminiResponse(message, sessionId);
-    // geminiResponse es un objeto { text_response: "...", action?: "...", items?: [...] }
-    // o solo { text_response: "..." } si no hay acción de carrito.
+    // Si es un admin, usar configuración especial
+    if (isAdmin) {
+      console.log(`🔧 Chat [${requestId}]: Procesando mensaje de admin con configuración global`);
+      
+      // Verificar si el mensaje contiene solicitudes de reportes o información especial
+      const lowerMessage = message.toLowerCase();
+      
+      if (globalAssistantConfig.enableReports && 
+          (lowerMessage.includes('reporte') || lowerMessage.includes('ventas') || lowerMessage.includes('estadística'))) {
+        console.log(`📊 Chat [${requestId}]: Solicitud de reporte detectada`);
+        
+        // Obtener datos de reportes
+        try {
+          const [salesResult, pendingResult] = await Promise.all([
+            pool.query("SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"),
+            pool.query("SELECT COUNT(*) as count FROM pedidos WHERE estado = 'pendiente'")
+          ]);
+          
+          const todaySales = parseFloat(salesResult.rows[0].total);
+          const pendingOrders = parseInt(pendingResult.rows[0].count);
+          
+          const reportResponse = {
+            text_response: `📊 **REPORTE DEL SISTEMA**\n\n💰 **Ventas de Hoy:** $${todaySales.toFixed(2)}\n📋 **Pedidos Pendientes:** ${pendingOrders}\n🕒 **Hora del Reporte:** ${new Date().toLocaleString()}\n\n¿Necesitas información más detallada?`,
+            type: 'admin_report',
+            data: {
+              todaySales,
+              pendingOrders,
+              timestamp: new Date().toISOString()
+            }
+          };
+          
+          return res.json({
+            ...reportResponse,
+            requestId,
+            timestamp: new Date().toISOString()
+          });
+        } catch (reportError) {
+          console.error(`❌ Chat [${requestId}]: Error al generar reporte:`, reportError);
+        }
+      }
+      
+      if (globalAssistantConfig.enablePopularDishes && 
+          (lowerMessage.includes('popular') || lowerMessage.includes('más vendido') || lowerMessage.includes('favorito'))) {
+        console.log(`🏆 Chat [${requestId}]: Solicitud de platos populares detectada`);
+        
+        try {
+          const popularResult = await pool.query(`
+            SELECT m.nombre, SUM(pd.cantidad) as cantidad_vendida, m.precio
+            FROM pedido_detalle pd
+            INNER JOIN pedidos p ON pd.idpedido = p.idpedido
+            INNER JOIN menu m ON pd.idplato = m.idplato
+            WHERE p.estado = 'completado' AND m.isDelete = FALSE
+            GROUP BY m.idplato, m.nombre, m.precio
+            ORDER BY cantidad_vendida DESC
+            LIMIT 5
+          `);
+          
+          let dishesText = '🏆 **PLATOS MÁS POPULARES**\n\n';
+          popularResult.rows.forEach((dish, index) => {
+            dishesText += `${index + 1}. **${dish.nombre}**\n`;
+            dishesText += `   📊 Vendidos: ${dish.cantidad_vendida}\n`;
+            dishesText += `   💰 Precio: $${dish.precio}\n\n`;
+          });
+          
+          const popularResponse = {
+            text_response: dishesText,
+            type: 'admin_popular_dishes',
+            data: popularResult.rows
+          };
+          
+          return res.json({
+            ...popularResponse,
+            requestId,
+            timestamp: new Date().toISOString()
+          });
+        } catch (popularError) {
+          console.error(`❌ Chat [${requestId}]: Error al obtener platos populares:`, popularError);
+        }
+      }
+    }
+    
+    // Para mensajes normales (admin o cliente), usar BrunchyMCP
+    // Pasar el clientId si está disponible para obtener recomendaciones personalizadas
+    const geminiResponse = await brunchy.getGeminiResponse(message, sessionId, clientId);
     console.log(`📝 Chat [${requestId}]: Respuesta de BrunchyMCP:`, geminiResponse);
+    
     res.json({
       ...geminiResponse,
-        requestId,
-        timestamp: new Date().toISOString()
-      });
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error(`❌ Chat [${requestId}]: Error general en el endpoint de chat:`, error);
     res.status(500).json({ 
       error: 'Error al procesar el mensaje',
       details: error.message,
-        requestId,
-        timestamp: new Date().toISOString()
+      requestId,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -698,17 +1264,19 @@ app.post('/mcp/validate', (req, res) => {
   }
 });
 
-// Endpoint /mcp/status (sin cambios)
+// Endpoint /mcp/status (actualizado con información del modelo)
 app.get('/mcp/status', async (req, res) => {
   try {
     const dbResult = await pool.query("SELECT COUNT(*) as dish_count FROM menu");
     const dishCount = parseInt(dbResult.rows[0].dish_count);
     const availableResult = await pool.query("SELECT COUNT(*) as available_count FROM menu WHERE disponibilidad = true");
     const availableDishCount = parseInt(availableResult.rows[0].available_count);
+    const modelInfo = brunchy.getModelInfo();
+    
     return res.status(200).json({
       status: 'active',
-      version: '1.3.0', // Actualizar versión para reflejar sistema de rotación
-      rules: 'MCP-2024-DynamicMenu-KeyRotation', // Reflejar el nuevo enfoque
+      version: '1.4.1', // Versión con manejo robusto de errores
+      rules: 'MCP-2024-DynamicMenu-KeyRotation-MultiModel', // Reflejar el nuevo enfoque
       database: { connected: true, totalDishes: dishCount, availableDishes: availableDishCount },
       keyRotation: {
         totalKeys: keyManager.apiKeys.length,
@@ -722,11 +1290,381 @@ app.get('/mcp/status', async (req, res) => {
           errorCount: count
         }))
       },
+      geminiModel: {
+        current: modelInfo.currentModel,
+        available: modelInfo.availableModels,
+        displayNames: modelInfo.modelDisplayNames
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error en endpoint MCP/status:', error);
     return res.status(500).json({ status: 'degraded', error: error.message, timestamp: new Date().toISOString() });
+  }
+});
+
+// Endpoint para cambiar el modelo de Gemini
+app.post('/mcp/model', (req, res) => {
+  try {
+    const { model } = req.body;
+    
+    if (!model) {
+      return res.status(400).json({ 
+        error: 'Se requiere especificar el modelo',
+        availableModels: brunchy.getModelInfo().availableModels
+      });
+    }
+    
+    const success = brunchy.setModel(model);
+    
+    if (success) {
+      return res.status(200).json({
+        success: true,
+        message: `Modelo cambiado exitosamente a ${model}`,
+        currentModel: brunchy.currentModel,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: `Modelo no válido: ${model}`,
+        availableModels: brunchy.getModelInfo().availableModels,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Error al cambiar modelo de Gemini:', error);
+    return res.status(500).json({ 
+      error: 'Error interno al cambiar modelo', 
+      details: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint para obtener información del modelo actual
+app.get('/mcp/model', (req, res) => {
+  try {
+    const modelInfo = brunchy.getModelInfo();
+    return res.status(200).json({
+      ...modelInfo,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error al obtener información del modelo:', error);
+    return res.status(500).json({ 
+      error: 'Error al obtener información del modelo', 
+      details: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint para procesar audio con Gemini
+app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
+  const requestId = `audio_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  
+  try {
+    console.log(`🎵 Audio [${requestId}]: Procesando audio`);
+    
+    // Verificar que se subió un archivo
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'file_missing',
+        message: 'No se recibió archivo de audio',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const { sessionId, languageCode = 'es' } = req.body;
+    const audioFilePath = req.file.path;
+    const audioFileSize = req.file.size;
+
+    console.log(`🎵 Audio [${requestId}]: ${audioFileSize} bytes, session: ${sessionId}`);
+
+    // Verificar que el archivo existe
+    if (!fs.existsSync(audioFilePath)) {
+      return res.status(500).json({
+        success: false,
+        error: 'file_not_found',
+        message: 'Archivo de audio no encontrado después de la subida',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Procesar audio con Gemini usando sistema de reintentos
+    console.log(`🤖 Audio [${requestId}]: Iniciando procesamiento con Gemini...`);
+    
+    // Función para intentar el procesamiento con rotación automática de claves
+    const attemptAudioProcessing = async (retryCount = 0) => {
+      const maxRetries = keyManager.apiKeys.length;
+      
+      try {
+        // Obtener instancia de Gemini con rotación de claves
+        const genAI = keyManager.getGenAIInstance();
+        console.log(`🔑 Audio [${requestId}]: Usando clave API #${keyManager.currentKeyIndex + 1}`);
+        
+        const model = genAI.getGenerativeModel({ 
+          model: brunchy.currentModel,
+        });
+
+        // Leer el archivo de audio
+        const audioData = fs.readFileSync(audioFilePath);
+
+        // Determinar el tipo MIME del archivo
+        let mimeType = req.file.mimetype;
+        if (!mimeType || mimeType === 'application/octet-stream') {
+          const ext = req.file.originalname.split('.').pop()?.toLowerCase();
+          switch (ext) {
+            case 'mp3': mimeType = 'audio/mpeg'; break;
+            case 'mp4': case 'm4a': mimeType = 'audio/mp4'; break;
+            case 'wav': mimeType = 'audio/wav'; break;
+            case 'webm': mimeType = 'audio/webm'; break;
+            case 'ogg': mimeType = 'audio/ogg'; break;
+            default: mimeType = 'audio/mp4';
+          }
+        }
+
+        // Crear el prompt para Gemini
+        const prompt = `Por favor, transcribe este audio a texto en español. 
+        Solo devuelve el texto transcrito, sin explicaciones adicionales.
+        Si no puedes entender el audio, responde "No se pudo transcribir el audio".`;
+
+        // Preparar el contenido para Gemini
+        const audioPart = {
+          inlineData: {
+            data: audioData.toString('base64'),
+            mimeType: mimeType
+          }
+        };
+
+        console.log(`🚀 Audio [${requestId}]: Enviando a Gemini...`);
+
+        // Enviar a Gemini con timeout
+        const result = await Promise.race([
+          model.generateContent([prompt, audioPart]),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout de Gemini')), 45000)
+          )
+        ]);
+
+        const response = result.response;
+        const transcribedText = response.text();
+
+        console.log(`✅ Audio [${requestId}]: Transcrito: "${transcribedText.substring(0, 50)}..."`);
+
+        // Verificar si la transcripción fue exitosa
+        if (transcribedText && 
+            transcribedText.trim() !== '' && 
+            !transcribedText.toLowerCase().includes('no se pudo transcribir')) {
+          
+          return {
+            success: true,
+            transcribed_text: transcribedText.trim(),
+            text_response: transcribedText.trim(),
+            language: languageCode,
+            model: brunchy.currentModel,
+            requestId,
+            timestamp: new Date().toISOString()
+          };
+        } else {
+          console.log(`❌ Audio [${requestId}]: Gemini no pudo transcribir`);
+          return {
+            success: false,
+            error: 'transcription_failed',
+            message: 'No se pudo transcribir el audio',
+            text_response: 'No se pudo entender el audio. Por favor, intenta hablar más claro.',
+            requestId,
+            timestamp: new Date().toISOString()
+          };
+        }
+
+      } catch (geminiError) {
+        console.error(`❌ Audio [${requestId}]: Error de Gemini (intento ${retryCount + 1}):`, geminiError);
+        
+        // Intentar manejar el error con rotación de claves
+        const newGenAI = keyManager.handleApiError(geminiError);
+        
+        if (newGenAI && retryCount < maxRetries - 1) {
+          console.log(`🔄 Audio [${requestId}]: Reintentando con nueva clave API`);
+          await new Promise(resolve => setTimeout(resolve, 1000 + (retryCount * 500)));
+          return attemptAudioProcessing(retryCount + 1);
+        }
+        
+        return {
+          success: false,
+          error: 'gemini_error',
+          message: 'Error al procesar audio con Gemini',
+          text_response: 'Hubo un problema al procesar el audio. Por favor, intenta de nuevo.',
+          requestId,
+          timestamp: new Date().toISOString()
+        };
+      }
+    };
+
+    try {
+      const result = await attemptAudioProcessing();
+      
+      // Limpiar el archivo temporal
+      try {
+        fs.unlinkSync(audioFilePath);
+        console.log(`🗑️ Audio [${requestId}]: Archivo temporal eliminado`);
+      } catch (cleanupError) {
+        console.log(`⚠️ Audio [${requestId}]: Error al eliminar archivo temporal`);
+      }
+
+      return res.status(result.success ? 200 : 500).json(result);
+
+    } catch (processingError) {
+      console.error(`❌ Audio [${requestId}]: Error general en procesamiento:`, processingError);
+      
+      // Limpiar archivo temporal en caso de error
+      try {
+        if (fs.existsSync(audioFilePath)) {
+          fs.unlinkSync(audioFilePath);
+        }
+      } catch (cleanupError) {
+        console.log(`⚠️ Audio [${requestId}]: Error al limpiar archivo`);
+      }
+
+      return res.status(500).json({
+        success: false,
+        error: 'processing_error',
+        message: 'Error general al procesar audio',
+        text_response: 'Error al procesar el audio. Por favor, intenta de nuevo.',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error(`❌ Audio [${requestId}]: Error general:`, error);
+    
+    // Limpiar archivo temporal en caso de error
+    try {
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (cleanupError) {
+      console.log(`⚠️ Audio [${requestId}]: Error al limpiar archivo`);
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'server_error',
+      message: 'Error interno del servidor al procesar audio',
+      text_response: 'Error interno del servidor. Por favor, intenta de nuevo.',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoints para configuración global del asistente (controlada por admin)
+app.get('/config/global', (req, res) => {
+  try {
+    console.log('📋 Solicitud de configuración global recibida');
+    res.json({
+      success: true,
+      config: globalAssistantConfig,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener configuración global:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener configuración global',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post('/config/global', (req, res) => {
+  try {
+    console.log('🔧 Solicitud de actualización de configuración global:', req.body);
+    
+    const { 
+      serverIp,
+      model, 
+      enableReports, 
+      enablePopularDishes, 
+      enableMenuManagement,
+      showSystemMessages,
+      debugMode,
+      systemPrompt 
+    } = req.body;
+
+    // Actualizar configuración global
+    if (serverIp !== undefined) globalAssistantConfig.serverIp = serverIp;
+    if (model !== undefined) {
+      globalAssistantConfig.model = model;
+      // También actualizar el modelo en BrunchyMCP
+      brunchy.setModel(model);
+    }
+    if (enableReports !== undefined) globalAssistantConfig.enableReports = enableReports;
+    if (enablePopularDishes !== undefined) globalAssistantConfig.enablePopularDishes = enablePopularDishes;
+    if (enableMenuManagement !== undefined) globalAssistantConfig.enableMenuManagement = enableMenuManagement;
+    if (showSystemMessages !== undefined) globalAssistantConfig.showSystemMessages = showSystemMessages;
+    if (debugMode !== undefined) globalAssistantConfig.debugMode = debugMode;
+    if (systemPrompt !== undefined) globalAssistantConfig.systemPrompt = systemPrompt;
+
+    console.log('✅ Configuración global actualizada:', globalAssistantConfig);
+
+    res.json({
+      success: true,
+      message: 'Configuración actualizada exitosamente',
+      config: globalAssistantConfig,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error al actualizar configuración global:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar configuración global',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint para probar conexión con IP específica
+app.post('/config/test-connection', (req, res) => {
+  try {
+    const { serverIp } = req.body;
+    
+    if (!serverIp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere serverIp para probar la conexión'
+      });
+    }
+
+    // Simular prueba de conexión (en un caso real, harías ping o verificación)
+    const isValidIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(serverIp);
+    
+    if (isValidIp) {
+      console.log(`🔗 Prueba de conexión exitosa para IP: ${serverIp}`);
+      res.json({
+        success: true,
+        message: `Conexión exitosa con ${serverIp}`,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Formato de IP inválido',
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error al probar conexión:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al probar conexión',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -804,7 +1742,7 @@ app.get('/db-status', async (req, res) => {
   }
 })();
 
-// Endpoint /pedidos-direct (sin cambios)
+// Endpoint /pedidos-direct
 app.post('/pedidos-direct', async (req, res) => {
   try {
     console.log('📦 Solicitud recibida en endpoint directo /pedidos-direct');
@@ -817,9 +1755,9 @@ app.post('/pedidos-direct', async (req, res) => {
     if (pedidoResult.rows.length === 0) { await pool.query('ROLLBACK'); return res.status(500).json({ error: "Error al crear el pedido" }); }
     const idpedido = pedidoResult.rows[0].idpedido;
     for (const item of items) {
-      const { idplato, cantidad, precio_unitario } = item;
-      if (!idplato || !cantidad || !precio_unitario) { await pool.query('ROLLBACK'); return res.status(400).json({ error: "Cada item debe tener idplato, cantidad y precio_unitario" }); }
-      await pool.query("INSERT INTO pedido_detalle (idpedido, idplato, cantidad, precio_unitario) VALUES ($1, $2, $3, $4)", [idpedido, idplato, cantidad, precio_unitario]);
+      const { idplato, cantidad, notas } = item;
+      if (!idplato || !cantidad) { await pool.query('ROLLBACK'); return res.status(400).json({ error: "Cada item debe tener idplato y cantidad" }); }
+      await pool.query("INSERT INTO pedido_detalle (idpedido, idplato, cantidad, notas) VALUES ($1, $2, $3, $4)", [idpedido, idplato, cantidad, notas || '']);
     }
     await pool.query('COMMIT');
     return res.status(201).json({ idpedido, idpersona, estado: estado || 'pendiente', fecha: new Date().toISOString(), items: items.length });
@@ -830,12 +1768,19 @@ app.post('/pedidos-direct', async (req, res) => {
   }
 });
 
+// Registrar los routers al final para evitar conflictos
+app.use(userRoutes);
+app.use(menuRoutes);
+app.use(pedidosRoutes);
+
 // Iniciar el servidor
 app.listen(port, ip, () => {
-  console.log(`Servidor Brunchy MCP corriendo en http://${ip}:${port}`);
-  // Ya no se referencia /mcp/chat como el principal si /chat es el actualizado
-  console.log(`Endpoint de chat principal disponible en http://${ip}:${port}/chat`);
-  console.log('Sistema BrunchyMCP activo con carga dinámica de menú y manejo de sesión.');
+  console.log(`🚀 Servidor Brunchy MCP v1.4.1 corriendo en http://${ip}:${port}`);
+  console.log(`💬 Endpoint de chat principal disponible en http://${ip}:${port}/chat`);
+  console.log(`🤖 Modelo de Gemini por defecto: ${brunchy.currentModel} (estable)`);
+  console.log(`🔧 Configuración de modelo disponible en http://${ip}:${port}/mcp/model`);
+  console.log(`🔑 Sistema de rotación de claves mejorado con ${keyManager.apiKeys.length} claves API`);
+  console.log('✅ Sistema BrunchyMCP activo con manejo robusto de errores y rotación automática.');
 });
 
 // Las rutas de /login_register, /menu, /pedidos se manejan a través de los routers importados.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../Auth_Screens/auth_modals.dart';
+
 import '../Client_Screens/ChatScreen.dart';
 import '../Client_Screens/ClientHomeScreen.dart';
 import '../Client_Screens/ClientMenuScreen.dart';
@@ -12,6 +13,7 @@ import '../Admin_Screens/AdminOrdersScreen.dart';
 import '../Admin_Screens/PopularDishesScreen.dart';
 import '../Admin_Screens/menu_screen.dart';
 import '../Admin_Screens/Users/AdminUsersScreen.dart';
+import '../Admin_Screens/DeletedItemsScreen.dart';
 import 'splash_screen.dart';
 import 'welcome.dart';
 import 'custom_bottom_navigation_bar.dart';
@@ -156,6 +158,11 @@ class AppRoutes {
       case '/admin/users':
       case '/admin-users':
         return MaterialPageRoute(builder: (_) => const AdminUsersScreen());
+
+      // Ruta para elementos eliminados (soft delete)
+      case '/admin/deleted-items':
+      case '/admin-deleted-items':
+        return MaterialPageRoute(builder: (_) => const DeletedItemsScreen());
 
       default:
         // Si la ruta no existe, redirigir a la pantalla de inicio

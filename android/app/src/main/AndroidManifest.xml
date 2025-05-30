@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.INTERNET" /> <!-- Agrega este permiso si no lo
     tienes -->
 
+    <!-- Permisos para grabación de audio -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:label="Le Brunch"
         android:name="${applicationName}"

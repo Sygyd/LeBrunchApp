@@ -377,9 +377,19 @@ class UserService {
     try {
       final baseUrl = await _getApiBaseUrl();
 
-      // Obtener el token de autenticación
-      final String? token = await _secureStorage.read(key: 'auth_token');
+      // Obtener el token de autenticación desde SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('auth_token');
+
+      print('🔑 Verificando token de autenticación...');
+      print(
+        '🔑 Token encontrado: ${token != null ? "Sí (${token.length > 20 ? token.substring(0, 20) + '...' : token})" : "No"}',
+      );
+
       if (token == null) {
+        // Intentar obtener información adicional para debug
+        final allKeys = prefs.getKeys();
+        print('🔍 Claves disponibles en SharedPreferences: $allKeys');
         throw Exception('No hay token de autenticación disponible');
       }
 

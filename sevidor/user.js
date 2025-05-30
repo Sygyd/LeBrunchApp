@@ -22,9 +22,9 @@ const createUser = async (nombre, apellido, cedula, email, contrasena, rol = "1"
     const hashedPassword = await bcrypt.hash(contrasena, 10);
     console.log(`🔑 Contraseña hasheada correctamente: ${hashedPassword.substring(0, 15)}...`);
 
-    // Crear persona
+    // Crear persona con isDelete = FALSE por defecto
     const { rows: personas } = await pool.query(
-      "INSERT INTO personas (nombre, apellido, cedula, email) VALUES ($1, $2, $3, $4) RETURNING idpersonas",
+      "INSERT INTO personas (nombre, apellido, cedula, email, isDelete) VALUES ($1, $2, $3, $4, FALSE) RETURNING idpersonas",
       [nombre, apellido, cedula, email]
     );
 
@@ -42,7 +42,7 @@ const createUser = async (nombre, apellido, cedula, email, contrasena, rol = "1"
     
     // Verificar qué rol se guardó realmente
     const savedUser = await pool.query(
-      "SELECT u.*, p.nombre, p.apellido, p.email FROM usuario u JOIN personas p ON u.idpersona = p.idpersonas WHERE u.idpersona = $1",
+      "SELECT u.*, p.nombre, p.apellido, p.email FROM usuario u JOIN personas p ON u.idpersona = p.idpersonas WHERE u.idpersona = $1 AND p.isDelete = FALSE",
       [idpersonas]
     );
     console.log(`🔍 Verificación del usuario guardado - Rol: ${savedUser.rows[0].rol} (tipo: ${typeof savedUser.rows[0].rol})`);

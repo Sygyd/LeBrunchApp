@@ -80,6 +80,113 @@ class CustomModal {
     );
   }
 
+  /// Muestra un modal de configuración que abarca casi toda la pantalla
+  static Future<void> showFullScreenConfig({
+    required BuildContext context,
+    required String title,
+    required Widget content,
+    List<Widget>? actions,
+    bool barrierDismissible = true,
+  }) async {
+    final theme = Theme.of(context);
+    final screenSize = MediaQuery.of(context).size;
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      builder:
+          (BuildContext dialogContext) => Theme(
+            data: theme,
+            child: Dialog(
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: screenSize.width * 0.05, // 5% de margen horizontal
+                vertical: screenSize.height * 0.08, // 8% de margen vertical
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: theme.colorScheme.surface,
+              child: Container(
+                width: screenSize.width * 0.9,
+                height: screenSize.height * 0.84,
+                child: Column(
+                  children: [
+                    // Header del modal
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.settings_applications,
+                            color: theme.colorScheme.primary,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontFamily: 'LightHouse',
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon: Icon(
+                              Icons.close,
+                              color: theme.colorScheme.onSurface.withOpacity(
+                                0.7,
+                              ),
+                            ),
+                            tooltip: 'Cerrar',
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Contenido del modal
+                    Expanded(child: content),
+
+                    // Acciones del modal (si se proporcionan)
+                    if (actions != null && actions.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(20),
+                            bottomRight: Radius.circular(20),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, -2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: actions,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+    );
+  }
+
   /// Muestra un modal de confirmación con opciones de Sí/No
   static Future<bool> showConfirmation({
     required BuildContext context,

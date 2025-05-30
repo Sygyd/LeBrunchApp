@@ -1,0 +1,793 @@
+import 'package:flutter/material.dart';
+import '/Api_services/soft_delete_service.dart';
+import '/UI_Screens/Widgets/background_scaffold.dart';
+import '/theme/theme.dart';
+
+/// Pantalla para administradores que muestra elementos eliminados
+/// y permite restaurarlos usando el sistema de soft delete
+class DeletedItemsScreen extends StatefulWidget {
+  const DeletedItemsScreen({Key? key}) : super(key: key);
+
+  @override
+  State<DeletedItemsScreen> createState() => _DeletedItemsScreenState();
+}
+
+class _DeletedItemsScreenState extends State<DeletedItemsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final SoftDeleteService _softDeleteService = SoftDeleteService();
+
+  // Estados de carga
+  bool _isLoadingDishes = false;
+  bool _isLoadingUsers = false;
+
+  // Listas de elementos eliminados
+  List<Map<String, dynamic>> _deletedDishes = [];
+  List<Map<String, dynamic>> _deletedUsers = [];
+
+  // Estadísticas
+  Map<String, int> _stats = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  /// Cargar todos los datos
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadDeletedDishes(),
+      _loadDeletedUsers(),
+      _loadStats(),
+    ]);
+  }
+
+  /// Cargar platos eliminados
+  Future<void> _loadDeletedDishes() async {
+    setState(() => _isLoadingDishes = true);
+    try {
+      final dishes = await _softDeleteService.getDeletedDishes();
+      setState(() => _deletedDishes = dishes);
+    } catch (e) {
+      _showErrorSnackBar('Error al cargar platos eliminados: $e');
+    } finally {
+      setState(() => _isLoadingDishes = false);
+    }
+  }
+
+  /// Cargar usuarios eliminados
+  Future<void> _loadDeletedUsers() async {
+    setState(() => _isLoadingUsers = true);
+    try {
+      final users = await _softDeleteService.getDeletedUsers();
+      setState(() => _deletedUsers = users);
+    } catch (e) {
+      _showErrorSnackBar('Error al cargar usuarios eliminados: $e');
+    } finally {
+      setState(() => _isLoadingUsers = false);
+    }
+  }
+
+  /// Cargar estadísticas
+  Future<void> _loadStats() async {
+    try {
+      final stats = await _softDeleteService.getDeletedItemsStats();
+      setState(() => _stats = stats);
+    } catch (e) {
+      print('Error al cargar estadísticas: $e');
+    }
+  }
+
+  /// Mostrar mensaje de error
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Mostrar mensaje de éxito
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Restaurar un plato
+  Future<void> _restoreDish(String dishId, String dishName) async {
+    final confirm = await _showRestoreConfirmDialog(
+      'Restaurar Plato',
+      '¿Estás seguro de que deseas restaurar "$dishName"?',
+    );
+
+    if (confirm == true) {
+      try {
+        await _softDeleteService.restoreDish(dishId);
+        _showSuccessSnackBar('Plato "$dishName" restaurado exitosamente');
+        await _loadDeletedDishes();
+        await _loadStats();
+      } catch (e) {
+        _showErrorSnackBar('Error al restaurar plato: $e');
+      }
+    }
+  }
+
+  /// Restaurar un usuario
+  Future<void> _restoreUser(String userId, String userName) async {
+    final confirm = await _showRestoreConfirmDialog(
+      'Restaurar Usuario',
+      '¿Estás seguro de que deseas restaurar al usuario "$userName"?',
+    );
+
+    if (confirm == true) {
+      try {
+        await _softDeleteService.restoreUser(userId);
+        _showSuccessSnackBar('Usuario "$userName" restaurado exitosamente');
+        await _loadDeletedUsers();
+        await _loadStats();
+      } catch (e) {
+        _showErrorSnackBar('Error al restaurar usuario: $e');
+      }
+    }
+  }
+
+  /// Mostrar diálogo de confirmación para restaurar
+  Future<bool?> _showRestoreConfirmDialog(String title, String content) {
+    return showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              title,
+              style: TextStyle(
+                fontFamily: 'LightHouse',
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            content: Text(
+              content,
+              style: const TextStyle(fontFamily: 'LightHouse'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    fontFamily: 'LightHouse',
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
+                child: const Text(
+                  'Restaurar',
+                  style: TextStyle(fontFamily: 'LightHouse'),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return BackgroundScaffold(
+      appBar: AppBar(
+        title: Text(
+          'Elementos Eliminados',
+          style: TextStyle(
+            fontFamily: 'Lighthouse',
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                color: Colors.black.withOpacity(0.3),
+                offset: const Offset(1, 1),
+                blurRadius: 3,
+              ),
+            ],
+          ),
+        ),
+        automaticallyImplyLeading: true,
+        backgroundColor: const Color(0xFF3ea69b),
+        foregroundColor: Colors.white,
+        centerTitle: false,
+        elevation: 0,
+        toolbarHeight: 70.0,
+        shape: const RoundedRectangleBorder(
+          side: BorderSide(color: Colors.white, width: 1.5),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF3ea69b),
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+            image: DecorationImage(
+              image: AssetImage('assets/images/fondo-flores-2.png'),
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+      ),
+      body: Column(
+        children: [
+          // Header con estadísticas (sin título ya que está en AppBar)
+          _buildStatsHeader(theme),
+
+          // Tabs
+          _buildTabBar(theme),
+
+          const SizedBox(height: 16),
+
+          // Contenido de las tabs
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [_buildDishesTab(), _buildUsersTab()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Construir header con estadísticas
+  Widget _buildStatsHeader(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3ea69b),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        image: const DecorationImage(
+          image: AssetImage('assets/images/fondo-flores-2.png'),
+          fit: BoxFit.cover,
+          opacity: 0.3,
+        ),
+      ),
+      child: Row(
+        children: [
+          _buildStatCard(
+            'Platos',
+            _stats['deletedDishes']?.toString() ?? '0',
+            Icons.restaurant,
+            theme,
+          ),
+          const SizedBox(width: 16),
+          _buildStatCard(
+            'Usuarios',
+            _stats['deletedUsers']?.toString() ?? '0',
+            Icons.people,
+            theme,
+          ),
+          const SizedBox(width: 16),
+          _buildStatCard(
+            'Total',
+            _stats['total']?.toString() ?? '0',
+            Icons.delete,
+            theme,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Construir tarjeta de estadística
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    ThemeData theme,
+  ) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: const Color(0xFF3ea69b), size: 20),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                fontFamily: 'MADE TOMMY',
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF3ea69b),
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Lighthouse',
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Construir barra de tabs
+  Widget _buildTabBar(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TabBar(
+        controller: _tabController,
+        labelColor: const Color(0xFF3ea69b),
+        unselectedLabelColor: Colors.grey[600],
+        indicatorColor: const Color(0xFF3ea69b),
+        indicatorWeight: 3,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: const Color(0xFF3ea69b).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        labelStyle: const TextStyle(
+          fontFamily: 'Lighthouse',
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontFamily: 'Lighthouse',
+          fontSize: 14,
+        ),
+        tabs: const [
+          Tab(icon: Icon(Icons.restaurant), text: 'Platos Eliminados'),
+          Tab(icon: Icon(Icons.people), text: 'Usuarios Eliminados'),
+        ],
+      ),
+    );
+  }
+
+  /// Construir tab de platos eliminados
+  Widget _buildDishesTab() {
+    if (_isLoadingDishes) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_deletedDishes.isEmpty) {
+      return _buildEmptyState(
+        'No hay platos eliminados',
+        'Todos los platos están activos en el sistema',
+        Icons.restaurant,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadDeletedDishes,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _deletedDishes.length,
+        itemBuilder: (context, index) {
+          final dish = _deletedDishes[index];
+          return _buildDishCard(dish);
+        },
+      ),
+    );
+  }
+
+  /// Construir tab de usuarios eliminados
+  Widget _buildUsersTab() {
+    if (_isLoadingUsers) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_deletedUsers.isEmpty) {
+      return _buildEmptyState(
+        'No hay usuarios eliminados',
+        'Todos los usuarios están activos en el sistema',
+        Icons.people,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadDeletedUsers,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _deletedUsers.length,
+        itemBuilder: (context, index) {
+          final user = _deletedUsers[index];
+          return _buildUserCard(user);
+        },
+      ),
+    );
+  }
+
+  /// Construir estado vacío
+  Widget _buildEmptyState(String title, String subtitle, IconData icon) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3ea69b).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 48, color: const Color(0xFF3ea69b)),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: const TextStyle(
+                fontFamily: 'Lighthouse',
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF3ea69b),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontFamily: 'Lighthouse',
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Construir tarjeta de plato eliminado
+  Widget _buildDishCard(Map<String, dynamic> dish) {
+    final theme = Theme.of(context);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: const Color(0xFF3ea69b).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header con nombre y botón restaurar
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dish['nombre'] ?? 'Sin nombre',
+                        style: const TextStyle(
+                          fontFamily: 'Lighthouse',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF3ea69b),
+                        ),
+                      ),
+                      Text(
+                        dish['categoria'] ?? 'Sin categoría',
+                        style: TextStyle(
+                          fontFamily: 'Lighthouse',
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed:
+                      () => _restoreDish(
+                        dish['idplato'].toString(),
+                        dish['nombre'] ?? 'Sin nombre',
+                      ),
+                  icon: const Icon(Icons.restore, size: 16),
+                  label: const Text(
+                    'Restaurar',
+                    style: TextStyle(fontFamily: 'Lighthouse'),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3ea69b),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Información adicional
+            Row(
+              children: [
+                Icon(
+                  Icons.attach_money,
+                  size: 16,
+                  color: const Color(0xFF3ea69b),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '\$${dish['precio']?.toString() ?? '0.00'}',
+                  style: TextStyle(
+                    fontFamily: 'MADE TOMMY',
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Icon(
+                  Icons.access_time,
+                  size: 16,
+                  color: const Color(0xFF3ea69b),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _softDeleteService.formatDeletedDate(dish['deleted_at']),
+                  style: TextStyle(
+                    fontFamily: 'Lighthouse',
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+
+            // Eliminado por
+            if (dish['deleted_by_name'] != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.person, size: 16, color: const Color(0xFF3ea69b)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Eliminado por: ${_softDeleteService.getDeletedByName(dish)}',
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Construir tarjeta de usuario eliminado
+  Widget _buildUserCard(Map<String, dynamic> user) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: const Color(0xFF3ea69b).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header con nombre y botón restaurar
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${user['nombre'] ?? ''} ${user['apellido'] ?? ''}'
+                            .trim(),
+                        style: const TextStyle(
+                          fontFamily: 'Lighthouse',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF3ea69b),
+                        ),
+                      ),
+                      Text(
+                        _softDeleteService.getRoleName(user['rol'] ?? 1),
+                        style: TextStyle(
+                          fontFamily: 'Lighthouse',
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed:
+                      () => _restoreUser(
+                        user['id'].toString(),
+                        '${user['nombre'] ?? ''} ${user['apellido'] ?? ''}'
+                            .trim(),
+                      ),
+                  icon: const Icon(Icons.restore, size: 16),
+                  label: const Text(
+                    'Restaurar',
+                    style: TextStyle(fontFamily: 'Lighthouse'),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3ea69b),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Información adicional
+            Row(
+              children: [
+                Icon(Icons.email, size: 16, color: const Color(0xFF3ea69b)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    user['email'] ?? 'Sin email',
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time,
+                  size: 16,
+                  color: const Color(0xFF3ea69b),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _softDeleteService.formatDeletedDate(user['deleted_at']),
+                  style: TextStyle(
+                    fontFamily: 'Lighthouse',
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+
+            // Eliminado por
+            if (user['deleted_by_name'] != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.person, size: 16, color: const Color(0xFF3ea69b)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Eliminado por: ${_softDeleteService.getDeletedByName(user)}',
+                    style: TextStyle(
+                      fontFamily: 'Lighthouse',
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

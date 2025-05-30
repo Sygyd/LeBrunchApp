@@ -5,6 +5,7 @@ import '../models/cart_item.dart';
 import 'dart:async';
 import '../services/cart_event_bus.dart';
 import 'package:uuid/uuid.dart';
+import 'package:http/http.dart' as http;
 
 class CartService extends ChangeNotifier {
   List<CartItem> _items = [];
@@ -72,130 +73,206 @@ class CartService extends ChangeNotifier {
     }
   }
 
+  // Método para buscar datos del menú por nombre
+  Future<Map<String, dynamic>?> _findMenuItemByName(String itemName) async {
+    try {
+      print('🔍 CartService: Buscando en menú: "$itemName"');
+
+      final response = await http.get(
+        Uri.parse('http://192.168.1.121:3000/menu'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> menuItems = json.decode(response.body);
+        print('📋 CartService: ${menuItems.length} items en el menú');
+
+        // Buscar por nombre exacto (insensible a mayúsculas)
+        for (var item in menuItems) {
+          final String menuItemName = item['nombre']?.toString() ?? '';
+          if (menuItemName.toLowerCase().trim() ==
+              itemName.toLowerCase().trim()) {
+            print('✅ CartService: Item encontrado en menú: $item');
+
+            // Convertir precio de string a double correctamente
+            double price = 0.0;
+            try {
+              final priceValue = item['precio'];
+              if (priceValue != null) {
+                price = double.parse(priceValue.toString());
+              }
+            } catch (e) {
+              print('⚠️ CartService: Error al convertir precio: $e');
+              price = 0.0;
+            }
+
+            return {
+              'id': item['idplato']?.toString() ?? '',
+              'name': item['nombre']?.toString() ?? itemName,
+              'price': price,
+              'image_url': item['imagen_url']?.toString() ?? '',
+              'categoria': item['categoria']?.toString() ?? '',
+              'disponibilidad': item['disponibilidad'] ?? true,
+            };
+          }
+        }
+
+        // Si no se encuentra exacto, buscar por similitud
+        for (var item in menuItems) {
+          final String menuItemName = item['nombre']?.toString() ?? '';
+          if (menuItemName.toLowerCase().contains(itemName.toLowerCase()) ||
+              itemName.toLowerCase().contains(menuItemName.toLowerCase())) {
+            print('⚠️ CartService: Item similar encontrado: $item');
+
+            // Convertir precio de string a double correctamente
+            double price = 0.0;
+            try {
+              final priceValue = item['precio'];
+              if (priceValue != null) {
+                price = double.parse(priceValue.toString());
+              }
+            } catch (e) {
+              print('⚠️ CartService: Error al convertir precio: $e');
+              price = 0.0;
+            }
+
+            return {
+              'id': item['idplato']?.toString() ?? '',
+              'name': item['nombre']?.toString() ?? itemName,
+              'price': price,
+              'image_url': item['imagen_url']?.toString() ?? '',
+              'categoria': item['categoria']?.toString() ?? '',
+              'disponibilidad': item['disponibilidad'] ?? true,
+            };
+          }
+        }
+
+        print('❌ CartService: Item "$itemName" no encontrado en el menú');
+        return null;
+      } else {
+        print('❌ CartService: Error al consultar menú: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ CartService: Error al buscar en menú: $e');
+      return null;
+    }
+  }
+
   // Método para añadir múltiples ítems al carrito desde Brunchy
   Future<void> addItemsFromBrunchy(List<Map<String, dynamic>> itemsData) async {
-    print('🔴 CartService.addItemsFromBrunchy: INICIANDO');
-    print('📦 CartService: Recibidos ${itemsData.length} items para añadir');
-    print('🆔 CartService: Usuario actual: $_userId');
-    print('📊 CartService: Items actuales en carrito antes: ${_items.length}');
+    print('🛒 CartService: Agregando ${itemsData.length} items desde audio');
 
-    // CRÍTICO: Deshabilitar notificaciones durante el proceso para evitar conflictos
+    // Deshabilitar notificaciones durante el proceso para evitar conflictos
     final originalNotificationsState = _notificationsEnabled;
     _notificationsEnabled = false;
 
-    for (int i = 0; i < itemsData.length; i++) {
-      print('📋 CartService: Item $i recibido: ${itemsData[i]}');
-    }
-
-    bool cartChanged = false; // Bandera para saber si el carrito ha cambiado
+    bool cartChanged = false;
 
     for (var itemData in itemsData) {
-      print('🔍 CartService: Procesando item: $itemData');
-
       final String? name = itemData['name'] as String?;
       final int? quantity = itemData['quantity'] as int?;
-      final dynamic priceData = itemData['item_price'] ?? itemData['price'];
-      final double? price = priceData?.toDouble();
       final String? notes = itemData['notes'] as String?;
-      final String? imageUrl =
-          (itemData['image_url'] ?? itemData['imageUrl']) as String?;
-      final String? idPlato =
-          (itemData['id'] ?? itemData['idplato'])?.toString();
-
-      print('🔍 CartService: Campos extraídos:');
-      print('   name: "$name"');
-      print('   quantity: $quantity');
-      print('   price: $price (de ${priceData.runtimeType})');
-      print('   notes: "$notes"');
-      print('   imageUrl: "$imageUrl"');
-      print('   idPlato: "$idPlato"');
 
       if (name != null && quantity != null && quantity > 0) {
-        // Relajar la validación del precio - usar 0.0 si no está disponible
-        final double finalPrice = price ?? 0.0;
-        print('✅ CartService: Item válido - procesando');
-        print(
-          '💰 CartService: Precio final: \$${finalPrice.toStringAsFixed(2)}',
-        );
+        // Verificar si el item ya viene procesado desde GeminiService
+        final bool isPreProcessed =
+            itemData.containsKey('id') &&
+            itemData.containsKey('price') &&
+            itemData.containsKey('matchScore');
 
-        // NUEVO: Buscar si el item ya existe en el carrito (por nombre Y notas exactas)
-        // Solo combinar items si tienen exactamente el mismo nombre Y las mismas notas
-        final existingItemIndex = _items.indexWhere(
-          (item) =>
-              item.name.toLowerCase() == name.toLowerCase() &&
-              (item.notes?.trim() ?? '') == (notes?.trim() ?? ''),
-        );
+        Map<String, dynamic>? menuData;
 
-        if (existingItemIndex != -1) {
-          // Si el item existe CON LAS MISMAS NOTAS, actualizamos solo la cantidad
-          CartItem existingItem = _items[existingItemIndex];
-          _items[existingItemIndex] = existingItem.copyWith(
-            quantity: existingItem.quantity + quantity,
+        if (isPreProcessed) {
+          // Usar datos ya procesados por GeminiService
+          final bool notFound = itemData['notFound'] == true;
+          final double matchScore = itemData['matchScore'] as double? ?? 0.0;
+
+          if (notFound || matchScore < 0.3) {
+            print(
+              '❌ CartService: "${name}" no encontrado o score muy bajo (${matchScore.toStringAsFixed(2)}) - omitiendo',
+            );
+            continue;
+          }
+
+          menuData = {
+            'id': itemData['id'] as String,
+            'name': itemData['name'] as String,
+            'price': itemData['price'] as double,
+            'image_url': itemData['image_url'] as String? ?? '',
+            'categoria': itemData['categoria'] as String? ?? '',
+            'disponibilidad': itemData['disponibilidad'] as bool? ?? true,
+          };
+
+          print(
+            '✅ CartService: Usando datos procesados para "${name}" (score: ${matchScore.toStringAsFixed(2)})',
           );
-          print('➕ CartService: Item existente con mismas notas actualizado');
-          print('   Cantidad anterior: ${existingItem.quantity}');
-          print('   Cantidad nueva: ${_items[existingItemIndex].quantity}');
-          print('   Notas mantenidas: "${existingItem.notes}"');
         } else {
-          // Si el item no existe, lo añadimos como nuevo
-          final newCartItem = CartItem(
-            id:
-                idPlato ??
-                const Uuid()
-                    .v4(), // Usar idPlato si existe, sino generar nuevo UUID
-            name: name,
-            quantity: quantity,
-            price: finalPrice, // Usar el precio final (no nullable)
-            imageUrl:
-                imageUrl ?? '', // Obtener URL de imagen si está disponible
-            notes: notes,
-            originalData: itemData, // Guardar el itemData original
+          // Fallback: buscar datos en la base de datos como antes
+          print(
+            '🔍 CartService: Buscando "${name}" en base de datos (fallback)',
           );
-          _items.add(newCartItem);
-          print('🆕 CartService: Nuevo item añadido al carrito:');
-          print('   ID: ${newCartItem.id}');
-          print('   Nombre: ${newCartItem.name}');
-          print('   Cantidad: ${newCartItem.quantity}');
-          print('   Precio: \$${newCartItem.price.toStringAsFixed(2)}');
-          print('   Imagen: ${newCartItem.imageUrl}');
-          print('   Notas: "${newCartItem.notes}"');
+          menuData = await _findMenuItemByName(name);
         }
-        cartChanged = true; // El carrito ha sido modificado
-        print('✅ CartService: Item procesado exitosamente');
-      } else {
-        print('⚠️ CartService: Item inválido recibido - OMITIENDO');
-        print(
-          '   Razón: name=$name, quantity=$quantity, quantity>0=${quantity != null ? quantity > 0 : false}',
-        );
+
+        if (menuData != null) {
+          final String realId = menuData['id'] as String;
+          final String realName = menuData['name'] as String;
+          final double realPrice = menuData['price'] as double;
+          final String realImageUrl = menuData['image_url'] as String;
+
+          // Buscar si el item ya existe en el carrito (por ID real Y notas exactas)
+          final existingItemIndex = _items.indexWhere(
+            (item) =>
+                item.id == realId &&
+                (item.notes?.trim() ?? '') == (notes?.trim() ?? ''),
+          );
+
+          if (existingItemIndex != -1) {
+            // Si el item existe con las mismas notas, actualizamos solo la cantidad
+            CartItem existingItem = _items[existingItemIndex];
+            _items[existingItemIndex] = existingItem.copyWith(
+              quantity: existingItem.quantity + quantity,
+            );
+            print(
+              '➕ CartService: Cantidad actualizada para ${realName} (${existingItem.quantity} + ${quantity} = ${existingItem.quantity + quantity})',
+            );
+          } else {
+            // Si el item no existe, lo añadimos como nuevo con datos reales
+            final newCartItem = CartItem(
+              id: realId,
+              name: realName,
+              quantity: quantity,
+              price: realPrice,
+              imageUrl: realImageUrl,
+              notes: notes,
+              originalData: {...itemData, ...menuData},
+            );
+            _items.add(newCartItem);
+            print(
+              '✅ CartService: ${realName} agregado al carrito (\$${realPrice.toStringAsFixed(2)} x${quantity})',
+            );
+          }
+          cartChanged = true;
+        } else {
+          print('❌ CartService: "$name" no encontrado en el menú - omitiendo');
+        }
       }
     }
-
-    print('📊 CartService: Resumen del procesamiento:');
-    print('   Items en carrito después: ${_items.length}');
-    print('   ¿Carrito cambió?: $cartChanged');
 
     // Restaurar notificaciones antes de notificar
     _notificationsEnabled = originalNotificationsState;
 
     if (cartChanged) {
-      print('💾 CartService: Guardando cambios...');
-      await _saveCartAndUpdateCounters(); // Guardar cambios en el storage
-
-      // MÚLTIPLES GUARDADOS para asegurar persistencia
+      await _saveCartAndUpdateCounters();
       await saveCart();
       await saveCountToSharedPrefs();
 
-      print('🔔 CartService: Notificando listeners...');
-
-      // Solo notificar si las notificaciones están habilitadas
       if (_notificationsEnabled) {
-        notifyListeners(); // Notificar a la UI para que se actualice
-        print('📡 CartService: Enviando evento via EventBus...');
-        _eventBus.fireCartUpdate(
-          CartEvent(CartEventType.itemAdded),
-        ); // Notificar via EventBus
+        notifyListeners();
+        _eventBus.fireCartUpdate(CartEvent(CartEventType.itemAdded));
 
-        // Notificación adicional después de delay para asegurar propagación
+        // Notificación adicional para asegurar propagación
         Future.delayed(Duration(milliseconds: 500), () {
           if (_notificationsEnabled) {
             notifyListeners();
@@ -205,13 +282,11 @@ class CartService extends ChangeNotifier {
       }
 
       print(
-        '✅ CartService: Carrito actualizado con ítems de Brunchy - PROCESO COMPLETO',
+        '✅ CartService: ${_items.length} items en carrito - proceso completo',
       );
     } else {
-      print('ℹ️ CartService: No se realizaron cambios en el carrito');
+      print('ℹ️ CartService: No se agregaron items al carrito');
     }
-
-    print('🔴 CartService.addItemsFromBrunchy: FINALIZADO');
   }
 
   // Método para establecer el ID de usuario (restaurado para compatibilidad)

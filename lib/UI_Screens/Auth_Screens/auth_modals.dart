@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '/models/user.dart';
 import '/Api_services/usuarios/register_service.dart';
 import '/UI_Screens/Widgets/custom_modal.dart';
+import '/Api_services/password_reset_service.dart';
 import 'dart:convert';
 import '/Api_services/cart_service.dart';
 
@@ -110,6 +111,10 @@ class _LoginModalContentState extends State<_LoginModalContent> {
   Future<void> _saveAuthData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', data['token']);
+
+    print(
+      '🔑 Token guardado en login: ${data['token'] != null ? "Sí (${data['token'].toString().length > 20 ? data['token'].toString().substring(0, 20) + '...' : data['token'].toString()})" : "No"}',
+    );
 
     // Manejo mejorado del rol para manejar tanto string como int
     int userRol = 1; // Valor predeterminado: cliente
@@ -319,7 +324,7 @@ class _LoginModalContentState extends State<_LoginModalContent> {
   }
 }
 
-// FORGOT PASSWORD MODAL (actualizado para altura adaptativa)
+// FORGOT PASSWORD MODAL (con flujo completo de dos pasos)
 class _ForgotPasswordModalContent extends StatefulWidget {
   @override
   State<_ForgotPasswordModalContent> createState() =>
@@ -328,12 +333,140 @@ class _ForgotPasswordModalContent extends StatefulWidget {
 
 class _ForgotPasswordModalContentState
     extends State<_ForgotPasswordModalContent> {
+  final PageController _pageController = PageController();
+  int _currentStep = 0;
+  int? _verifiedUserId;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _nextStep(int userId) {
+    setState(() {
+      _verifiedUserId = userId;
+      _currentStep = 1;
+    });
+    _pageController.nextPage(
+      duration: animationDuration,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _previousStep() {
+    setState(() {
+      _currentStep = 0;
+      _verifiedUserId = null;
+    });
+    _pageController.previousPage(
+      duration: animationDuration,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Barra de arrastre
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+
+            // Indicador de pasos
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color:
+                          _currentStep >= 1
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(
+                                context,
+                              ).colorScheme.outline.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Contenido de los pasos
+            SizedBox(
+              height: 500, // Altura fija para evitar cambios de tamaño
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _VerifyCredentialsStep(onNext: _nextStep),
+                  _ResetPasswordStep(
+                    userId: _verifiedUserId,
+                    onBack: _previousStep,
+                    onSuccess: () {
+                      Navigator.pop(context);
+                      AuthModals.showLoginModal(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// PASO 1: Verificar credenciales
+class _VerifyCredentialsStep extends StatefulWidget {
+  final Function(int) onNext;
+
+  const _VerifyCredentialsStep({required this.onNext});
+
+  @override
+  State<_VerifyCredentialsStep> createState() => _VerifyCredentialsStepState();
+}
+
+class _VerifyCredentialsStepState extends State<_VerifyCredentialsStep> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _cedulaController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
-  String? _successMessage;
   final FocusNode _emailFocus = FocusNode();
   final FocusNode _cedulaFocus = FocusNode();
 
@@ -346,7 +479,6 @@ class _ForgotPasswordModalContentState
     super.dispose();
   }
 
-  /// Validador de email
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) {
       return 'Por favor ingresa tu correo electrónico';
@@ -357,7 +489,6 @@ class _ForgotPasswordModalContentState
     return null;
   }
 
-  /// Validador de cédula
   String? _validateCedula(String? value) {
     if (value == null || value.isEmpty) {
       return 'Por favor ingresa tu número de cédula';
@@ -371,38 +502,25 @@ class _ForgotPasswordModalContentState
     return null;
   }
 
-  Future<void> _submitForm() async {
+  Future<void> _verifyCredentials() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _successMessage = null;
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/verify-reset-password'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": _emailController.text.trim(),
-          "cedula": _cedulaController.text.trim(),
-        }),
+      final result = await PasswordResetService.verifyCredentials(
+        email: _emailController.text.trim(),
+        cedula: _cedulaController.text.trim(),
       );
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['success'] == true) {
-        setState(() {
-          _successMessage =
-              data['message'] ??
-              'Te hemos enviado un correo con instrucciones para restablecer tu contraseña.';
-        });
+      if (result['success'] == true) {
+        widget.onNext(result['userId']);
       } else {
         setState(() {
-          _errorMessage =
-              data['message'] ??
-              'No encontramos una cuenta con esos datos. Por favor verifica la información.';
+          _errorMessage = result['message'];
         });
       }
     } catch (e) {
@@ -418,141 +536,372 @@ class _ForgotPasswordModalContentState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Título
+          Text(
+            'Verificar Identidad',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
-      ),
-      child: SingleChildScrollView(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 8),
+
+          // Subtítulo
+          Text(
+            'Ingresa tu correo electrónico y número de cédula para verificar tu identidad',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+
+          const SizedBox(height: 24),
+
+          // Mensaje de error
+          if (_errorMessage != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Campo de Email
+          TextFormField(
+            controller: _emailController,
+            focusNode: _emailFocus,
+            textInputAction: TextInputAction.next,
+            onFieldSubmitted: (_) {
+              FocusScope.of(context).requestFocus(_cedulaFocus);
+            },
+            keyboardType: TextInputType.emailAddress,
+            validator:
+                (value) =>
+                    PasswordResetService.isValidEmail(value ?? '')
+                        ? null
+                        : 'Por favor ingresa un correo electrónico válido',
+            decoration: InputDecoration(
+              labelText: 'Correo electrónico',
+              hintText: 'ejemplo@correo.com',
+              prefixIcon: Icon(Icons.email),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Campo de Cédula
+          TextFormField(
+            controller: _cedulaController,
+            focusNode: _cedulaFocus,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _verifyCredentials(),
+            keyboardType: TextInputType.number,
+            validator:
+                (value) =>
+                    PasswordResetService.isValidCedula(value ?? '')
+                        ? null
+                        : 'La cédula debe tener entre 5 y 10 dígitos',
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Número de cédula',
+              hintText: 'Ej: 12345678',
+              prefixIcon: Icon(Icons.credit_card),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Botón de Verificar
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _verifyCredentials,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child:
+                  _isLoading
+                      ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      )
+                      : Text('Verificar identidad'),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Link para volver a login
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Barra de arrastre
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-
-              // Título
-              Text(
-                'Recuperar Contraseña',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 8),
-
-              // Subtítulo
-              Text(
-                'Ingresa tu correo electrónico y número de cédula para verificar tu identidad',
-                style: theme.textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 24),
-
-              // Mensaje de error
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // Mensaje de éxito
-              if (_successMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _successMessage!,
-                    style: const TextStyle(color: Colors.green),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // Campo de Email
-              TextFormField(
-                controller: _emailController,
-                focusNode: _emailFocus,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_cedulaFocus);
+              Text('¿Recordaste tu contraseña?'),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  AuthModals.showLoginModal(context);
                 },
-                keyboardType: TextInputType.emailAddress,
-                validator: _validateEmail,
-                decoration: InputDecoration(
-                  labelText: 'Correo electrónico',
-                  hintText: 'ejemplo@correo.com',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                child: Text('Iniciar sesión'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// PASO 2: Restablecer contraseña
+class _ResetPasswordStep extends StatefulWidget {
+  final int? userId;
+  final VoidCallback onBack;
+  final VoidCallback onSuccess;
+
+  const _ResetPasswordStep({
+    required this.userId,
+    required this.onBack,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_ResetPasswordStep> createState() => _ResetPasswordStepState();
+}
+
+class _ResetPasswordStepState extends State<_ResetPasswordStep> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  String? _errorMessage;
+  final FocusNode _passwordFocus = FocusNode();
+  final FocusNode _confirmPasswordFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
+    super.dispose();
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Por favor ingresa tu nueva contraseña';
+    }
+    if (value.length < 6) {
+      return 'La contraseña debe tener al menos 6 caracteres';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Confirma tu contraseña';
+    }
+    if (value != _passwordController.text) {
+      return 'Las contraseñas no coinciden';
+    }
+    return null;
+  }
+
+  Future<void> _resetPassword() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await PasswordResetService.resetPassword(
+        userId: widget.userId!,
+        newPassword: _passwordController.text,
+      );
+
+      if (result['success'] == true) {
+        await CustomModal.showSuccess(
+          context: context,
+          message: result['message'],
+          onPressed: widget.onSuccess,
+        );
+      } else {
+        setState(() {
+          _errorMessage = result['message'];
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error de conexión: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Título
+          Text(
+            'Nueva Contraseña',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+
+          const SizedBox(height: 8),
+
+          // Subtítulo
+          Text(
+            'Ingresa tu nueva contraseña. Debe tener al menos 6 caracteres.',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+
+          const SizedBox(height: 24),
+
+          // Mensaje de error
+          if (_errorMessage != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Campo Nueva Contraseña
+          TextFormField(
+            controller: _passwordController,
+            focusNode: _passwordFocus,
+            textInputAction: TextInputAction.next,
+            onFieldSubmitted: (_) {
+              FocusScope.of(context).requestFocus(_confirmPasswordFocus);
+            },
+            obscureText: _obscurePassword,
+            validator:
+                (value) =>
+                    PasswordResetService.isValidPassword(value ?? '')
+                        ? null
+                        : 'La contraseña debe tener al menos 6 caracteres',
+            decoration: InputDecoration(
+              labelText: 'Nueva contraseña',
+              prefixIcon: Icon(Icons.lock),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                ),
+                onPressed:
+                    () => setState(() => _obscurePassword = !_obscurePassword),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Campo Confirmar Contraseña
+          TextFormField(
+            controller: _confirmPasswordController,
+            focusNode: _confirmPasswordFocus,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _resetPassword(),
+            obscureText: _obscureConfirmPassword,
+            validator: _validateConfirmPassword,
+            decoration: InputDecoration(
+              labelText: 'Confirmar contraseña',
+              prefixIcon: Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureConfirmPassword
+                      ? Icons.visibility
+                      : Icons.visibility_off,
+                ),
+                onPressed:
+                    () => setState(
+                      () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                    ),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Botones
+          Row(
+            children: [
+              // Botón Atrás
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : widget.onBack,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
+                  child: Text('Atrás'),
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(width: 16),
 
-              // Campo de Cédula
-              TextFormField(
-                controller: _cedulaController,
-                focusNode: _cedulaFocus,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _submitForm(),
-                keyboardType: TextInputType.number,
-                validator: _validateCedula,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(10),
-                ],
-                decoration: InputDecoration(
-                  labelText: 'Número de cédula',
-                  hintText: 'Ej: 12345678',
-                  prefixIcon: Icon(Icons.credit_card),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Botón de Recuperar contraseña
-              SizedBox(
-                width: double.infinity,
+              // Botón Cambiar Contraseña
+              Expanded(
+                flex: 2,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitForm,
+                  onPressed: _isLoading ? null : _resetPassword,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     shape: RoundedRectangleBorder(
@@ -566,32 +915,15 @@ class _ForgotPasswordModalContentState
                             height: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
+                              color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
-                          : Text('Recuperar contraseña'),
+                          : Text('Cambiar contraseña'),
                 ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Link para volver a login
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('¿Recordaste tu contraseña?'),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      AuthModals.showLoginModal(context);
-                    },
-                    child: Text('Iniciar sesión'),
-                  ),
-                ],
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

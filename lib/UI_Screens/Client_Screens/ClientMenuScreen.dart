@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '/UI_Screens/Widgets/menu_view.dart';
+import '../Shared/shared_menu_view.dart';
 import '/UI_Screens/Widgets/background_scaffold.dart';
 
 class ClientMenuScreen extends StatefulWidget {

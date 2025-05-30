@@ -26,7 +26,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Nuevo endpoint para obtener todos los usuarios
+// Nuevo endpoint para obtener todos los usuarios (solo los no eliminados)
 router.get("/users", async (req, res) => {
   try {
     console.log('📋 Solicitud recibida en /users');
@@ -35,6 +35,7 @@ router.get("/users", async (req, res) => {
       `SELECT u.idpersona as id, p.nombre, p.apellido, p.cedula, p.email, u.rol
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
+       WHERE p.isDelete = FALSE
        ORDER BY p.nombre ASC`
     );
     
@@ -82,25 +83,29 @@ router.get("/users", async (req, res) => {
   }
 });
 
-// Endpoint para obtener métricas de usuarios
+// Endpoint para obtener métricas de usuarios (solo los no eliminados)
 router.get("/users/metrics", async (req, res) => {
   try {
     console.log('📊 Solicitud de métricas de usuarios recibida');
     
-    // Obtener conteo total de usuarios
+    // Obtener conteo total de usuarios no eliminados
     const totalResult = await pool.query(
-      `SELECT COUNT(*) as total FROM usuario`
+      `SELECT COUNT(*) as total FROM usuario u
+       INNER JOIN personas p ON u.idpersona = p.idpersonas
+       WHERE p.isDelete = FALSE`
     );
     const totalUsers = parseInt(totalResult.rows[0].total);
     
-    // Obtener conteo de usuarios por rol
+    // Obtener conteo de usuarios por rol (solo los no eliminados)
     const rolesResult = await pool.query(
       `SELECT 
-        COUNT(CASE WHEN rol = '0' OR rol = 'admin' THEN 1 END) as admins,
-        COUNT(CASE WHEN rol = '1' OR rol = 'client' OR rol = 'cliente' THEN 1 END) as clients,
-        COUNT(CASE WHEN rol = '2' OR rol = 'cook' OR rol = 'cocinero' THEN 1 END) as cooks,
-        COUNT(CASE WHEN rol = '3' OR rol = 'barista' THEN 1 END) as baristas
-       FROM usuario`
+        COUNT(CASE WHEN u.rol = '0' OR u.rol = 'admin' THEN 1 END) as admins,
+        COUNT(CASE WHEN u.rol = '1' OR u.rol = 'client' OR u.rol = 'cliente' THEN 1 END) as clients,
+        COUNT(CASE WHEN u.rol = '2' OR u.rol = 'cook' OR u.rol = 'cocinero' THEN 1 END) as cooks,
+        COUNT(CASE WHEN u.rol = '3' OR u.rol = 'barista' THEN 1 END) as baristas
+       FROM usuario u
+       INNER JOIN personas p ON u.idpersona = p.idpersonas
+       WHERE p.isDelete = FALSE`
     );
     
     const metrics = {
@@ -124,7 +129,7 @@ router.get("/users/metrics", async (req, res) => {
   }
 });
 
-// Obtener un usuario específico por ID
+// Obtener un usuario específico por ID (solo si no está eliminado)
 router.get("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -142,12 +147,12 @@ router.get("/users/:id", async (req, res) => {
               END as rol
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE u.idpersona = $1`,
+       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
       [id]
     );
     
     if (rows.length === 0) {
-      return res.status(404).json({ error: "Usuario no encontrado" });
+      return res.status(404).json({ error: "Usuario no encontrado o ha sido eliminado" });
     }
     
     return res.status(200).json(rows[0]);
@@ -168,17 +173,17 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Por favor, ingrese ambos campos." });
     }
 
-    // Consulta en la base de datos
+    // Consulta en la base de datos (solo usuarios no eliminados)
     const { rows } = await pool.query(
       `SELECT u.contrasena, u.idpersona, u.rol, p.nombre, p.apellido, p.cedula, p.email
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE p.email = $1`,
+       WHERE p.email = $1 AND p.isDelete = FALSE`,
       [email]
     );
 
     if (rows.length === 0) {
-      console.log(`❌ Login fallido: email no encontrado: ${email}`);
+      console.log(`❌ Login fallido: email no encontrado o usuario eliminado: ${email}`);
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
@@ -263,7 +268,7 @@ router.post("/logout", (req, res) => {
   }
 });
 
-// Nuevo endpoint para verificar credenciales y recuperar contraseña
+// Nuevo endpoint para verificar credenciales y recuperar contraseña (solo usuarios no eliminados)
 router.post("/verify-reset-password", async (req, res) => {
   try {
     const { email, cedula } = req.body;
@@ -273,11 +278,11 @@ router.post("/verify-reset-password", async (req, res) => {
       return res.status(400).json({ error: "Correo electrónico y cédula son obligatorios" });
     }
 
-    // Buscar al usuario por email y cédula
+    // Buscar al usuario por email y cédula (solo si no está eliminado)
     const { rows } = await pool.query(
       `SELECT p.idpersonas, p.nombre, p.apellido, p.email
        FROM personas p
-       WHERE p.email = $1 AND p.cedula = $2`,
+       WHERE p.email = $1 AND p.cedula = $2 AND p.isDelete = FALSE`,
       [email, cedula]
     );
 
@@ -306,10 +311,11 @@ router.post("/verify-reset-password", async (req, res) => {
 
     console.log(`Solicitud de restablecimiento para ${usuario.email} con token: ${resetToken}`);
 
-    // Respuesta exitosa simulando envío de correo
+    // Respuesta exitosa con el ID del usuario para el siguiente paso
     return res.status(200).json({
       success: true,
-      message: "Te hemos enviado un correo con instrucciones para restablecer tu contraseña."
+      userId: usuario.idpersonas,
+      message: "Credenciales verificadas correctamente. Ahora puedes establecer tu nueva contraseña."
     });
 
   } catch (error) {
@@ -321,7 +327,84 @@ router.post("/verify-reset-password", async (req, res) => {
   }
 });
 
-// Endpoint para eliminar un usuario
+// NUEVO: Endpoint para cambiar la contraseña después de verificar credenciales
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    // Validar datos de entrada
+    if (!userId || !newPassword) {
+      return res.status(400).json({ 
+        success: false,
+        message: "ID de usuario y nueva contraseña son obligatorios" 
+      });
+    }
+
+    // Validar que la contraseña tenga al menos 6 caracteres
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "La contraseña debe tener al menos 6 caracteres"
+      });
+    }
+
+    console.log(`🔐 Cambiando contraseña para usuario ID: ${userId}`);
+
+    // Verificar que el usuario existe y no está eliminado
+    const userCheck = await pool.query(
+      `SELECT p.idpersonas, p.nombre, p.apellido, p.email 
+       FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       WHERE p.idpersonas = $1 AND p.isDelete = FALSE`,
+      [userId]
+    );
+
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado o ha sido eliminado"
+      });
+    }
+
+    const userData = userCheck.rows[0];
+
+    // Hashear la nueva contraseña
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log(`🔑 Nueva contraseña hasheada para usuario: ${userData.nombre} ${userData.apellido}`);
+
+    // Actualizar la contraseña en la base de datos
+    const updateResult = await pool.query(
+      `UPDATE usuario 
+       SET contrasena = $1 
+       WHERE idpersona = $2 
+       RETURNING idpersona`,
+      [hashedPassword, userId]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: "Error al actualizar la contraseña"
+      });
+    }
+
+    console.log(`✅ Contraseña actualizada exitosamente para usuario: ${userData.nombre} ${userData.apellido}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Tu contraseña ha sido actualizada exitosamente. Ya puedes iniciar sesión con tu nueva contraseña."
+    });
+
+  } catch (error) {
+    console.error("❌ Error al cambiar contraseña:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error al procesar el cambio de contraseña."
+    });
+  }
+});
+
+// Endpoint para eliminar un usuario (SOFT DELETE)
 router.delete("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -330,13 +413,14 @@ router.delete("/users/:id", async (req, res) => {
     // Obtener el token de autorización de los headers
     const authHeader = req.headers.authorization;
     let userIdFromToken = null;
+    let deletedBy = null;
     
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7); // Quitar 'Bearer ' del inicio
       try {
         // Verificar y decodificar el token
-        const decoded = jwt.verify(token, 'monito');
+        const decoded = jwt.verify(authHeader.substring(7), 'monito');
         userIdFromToken = decoded.id;
+        deletedBy = decoded.id;
         console.log(`👤 Usuario autenticado ID: ${userIdFromToken}`);
         
         // Si intenta eliminarse a sí mismo
@@ -355,9 +439,11 @@ router.delete("/users/:id", async (req, res) => {
     // Iniciar una transacción para asegurar la integridad
     await pool.query('BEGIN');
     
-    // Verificar si el usuario existe
+    // Verificar si el usuario existe y no está ya eliminado
     const userCheck = await pool.query(
-      `SELECT * FROM usuario WHERE idpersona = $1`,
+      `SELECT p.*, u.rol FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       WHERE p.idpersonas = $1 AND p.isDelete = FALSE`,
       [id]
     );
     
@@ -365,17 +451,24 @@ router.delete("/users/:id", async (req, res) => {
       await pool.query('ROLLBACK');
       return res.status(404).json({ 
         success: false,
-        message: "Usuario no encontrado"
+        message: "Usuario no encontrado o ya ha sido eliminado"
       });
     }
+
+    const userData = userCheck.rows[0];
     
-    // Eliminar el usuario y persona asociada
-    const deleteUserResult = await pool.query(
-      'DELETE FROM usuario WHERE idpersona = $1 RETURNING idpersona',
-      [id]
+    // Realizar soft delete en la tabla personas
+    const deletePersonResult = await pool.query(
+      `UPDATE personas 
+       SET isDelete = TRUE, 
+           deleted_at = NOW(), 
+           deleted_by = $2 
+       WHERE idpersonas = $1 AND isDelete = FALSE 
+       RETURNING nombre, apellido`,
+      [id, deletedBy]
     );
     
-    if (deleteUserResult.rows.length === 0) {
+    if (deletePersonResult.rows.length === 0) {
       await pool.query('ROLLBACK');
       return res.status(404).json({ 
         success: false,
@@ -383,16 +476,10 @@ router.delete("/users/:id", async (req, res) => {
       });
     }
     
-    // Si se eliminó el usuario, proceder a eliminar la persona
-    const deletePersonResult = await pool.query(
-      'DELETE FROM personas WHERE idpersonas = $1 RETURNING nombre, apellido',
-      [id]
-    );
-    
     // Confirmar la transacción
     await pool.query('COMMIT');
     
-    console.log(`✅ Usuario eliminado con éxito: ${deletePersonResult.rows[0]?.nombre} ${deletePersonResult.rows[0]?.apellido}`);
+    console.log(`✅ Usuario eliminado lógicamente con éxito: ${deletePersonResult.rows[0]?.nombre} ${deletePersonResult.rows[0]?.apellido} por usuario ${deletedBy || 'desconocido'}`);
     
     return res.status(200).json({
       success: true,
@@ -400,7 +487,8 @@ router.delete("/users/:id", async (req, res) => {
       deletedUser: {
         id: id,
         nombre: deletePersonResult.rows[0]?.nombre,
-        apellido: deletePersonResult.rows[0]?.apellido
+        apellido: deletePersonResult.rows[0]?.apellido,
+        deletedBy: deletedBy
       }
     });
     
@@ -416,7 +504,7 @@ router.delete("/users/:id", async (req, res) => {
   }
 });
 
-// Endpoint para actualizar la información de un usuario
+// Endpoint para actualizar la información de un usuario (solo si no está eliminado)
 router.put("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -436,9 +524,11 @@ router.put("/users/:id", async (req, res) => {
     // Iniciar una transacción para asegurar la integridad
     await pool.query('BEGIN');
     
-    // Verificar si el usuario existe
+    // Verificar si el usuario existe y no está eliminado
     const checkUser = await pool.query(
-      'SELECT idpersona FROM usuario WHERE idpersona = $1',
+      `SELECT u.idpersona FROM usuario u
+       INNER JOIN personas p ON u.idpersona = p.idpersonas
+       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
       [id]
     );
     
@@ -446,7 +536,7 @@ router.put("/users/:id", async (req, res) => {
       await pool.query('ROLLBACK');
       return res.status(404).json({ 
         success: false,
-        message: "Usuario no encontrado"
+        message: "Usuario no encontrado o ha sido eliminado"
       });
     }
     
@@ -477,7 +567,7 @@ router.put("/users/:id", async (req, res) => {
       }
       
       updatePersonaQuery += updateValues.join(',');
-      updatePersonaQuery += ` WHERE idpersonas = $${queryParams.length + 1} RETURNING *`;
+      updatePersonaQuery += ` WHERE idpersonas = $${queryParams.length + 1} AND isDelete = FALSE RETURNING *`;
       queryParams.push(id);
       
       const updatePersonaResult = await pool.query(updatePersonaQuery, queryParams);
@@ -531,7 +621,7 @@ router.put("/users/:id", async (req, res) => {
       `SELECT u.idpersona as id, p.nombre, p.apellido, p.cedula, p.email, u.rol
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE u.idpersona = $1`,
+       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
       [id]
     );
     
@@ -567,6 +657,113 @@ router.put("/users/:id", async (req, res) => {
       success: false,
       message: "Error al actualizar la información del usuario",
       error: error.message
+    });
+  }
+});
+
+// NUEVO: Endpoint para restaurar un usuario eliminado (solo para administradores)
+router.patch("/users/:id/restore", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔄 Solicitud para restaurar usuario con ID: ${id}`);
+    
+    // Verificar que el usuario existe y está eliminado
+    const checkResult = await pool.query(
+      `SELECT p.*, u.rol FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       WHERE p.idpersonas = $1 AND p.isDelete = TRUE`, 
+      [id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Usuario no encontrado en elementos eliminados" 
+      });
+    }
+
+    // Restaurar el usuario
+    const result = await pool.query(
+      `UPDATE personas 
+       SET isDelete = FALSE, 
+           deleted_at = NULL, 
+           deleted_by = NULL 
+       WHERE idpersonas = $1 
+       RETURNING *`,
+      [id]
+    );
+
+    console.log(`✅ Usuario ${id} restaurado exitosamente`);
+    return res.status(200).json({ 
+      success: true,
+      message: "Usuario restaurado exitosamente", 
+      restoredUser: {
+        id: result.rows[0].idpersonas,
+        nombre: result.rows[0].nombre,
+        apellido: result.rows[0].apellido,
+        email: result.rows[0].email
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al restaurar usuario:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: "Error al restaurar el usuario",
+      error: error.message 
+    });
+  }
+});
+
+// NUEVO: Endpoint para obtener usuarios eliminados (solo para administradores)
+router.get("/users/deleted/list", async (req, res) => {
+  try {
+    console.log('📋 Solicitud de usuarios eliminados recibida');
+    
+    const result = await pool.query(
+      `SELECT p.idpersonas as id, p.nombre, p.apellido, p.cedula, p.email, 
+              u.rol, p.deleted_at, p.deleted_by,
+              deleter.nombre as deleted_by_name, deleter.apellido as deleted_by_lastname
+       FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       LEFT JOIN personas deleter ON p.deleted_by = deleter.idpersonas
+       WHERE p.isDelete = TRUE
+       ORDER BY p.deleted_at DESC`
+    );
+    
+    // Procesar roles como en el endpoint principal
+    const processedUsers = result.rows.map(user => {
+      let rolFinal = user.rol;
+      if (typeof rolFinal === 'string') {
+        if (/^\d+$/.test(rolFinal)) {
+          rolFinal = parseInt(rolFinal, 10);
+        } else {
+          switch(rolFinal.toLowerCase()) {
+            case 'admin': rolFinal = 0; break;
+            case 'client': case 'cliente': rolFinal = 1; break;
+            case 'cook': case 'cocinero': rolFinal = 2; break;
+            case 'barista': rolFinal = 3; break;
+            default: rolFinal = 1;
+          }
+        }
+      }
+      
+      return {
+        ...user,
+        rol: rolFinal
+      };
+    });
+    
+    console.log(`📋 ${processedUsers.length} usuarios eliminados encontrados`);
+    
+    return res.status(200).json({
+      deletedUsers: processedUsers,
+      count: processedUsers.length
+    });
+  } catch (error) {
+    console.error("❌ Error al obtener usuarios eliminados:", error);
+    return res.status(500).json({ 
+      error: "Error al obtener usuarios eliminados del servidor",
+      details: error.message 
     });
   }
 });
