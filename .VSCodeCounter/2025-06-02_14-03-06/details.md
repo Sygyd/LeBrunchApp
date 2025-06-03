@@ -1,0 +1,197 @@
+# Details
+
+Date : 2025-06-02 14:03:06
+
+Directory c:\\dev\\Proyecto\\tesis\\Lb_flutter_app\\le_brunch_app
+
+Total : 182 files,  46355 codes, 2848 comments, 5619 blanks, all 54822 lines
+
+[Summary](results.md) / Details / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
+
+## Files
+| filename | language | code | comment | blank | total |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| [ANDROID\_SDK\_FIX.md](/ANDROID_SDK_FIX.md) | Markdown | 125 | 0 | 45 | 170 |
+| [AUDIO\_CHAT\_BUBBLE\_IMPLEMENTATION.md](/AUDIO_CHAT_BUBBLE_IMPLEMENTATION.md) | Markdown | 120 | 0 | 36 | 156 |
+| [AUDIO\_ERROR\_FIXES.md](/AUDIO_ERROR_FIXES.md) | Markdown | 188 | 0 | 46 | 234 |
+| [AUDIO\_FEATURE\_README.md](/AUDIO_FEATURE_README.md) | Markdown | 86 | 0 | 32 | 118 |
+| [AUDIO\_SERVICE\_SINGLETON\_FIX.md](/AUDIO_SERVICE_SINGLETON_FIX.md) | Markdown | 179 | 0 | 48 | 227 |
+| [AUDIO\_SUBSTRING\_ERROR\_FIX.md](/AUDIO_SUBSTRING_ERROR_FIX.md) | Markdown | 79 | 0 | 31 | 110 |
+| [AUDIO\_VOLUME\_IMPROVEMENTS.md](/AUDIO_VOLUME_IMPROVEMENTS.md) | Markdown | 124 | 0 | 37 | 161 |
+| [CORRECCION\_FILTROS\_USUARIOS.md](/CORRECCION_FILTROS_USUARIOS.md) | Markdown | 280 | 0 | 62 | 342 |
+| [GEMINI\_AUDIO\_PROCESSING.md](/GEMINI_AUDIO_PROCESSING.md) | Markdown | 167 | 0 | 44 | 211 |
+| [MEJORAS\_SCROLL\_MENU.md](/MEJORAS_SCROLL_MENU.md) | Markdown | 87 | 0 | 22 | 109 |
+| [MEJORAS\_SCROLL\_USUARIOS.md](/MEJORAS_SCROLL_USUARIOS.md) | Markdown | 91 | 0 | 22 | 113 |
+| [OPTIMIZACION\_SISTEMA\_PLATOS\_POPULARES.md](/OPTIMIZACION_SISTEMA_PLATOS_POPULARES.md) | Markdown | 159 | 0 | 32 | 191 |
+| [RESUMEN\_CORRECCION\_AUDIO\_SINGLETON.md](/RESUMEN_CORRECCION_AUDIO_SINGLETON.md) | Markdown | 74 | 0 | 24 | 98 |
+| [RESUMEN\_FINAL\_AUDIO\_FIXES.md](/RESUMEN_FINAL_AUDIO_FIXES.md) | Markdown | 165 | 0 | 42 | 207 |
+| [RESUMEN\_FINAL\_CORRECCION\_JSON\_MALFORMADO.md](/RESUMEN_FINAL_CORRECCION_JSON_MALFORMADO.md) | Markdown | 112 | 0 | 39 | 151 |
+| [RESUMEN\_FINAL\_MEJORAS\_AUDIO\_COMPLETO.md](/RESUMEN_FINAL_MEJORAS_AUDIO_COMPLETO.md) | Markdown | 192 | 0 | 48 | 240 |
+| [RESUMEN\_MEJORAS\_AUDIO.md](/RESUMEN_MEJORAS_AUDIO.md) | Markdown | 321 | 0 | 87 | 408 |
+| [RESUMEN\_OPTIMIZACION\_FLUJO\_AUDIO.md](/RESUMEN_OPTIMIZACION_FLUJO_AUDIO.md) | Markdown | 175 | 0 | 54 | 229 |
+| [RESUMEN\_SISTEMA\_PERMISOS\_USUARIOS.md](/RESUMEN_SISTEMA_PERMISOS_USUARIOS.md) | Markdown | 126 | 0 | 45 | 171 |
+| [SPEECH\_TO\_TEXT\_CRITICAL\_ERROR\_FIX.md](/SPEECH_TO_TEXT_CRITICAL_ERROR_FIX.md) | Markdown | 150 | 0 | 34 | 184 |
+| [SPEECH\_TO\_TEXT\_CRITICAL\_FIX.md](/SPEECH_TO_TEXT_CRITICAL_FIX.md) | Markdown | 151 | 0 | 37 | 188 |
+| [SPEECH\_TO\_TEXT\_FINAL\_IMPROVEMENTS.md](/SPEECH_TO_TEXT_FINAL_IMPROVEMENTS.md) | Markdown | 132 | 0 | 35 | 167 |
+| [SPEECH\_TO\_TEXT\_IMPROVEMENTS.md](/SPEECH_TO_TEXT_IMPROVEMENTS.md) | Markdown | 225 | 0 | 50 | 275 |
+| [SPEECH\_TO\_TEXT\_TIMEOUT\_FIX.md](/SPEECH_TO_TEXT_TIMEOUT_FIX.md) | Markdown | 156 | 0 | 34 | 190 |
+| [analysis\_options.yaml](/analysis_options.yaml) | YAML | 1 | 0 | 1 | 2 |
+| [android/app/build.gradle](/android/app/build.gradle) | Gradle | 32 | 6 | 7 | 45 |
+| [android/app/src/debug/AndroidManifest.xml](/android/app/src/debug/AndroidManifest.xml) | XML | 3 | 4 | 1 | 8 |
+| [android/app/src/main/AndroidManifest.xml](/android/app/src/main/AndroidManifest.xml) | XML | 43 | 13 | 2 | 58 |
+| [android/app/src/main/res/drawable-v21/launch\_background.xml](/android/app/src/main/res/drawable-v21/launch_background.xml) | XML | 4 | 7 | 2 | 13 |
+| [android/app/src/main/res/drawable/ic\_launcher\_foreground.xml](/android/app/src/main/res/drawable/ic_launcher_foreground.xml) | XML | 11 | 0 | 0 | 11 |
+| [android/app/src/main/res/drawable/launch\_background.xml](/android/app/src/main/res/drawable/launch_background.xml) | XML | 9 | 0 | 0 | 9 |
+| [android/app/src/main/res/mipmap-anydpi-v26/ic\_foreground.xml](/android/app/src/main/res/mipmap-anydpi-v26/ic_foreground.xml) | XML | 4 | 0 | 0 | 4 |
+| [android/app/src/main/res/mipmap-anydpi-v26/ic\_launcher.xml](/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml) | XML | 9 | 0 | 1 | 10 |
+| [android/app/src/main/res/values-night/styles.xml](/android/app/src/main/res/values-night/styles.xml) | XML | 15 | 10 | 0 | 25 |
+| [android/app/src/main/res/values/colors.xml](/android/app/src/main/res/values/colors.xml) | XML | 7 | 3 | 2 | 12 |
+| [android/app/src/main/res/values/styles.xml](/android/app/src/main/res/values/styles.xml) | XML | 12 | 0 | 0 | 12 |
+| [android/app/src/profile/AndroidManifest.xml](/android/app/src/profile/AndroidManifest.xml) | XML | 3 | 4 | 1 | 8 |
+| [android/build.gradle](/android/build.gradle) | Gradle | 16 | 0 | 3 | 19 |
+| [android/gradle.properties](/android/gradle.properties) | Java Properties | 3 | 0 | 1 | 4 |
+| [android/gradle/wrapper/gradle-wrapper.properties](/android/gradle/wrapper/gradle-wrapper.properties) | Java Properties | 5 | 0 | 1 | 6 |
+| [android/settings.gradle](/android/settings.gradle) | Gradle | 21 | 0 | 5 | 26 |
+| [docs/DATABASE\_STRUCTURE.md](/docs/DATABASE_STRUCTURE.md) | Markdown | 225 | 0 | 62 | 287 |
+| [docs/PRICE\_OPTIMIZATION\_SUMMARY.md](/docs/PRICE_OPTIMIZATION_SUMMARY.md) | Markdown | 203 | 0 | 60 | 263 |
+| [docs/README.md](/docs/README.md) | Markdown | 243 | 0 | 72 | 315 |
+| [docs/SOFT\_DELETE\_IMPLEMENTATION\_SUMMARY.md](/docs/SOFT_DELETE_IMPLEMENTATION_SUMMARY.md) | Markdown | 157 | 0 | 54 | 211 |
+| [ios/RunnerTests/RunnerTests.swift](/ios/RunnerTests/RunnerTests.swift) | Swift | 7 | 2 | 4 | 13 |
+| [ios/Runner/AppDelegate.swift](/ios/Runner/AppDelegate.swift) | Swift | 12 | 0 | 2 | 14 |
+| [ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json](/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json) | JSON | 1 | 0 | 0 | 1 |
+| [ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json](/ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json) | JSON | 23 | 0 | 1 | 24 |
+| [ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md](/ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md) | Markdown | 3 | 0 | 2 | 5 |
+| [ios/Runner/Base.lproj/LaunchScreen.storyboard](/ios/Runner/Base.lproj/LaunchScreen.storyboard) | XML | 36 | 1 | 1 | 38 |
+| [ios/Runner/Base.lproj/Main.storyboard](/ios/Runner/Base.lproj/Main.storyboard) | XML | 25 | 1 | 1 | 27 |
+| [ios/Runner/Runner-Bridging-Header.h](/ios/Runner/Runner-Bridging-Header.h) | C++ | 1 | 0 | 1 | 2 |
+| [lib/Api\_services/admin\_chat\_service.dart](/lib/Api_services/admin_chat_service.dart) | Dart | 425 | 26 | 76 | 527 |
+| [lib/Api\_services/audio\_service.dart](/lib/Api_services/audio_service.dart) | Dart | 1,249 | 128 | 190 | 1,567 |
+| [lib/Api\_services/cart\_service.dart](/lib/Api_services/cart_service.dart) | Dart | 1,105 | 210 | 230 | 1,545 |
+| [lib/Api\_services/gemini\_api\_client.dart](/lib/Api_services/gemini_api_client.dart) | Dart | 268 | 32 | 38 | 338 |
+| [lib/Api\_services/gemini\_service.dart](/lib/Api_services/gemini_service.dart) | Dart | 338 | 49 | 62 | 449 |
+| [lib/Api\_services/global\_config\_service.dart](/lib/Api_services/global_config_service.dart) | Dart | 309 | 16 | 36 | 361 |
+| [lib/Api\_services/mcp\_service.dart](/lib/Api_services/mcp_service.dart) | Dart | 83 | 4 | 12 | 99 |
+| [lib/Api\_services/menu/add\_dish\_service.dart](/lib/Api_services/menu/add_dish_service.dart) | Dart | 99 | 11 | 15 | 125 |
+| [lib/Api\_services/menu/get\_dishes\_service.dart](/lib/Api_services/menu/get_dishes_service.dart) | Dart | 30 | 2 | 3 | 35 |
+| [lib/Api\_services/menu/get\_drinks\_service.dart](/lib/Api_services/menu/get_drinks_service.dart) | Dart | 30 | 1 | 3 | 34 |
+| [lib/Api\_services/menu/menu\_service.dart](/lib/Api_services/menu/menu_service.dart) | Dart | 64 | 1 | 9 | 74 |
+| [lib/Api\_services/navigation/navigation\_service.dart](/lib/Api_services/navigation/navigation_service.dart) | Dart | 14 | 1 | 5 | 20 |
+| [lib/Api\_services/password\_reset\_service.dart](/lib/Api_services/password_reset_service.dart) | Dart | 85 | 5 | 15 | 105 |
+| [lib/Api\_services/pedidos/create\_order\_service.dart](/lib/Api_services/pedidos/create_order_service.dart) | Dart | 178 | 22 | 27 | 227 |
+| [lib/Api\_services/pedidos/orders\_service.dart](/lib/Api_services/pedidos/orders_service.dart) | Dart | 1,342 | 116 | 202 | 1,660 |
+| [lib/Api\_services/pedidos/popular\_dishes\_service.dart](/lib/Api_services/pedidos/popular_dishes_service.dart) | Dart | 262 | 23 | 48 | 333 |
+| [lib/Api\_services/pedidos/recommendations\_service.dart](/lib/Api_services/pedidos/recommendations_service.dart) | Dart | 139 | 7 | 20 | 166 |
+| [lib/Api\_services/soft\_delete\_service.dart](/lib/Api_services/soft_delete_service.dart) | Dart | 202 | 23 | 35 | 260 |
+| [lib/Api\_services/user\_service.dart](/lib/Api_services/user_service.dart) | Dart | 359 | 30 | 55 | 444 |
+| [lib/Api\_services/usuarios/register\_service.dart](/lib/Api_services/usuarios/register_service.dart) | Dart | 93 | 2 | 11 | 106 |
+| [lib/UI\_Screens/Admin\_Screens/AdminChatScreen.dart](/lib/UI_Screens/Admin_Screens/AdminChatScreen.dart) | Dart | 624 | 30 | 53 | 707 |
+| [lib/UI\_Screens/Admin\_Screens/AdminHomeScreen.dart](/lib/UI_Screens/Admin_Screens/AdminHomeScreen.dart) | Dart | 347 | 15 | 27 | 389 |
+| [lib/UI\_Screens/Admin\_Screens/AdminOrdersScreen.dart](/lib/UI_Screens/Admin_Screens/AdminOrdersScreen.dart) | Dart | 683 | 2 | 50 | 735 |
+| [lib/UI\_Screens/Admin\_Screens/DeletedItemsScreen.dart](/lib/UI_Screens/Admin_Screens/DeletedItemsScreen.dart) | Dart | 719 | 31 | 46 | 796 |
+| [lib/UI\_Screens/Admin\_Screens/OrderHistoryScreen.dart](/lib/UI_Screens/Admin_Screens/OrderHistoryScreen.dart) | Dart | 29 | 0 | 4 | 33 |
+| [lib/UI\_Screens/Admin\_Screens/PopularDishesScreen.dart](/lib/UI_Screens/Admin_Screens/PopularDishesScreen.dart) | Dart | 784 | 28 | 66 | 878 |
+| [lib/UI\_Screens/Admin\_Screens/ReportsScreen.dart](/lib/UI_Screens/Admin_Screens/ReportsScreen.dart) | Dart | 2,655 | 108 | 179 | 2,942 |
+| [lib/UI\_Screens/Admin\_Screens/Users/AdminUsersScreen.dart](/lib/UI_Screens/Admin_Screens/Users/AdminUsersScreen.dart) | Dart | 1,986 | 118 | 134 | 2,238 |
+| [lib/UI\_Screens/Admin\_Screens/Users/add\_user\_modal.dart](/lib/UI_Screens/Admin_Screens/Users/add_user_modal.dart) | Dart | 609 | 29 | 47 | 685 |
+| [lib/UI\_Screens/Admin\_Screens/Users/filter\_chip.dart](/lib/UI_Screens/Admin_Screens/Users/filter_chip.dart) | Dart | 58 | 1 | 6 | 65 |
+| [lib/UI\_Screens/Admin\_Screens/add\_dish\_modal.dart](/lib/UI_Screens/Admin_Screens/add_dish_modal.dart) | Dart | 410 | 18 | 31 | 459 |
+| [lib/UI\_Screens/Admin\_Screens/menu\_screen.dart](/lib/UI_Screens/Admin_Screens/menu_screen.dart) | Dart | 33 | 1 | 6 | 40 |
+| [lib/UI\_Screens/Auth\_Screens/auth\_modals.dart](/lib/UI_Screens/Auth_Screens/auth_modals.dart) | Dart | 1,146 | 52 | 96 | 1,294 |
+| [lib/UI\_Screens/Barista\_Screens/BaristaActiveOrdersScreen.dart](/lib/UI_Screens/Barista_Screens/BaristaActiveOrdersScreen.dart) | Dart | 77 | 0 | 12 | 89 |
+| [lib/UI\_Screens/Barista\_Screens/BaristaHomeScreen.dart](/lib/UI_Screens/Barista_Screens/BaristaHomeScreen.dart) | Dart | 17 | 0 | 4 | 21 |
+| [lib/UI\_Screens/Barista\_Screens/BaristaOrderHistoryScreen.dart](/lib/UI_Screens/Barista_Screens/BaristaOrderHistoryScreen.dart) | Dart | 17 | 0 | 3 | 20 |
+| [lib/UI\_Screens/Barista\_Screens/BaristaProfileScreen.dart](/lib/UI_Screens/Barista_Screens/BaristaProfileScreen.dart) | Dart | 15 | 0 | 3 | 18 |
+| [lib/UI\_Screens/Client\_Screens/CartScreen.dart](/lib/UI_Screens/Client_Screens/CartScreen.dart) | Dart | 1,261 | 139 | 181 | 1,581 |
+| [lib/UI\_Screens/Client\_Screens/ChatScreen.dart](/lib/UI_Screens/Client_Screens/ChatScreen.dart) | Dart | 15 | 0 | 4 | 19 |
+| [lib/UI\_Screens/Client\_Screens/ClientHomeScreen.dart](/lib/UI_Screens/Client_Screens/ClientHomeScreen.dart) | Dart | 183 | 12 | 12 | 207 |
+| [lib/UI\_Screens/Client\_Screens/ClientMenuScreen.dart](/lib/UI_Screens/Client_Screens/ClientMenuScreen.dart) | Dart | 30 | 2 | 6 | 38 |
+| [lib/UI\_Screens/Cook\_Screens/ActiveOrdersScreen.dart](/lib/UI_Screens/Cook_Screens/ActiveOrdersScreen.dart) | Dart | 50 | 0 | 9 | 59 |
+| [lib/UI\_Screens/Cook\_Screens/CookHomeScreen.dart](/lib/UI_Screens/Cook_Screens/CookHomeScreen.dart) | Dart | 17 | 0 | 4 | 21 |
+| [lib/UI\_Screens/Cook\_Screens/CookProfileScreen.dart](/lib/UI_Screens/Cook_Screens/CookProfileScreen.dart) | Dart | 15 | 0 | 3 | 18 |
+| [lib/UI\_Screens/Cook\_Screens/OrderHistoryScreen.dart](/lib/UI_Screens/Cook_Screens/OrderHistoryScreen.dart) | Dart | 17 | 0 | 3 | 20 |
+| [lib/UI\_Screens/Shared/shared\_active\_orders\_screen.dart](/lib/UI_Screens/Shared/shared_active_orders_screen.dart) | Dart | 118 | 3 | 11 | 132 |
+| [lib/UI\_Screens/Shared/shared\_chat\_screen.dart](/lib/UI_Screens/Shared/shared_chat_screen.dart) | Dart | 957 | 55 | 93 | 1,105 |
+| [lib/UI\_Screens/Shared/shared\_home\_screen.dart](/lib/UI_Screens/Shared/shared_home_screen.dart) | Dart | 394 | 22 | 41 | 457 |
+| [lib/UI\_Screens/Shared/shared\_menu\_view.dart](/lib/UI_Screens/Shared/shared_menu_view.dart) | Dart | 641 | 51 | 62 | 754 |
+| [lib/UI\_Screens/Shared/shared\_order\_history\_screen.dart](/lib/UI_Screens/Shared/shared_order_history_screen.dart) | Dart | 1,286 | 60 | 115 | 1,461 |
+| [lib/UI\_Screens/Shared/shared\_profile\_screen.dart](/lib/UI_Screens/Shared/shared_profile_screen.dart) | Dart | 230 | 14 | 29 | 273 |
+| [lib/UI\_Screens/Widgets/ThreeDotsLoading.dart](/lib/UI_Screens/Widgets/ThreeDotsLoading.dart) | Dart | 95 | 9 | 17 | 121 |
+| [lib/UI\_Screens/Widgets/audio\_message\_widget.dart](/lib/UI_Screens/Widgets/audio_message_widget.dart) | Dart | 277 | 7 | 28 | 312 |
+| [lib/UI\_Screens/Widgets/audio\_recorder\_widget.dart](/lib/UI_Screens/Widgets/audio_recorder_widget.dart) | Dart | 548 | 30 | 75 | 653 |
+| [lib/UI\_Screens/Widgets/background\_scaffold.dart](/lib/UI_Screens/Widgets/background_scaffold.dart) | Dart | 47 | 0 | 4 | 51 |
+| [lib/UI\_Screens/Widgets/cart\_item\_card.dart](/lib/UI_Screens/Widgets/cart_item_card.dart) | Dart | 330 | 11 | 23 | 364 |
+| [lib/UI\_Screens/Widgets/category\_carousel.dart](/lib/UI_Screens/Widgets/category_carousel.dart) | Dart | 209 | 7 | 9 | 225 |
+| [lib/UI\_Screens/Widgets/chat\_config\_modal\_content.dart](/lib/UI_Screens/Widgets/chat_config_modal_content.dart) | Dart | 651 | 11 | 34 | 696 |
+| [lib/UI\_Screens/Widgets/chat\_message\_bubble.dart](/lib/UI_Screens/Widgets/chat_message_bubble.dart) | Dart | 414 | 33 | 44 | 491 |
+| [lib/UI\_Screens/Widgets/custom\_bottom\_navigation\_bar.dart](/lib/UI_Screens/Widgets/custom_bottom_navigation_bar.dart) | Dart | 1,499 | 134 | 146 | 1,779 |
+| [lib/UI\_Screens/Widgets/custom\_modal.dart](/lib/UI_Screens/Widgets/custom_modal.dart) | Dart | 324 | 19 | 17 | 360 |
+| [lib/UI\_Screens/Widgets/date\_filter\_bar.dart](/lib/UI_Screens/Widgets/date_filter_bar.dart) | Dart | 375 | 14 | 28 | 417 |
+| [lib/UI\_Screens/Widgets/dish\_card.dart](/lib/UI_Screens/Widgets/dish_card.dart) | Dart | 656 | 46 | 43 | 745 |
+| [lib/UI\_Screens/Widgets/logout\_button.dart](/lib/UI_Screens/Widgets/logout_button.dart) | Dart | 114 | 12 | 17 | 143 |
+| [lib/UI\_Screens/Widgets/order\_detail\_card.dart](/lib/UI_Screens/Widgets/order_detail_card.dart) | Dart | 1,605 | 103 | 139 | 1,847 |
+| [lib/UI\_Screens/Widgets/recommendations\_widget.dart](/lib/UI_Screens/Widgets/recommendations_widget.dart) | Dart | 479 | 19 | 34 | 532 |
+| [lib/UI\_Screens/Widgets/routes.dart](/lib/UI_Screens/Widgets/routes.dart) | Dart | 144 | 13 | 23 | 180 |
+| [lib/UI\_Screens/Widgets/search\_bar.dart](/lib/UI_Screens/Widgets/search_bar.dart) | Dart | 41 | 0 | 5 | 46 |
+| [lib/UI\_Screens/Widgets/splash\_screen.dart](/lib/UI_Screens/Widgets/splash_screen.dart) | Dart | 82 | 3 | 17 | 102 |
+| [lib/UI\_Screens/Widgets/text\_with\_border.dart](/lib/UI_Screens/Widgets/text_with_border.dart) | Dart | 47 | 2 | 4 | 53 |
+| [lib/UI\_Screens/Widgets/updated\_category\_carousel.dart](/lib/UI_Screens/Widgets/updated_category_carousel.dart) | Dart | 85 | 0 | 6 | 91 |
+| [lib/UI\_Screens/Widgets/welcome.dart](/lib/UI_Screens/Widgets/welcome.dart) | Dart | 243 | 25 | 32 | 300 |
+| [lib/UI\_Screens/Widgets/welcome\_button.dart](/lib/UI_Screens/Widgets/welcome_button.dart) | Dart | 53 | 2 | 5 | 60 |
+| [lib/main.dart](/lib/main.dart) | Dart | 80 | 10 | 15 | 105 |
+| [lib/models/cart\_item.dart](/lib/models/cart_item.dart) | Dart | 67 | 3 | 7 | 77 |
+| [lib/models/chat\_message.dart](/lib/models/chat_message.dart) | Dart | 155 | 13 | 17 | 185 |
+| [lib/models/user.dart](/lib/models/user.dart) | Dart | 147 | 12 | 17 | 176 |
+| [lib/services/cart\_event\_bus.dart](/lib/services/cart_event_bus.dart) | Dart | 33 | 8 | 11 | 52 |
+| [lib/services/order\_status\_service.dart](/lib/services/order_status_service.dart) | Dart | 17 | 7 | 6 | 30 |
+| [lib/services/user\_preferences\_service.dart](/lib/services/user_preferences_service.dart) | Dart | 162 | 22 | 37 | 221 |
+| [lib/theme/theme.dart](/lib/theme/theme.dart) | Dart | 255 | 2 | 7 | 264 |
+| [linux/CMakeLists.txt](/linux/CMakeLists.txt) | CMake | 104 | 0 | 25 | 129 |
+| [linux/flutter/CMakeLists.txt](/linux/flutter/CMakeLists.txt) | CMake | 79 | 0 | 10 | 89 |
+| [linux/flutter/generated\_plugin\_registrant.cc](/linux/flutter/generated_plugin_registrant.cc) | C++ | 19 | 4 | 5 | 28 |
+| [linux/flutter/generated\_plugin\_registrant.h](/linux/flutter/generated_plugin_registrant.h) | C++ | 5 | 5 | 6 | 16 |
+| [linux/flutter/generated\_plugins.cmake](/linux/flutter/generated_plugins.cmake) | CMake | 22 | 0 | 6 | 28 |
+| [linux/runner/CMakeLists.txt](/linux/runner/CMakeLists.txt) | CMake | 21 | 0 | 6 | 27 |
+| [linux/runner/main.cc](/linux/runner/main.cc) | C++ | 5 | 0 | 2 | 7 |
+| [linux/runner/my\_application.cc](/linux/runner/my_application.cc) | C++ | 83 | 21 | 27 | 131 |
+| [linux/runner/my\_application.h](/linux/runner/my_application.h) | C++ | 7 | 7 | 5 | 19 |
+| [macos/Flutter/GeneratedPluginRegistrant.swift](/macos/Flutter/GeneratedPluginRegistrant.swift) | Swift | 26 | 3 | 4 | 33 |
+| [macos/RunnerTests/RunnerTests.swift](/macos/RunnerTests/RunnerTests.swift) | Swift | 7 | 2 | 4 | 13 |
+| [macos/Runner/AppDelegate.swift](/macos/Runner/AppDelegate.swift) | Swift | 11 | 0 | 3 | 14 |
+| [macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json](/macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json) | JSON | 68 | 0 | 1 | 69 |
+| [macos/Runner/Base.lproj/MainMenu.xib](/macos/Runner/Base.lproj/MainMenu.xib) | XML | 343 | 0 | 1 | 344 |
+| [macos/Runner/MainFlutterWindow.swift](/macos/Runner/MainFlutterWindow.swift) | Swift | 12 | 0 | 4 | 16 |
+| [package-lock.json](/package-lock.json) | JSON | 1,984 | 0 | 1 | 1,985 |
+| [package.json](/package.json) | JSON | 12 | 0 | 1 | 13 |
+| [pubspec.yaml](/pubspec.yaml) | YAML | 71 | 1 | 6 | 78 |
+| [sevidor/constants.js](/sevidor/constants.js) | JavaScript | 14 | 3 | 3 | 20 |
+| [sevidor/db.js](/sevidor/db.js) | JavaScript | 16 | 1 | 5 | 22 |
+| [sevidor/login\_register.js](/sevidor/login_register.js) | JavaScript | 866 | 86 | 164 | 1,116 |
+| [sevidor/menu.js](/sevidor/menu.js) | JavaScript | 197 | 17 | 37 | 251 |
+| [sevidor/migrations/README.md](/sevidor/migrations/README.md) | Markdown | 41 | 0 | 12 | 53 |
+| [sevidor/migrations/complete\_database\_schema.sql](/sevidor/migrations/complete_database_schema.sql) | MS SQL | 83 | 84 | 24 | 191 |
+| [sevidor/migrations/migration\_soft\_delete.sql](/sevidor/migrations/migration_soft_delete.sql) | MS SQL | 53 | 31 | 20 | 104 |
+| [sevidor/migrations/remove\_price\_duplication.sql](/sevidor/migrations/remove_price_duplication.sql) | MS SQL | 118 | 44 | 27 | 189 |
+| [sevidor/migrations/update\_existing\_database.sql](/sevidor/migrations/update_existing_database.sql) | MS SQL | 151 | 86 | 39 | 276 |
+| [sevidor/package-lock.json](/sevidor/package-lock.json) | JSON | 2,215 | 0 | 1 | 2,216 |
+| [sevidor/package.json](/sevidor/package.json) | JSON | 38 | 0 | 0 | 38 |
+| [sevidor/pedidos.js](/sevidor/pedidos.js) | JavaScript | 1,174 | 95 | 165 | 1,434 |
+| [sevidor/servidor.js](/sevidor/servidor.js) | JavaScript | 1,593 | 115 | 226 | 1,934 |
+| [sevidor/user.js](/sevidor/user.js) | JavaScript | 39 | 6 | 13 | 58 |
+| [web/index.html](/web/index.html) | HTML | 19 | 15 | 5 | 39 |
+| [web/manifest.json](/web/manifest.json) | JSON | 35 | 0 | 1 | 36 |
+| [windows/CMakeLists.txt](/windows/CMakeLists.txt) | CMake | 89 | 0 | 20 | 109 |
+| [windows/flutter/CMakeLists.txt](/windows/flutter/CMakeLists.txt) | CMake | 98 | 0 | 12 | 110 |
+| [windows/flutter/generated\_plugin\_registrant.cc](/windows/flutter/generated_plugin_registrant.cc) | C++ | 18 | 4 | 5 | 27 |
+| [windows/flutter/generated\_plugin\_registrant.h](/windows/flutter/generated_plugin_registrant.h) | C++ | 5 | 5 | 6 | 16 |
+| [windows/flutter/generated\_plugins.cmake](/windows/flutter/generated_plugins.cmake) | CMake | 23 | 0 | 6 | 29 |
+| [windows/runner/CMakeLists.txt](/windows/runner/CMakeLists.txt) | CMake | 34 | 0 | 7 | 41 |
+| [windows/runner/flutter\_window.cpp](/windows/runner/flutter_window.cpp) | C++ | 49 | 7 | 16 | 72 |
+| [windows/runner/flutter\_window.h](/windows/runner/flutter_window.h) | C++ | 20 | 5 | 9 | 34 |
+| [windows/runner/main.cpp](/windows/runner/main.cpp) | C++ | 30 | 4 | 10 | 44 |
+| [windows/runner/resource.h](/windows/runner/resource.h) | C++ | 9 | 6 | 2 | 17 |
+| [windows/runner/utils.cpp](/windows/runner/utils.cpp) | C++ | 54 | 2 | 10 | 66 |
+| [windows/runner/utils.h](/windows/runner/utils.h) | C++ | 8 | 6 | 6 | 20 |
+| [windows/runner/win32\_window.cpp](/windows/runner/win32_window.cpp) | C++ | 210 | 24 | 55 | 289 |
+| [windows/runner/win32\_window.h](/windows/runner/win32_window.h) | C++ | 48 | 31 | 24 | 103 |
+
+[Summary](results.md) / Details / [Diff Summary](diff.md) / [Diff Details](diff-details.md)

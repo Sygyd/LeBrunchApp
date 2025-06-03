@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../Widgets/date_filter_bar.dart';
+import '../Widgets/background_scaffold.dart';
 
 /// Widget compartido para mostrar el historial de pedidos
 /// Puede ser utilizado por administradores, cocineros y baristas
@@ -751,7 +752,7 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return BackgroundScaffold(
       appBar:
           widget.hideAppBar
               ? null
@@ -1323,7 +1324,7 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
             ),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             child: Row(
               children: [
                 Text(

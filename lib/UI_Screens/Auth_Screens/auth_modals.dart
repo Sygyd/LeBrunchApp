@@ -119,15 +119,15 @@ class _LoginModalContentState extends State<_LoginModalContent> {
     // Manejo mejorado del rol para manejar tanto string como int
     int userRol = 1; // Valor predeterminado: cliente
 
-    if (data['rol'] != null) {
+    if (data['user']['rol'] != null) {
       // Intentar parsear como int si es string, o usar directamente si ya es int
-      if (data['rol'] is String) {
+      if (data['user']['rol'] is String) {
         // Primero intentar hacer un parse directo si es número
-        userRol = int.tryParse(data['rol']) ?? 1;
+        userRol = int.tryParse(data['user']['rol']) ?? 1;
 
         // Si no es un número, intentar mapear el string del rol
-        if (userRol == 1 && data['rol'].toString().isNotEmpty) {
-          final rolStr = data['rol'].toString().toLowerCase();
+        if (userRol == 1 && data['user']['rol'].toString().isNotEmpty) {
+          final rolStr = data['user']['rol'].toString().toLowerCase();
           if (rolStr == 'admin' || rolStr == 'administrador')
             userRol = 0;
           else if (rolStr == 'cliente' || rolStr == 'client')
@@ -137,25 +137,34 @@ class _LoginModalContentState extends State<_LoginModalContent> {
           else if (rolStr == 'barista')
             userRol = 3;
         }
-      } else if (data['rol'] is int) {
-        userRol = data['rol'];
+      } else if (data['user']['rol'] is int) {
+        userRol = data['user']['rol'];
       }
     }
 
+    // **NUEVO**: Guardar información del super admin
+    final bool isSuperAdmin = data['user']['isSuperAdmin'] == true;
+
     print(
-      '🔑 Iniciando sesión - Rol recibido: ${data['rol']} (${data['rol'].runtimeType})',
+      '🔑 Iniciando sesión - Rol recibido: ${data['user']['rol']} (${data['user']['rol'].runtimeType})',
     );
     print('🔑 Rol procesado y guardado: $userRol');
+    print('🔑 Es Super Admin: $isSuperAdmin');
 
     await prefs.setInt('user_rol', userRol);
-    await prefs.setString('user_name', data['nombre'] ?? 'Usuario');
-    await prefs.setString('user_cedula', data['cedula'] ?? '');
+    await prefs.setInt('user_role', userRol);
+    await prefs.setString('user_name', data['user']['nombre'] ?? 'Usuario');
+    await prefs.setString('user_cedula', data['user']['cedula'] ?? '');
+
+    // **NUEVO**: Guardar flag de super admin
+    await prefs.setBool('is_super_admin', isSuperAdmin);
 
     // Guardar el ID del usuario para poder identificarlo en la pantalla de administración
-    if (data['id'] != null) {
-      final userId = int.parse(data['id'].toString());
+    if (data['user']['id'] != null) {
+      final userId = int.parse(data['user']['id'].toString());
       await prefs.setInt('user_id', userId);
-      print('✅ ID de usuario guardado: ${data['id']}');
+      print('✅ ID de usuario guardado: ${data['user']['id']}');
+      print('✅ Flag super admin guardado: $isSuperAdmin');
 
       // Primero reiniciar completamente el servicio de carrito para limpiar cualquier caché anterior
       final cartService = CartService();
@@ -985,7 +994,7 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
       apellido: _apellidoController.text.trim(),
       cedula: _cedulaController.text.trim(),
       email: _emailController.text.trim(),
-      rol: 1, // Por defecto es cliente (rol 1)
+      rol: '1', // Por defecto es cliente (rol '1')
     );
 
     try {

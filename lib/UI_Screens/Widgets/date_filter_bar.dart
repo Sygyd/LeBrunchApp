@@ -279,7 +279,7 @@ class _DateFilterBarState extends State<DateFilterBar> {
       child: Card(
         elevation: 1,
         child: Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: const EdgeInsets.all(0.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -299,7 +299,7 @@ class _DateFilterBarState extends State<DateFilterBar> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildFilterChip('Todos', 'todos'),
+                    _buildFilterChip('Todos los pedidos', 'todos'),
                     const SizedBox(width: 8),
                     _buildFilterChip('Hoy', 'hoy'),
                     const SizedBox(width: 8),

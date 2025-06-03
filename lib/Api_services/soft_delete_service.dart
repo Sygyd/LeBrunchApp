@@ -228,7 +228,7 @@ class SoftDeleteService {
   String getRoleName(int rol) {
     switch (rol) {
       case 0:
-        return 'Administrador';
+        return 'Super Admin';
       case 1:
         return 'Cliente';
       case 2:

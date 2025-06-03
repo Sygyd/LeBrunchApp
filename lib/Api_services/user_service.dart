@@ -40,22 +40,19 @@ class UserService {
         // Debug log para ver los datos recibidos
         print('🔍 Datos recibidos del servidor: $data');
 
-        // Asegurar que el rol sea un entero en caso de que venga como string
+        // Asegurar que el rol mantenga su formato original como string
         final result = List<Map<String, dynamic>>.from(
           data.map((user) {
-            // Convertir el rol a entero si viene como string
+            // MANTENER el rol como string para preservar "00" vs "0"
             var originalRol = user['rol'];
-            if (user['rol'] is String) {
-              try {
-                user['rol'] = int.parse(user['rol']);
-              } catch (e) {
-                // Si no se puede convertir, asignar un valor predeterminado
-                print('Error al convertir rol: ${user['rol']}');
-                user['rol'] = _getRolFromString(user['rol'].toString());
-              }
+
+            // Asegurar que el rol sea string
+            if (user['rol'] is! String) {
+              user['rol'] = user['rol'].toString();
             }
+
             print(
-              '🧩 Usuario: ${user['nombre']} ${user['apellido']}, rol original: $originalRol, rol convertido: ${user['rol']}',
+              '🧩 Usuario: ${user['nombre']} ${user['apellido']}, rol: "${user['rol']}" (mantenido como string)',
             );
             return user;
           }),
@@ -350,21 +347,43 @@ class UserService {
   ) async {
     try {
       final baseUrl = await _getApiBaseUrl();
+
+      // Obtener el token de autenticación desde SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('auth_token');
+
+      print('🔑 Verificando token de autenticación para actualización...');
+      print(
+        '🔑 Token encontrado: ${token != null ? "Sí (${token.length > 20 ? token.substring(0, 20) + '...' : token})" : "No"}',
+      );
+
+      if (token == null) {
+        // Intentar obtener información adicional para debug
+        final allKeys = prefs.getKeys();
+        print('🔍 Claves disponibles en SharedPreferences: $allKeys');
+        throw Exception('No hay token de autenticación disponible');
+      }
+
       final response = await http.put(
         Uri.parse('$baseUrl/users/$userId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // Incluir el token en la solicitud
+        },
         body: json.encode(userData),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         print(
-          '✅ Usuario actualizado con éxito: ${data['user']['nombre']} ${data['user']['apellido']}',
+          '✅ Usuario actualizado con éxito: ${data['success'] ? 'Éxito' : 'Respuesta inesperada'}',
         );
-        return data['user'];
+        return {'success': true, 'message': 'Usuario actualizado exitosamente'};
       } else {
         final error = json.decode(response.body);
-        throw Exception(error['message'] ?? 'Error al actualizar usuario');
+        throw Exception(
+          error['message'] ?? error['error'] ?? 'Error al actualizar usuario',
+        );
       }
     } catch (e) {
       print('❌ Error al actualizar usuario: $e');

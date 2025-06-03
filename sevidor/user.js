@@ -10,7 +10,7 @@ const createUser = async (nombre, apellido, cedula, email, contrasena, rol = "1"
     let rolToSave = rol;
     
     // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
-    if (!["0", "1", "2", "3"].includes(rol.toString())) {
+    if (!["00", "0", "1", "2", "3"].includes(rol.toString())) {
       console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
       rolToSave = "1";
     }

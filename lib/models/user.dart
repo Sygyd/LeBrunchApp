@@ -4,7 +4,8 @@ class User {
   final String apellido;
   final String cedula;
   final String email;
-  final int rol;
+  final String rol; // Cambio a String para manejar "00" y "0"
+  final bool? isSuperAdmin; // Nueva propiedad para identificar super admin
 
   User({
     required this.id,
@@ -13,28 +14,30 @@ class User {
     required this.cedula,
     required this.email,
     required this.rol,
+    this.isSuperAdmin,
   });
 
   // Constructor para crear un usuario desde un mapa (JSON)
   factory User.fromJson(Map<String, dynamic> json) {
-    // Convertir el rol a entero si viene como string
-    int rolValue;
+    // Convertir el rol a string para manejar "00" y "0"
+    String rolValue;
     final rolOriginal = json['rol'];
     print('🔄 Convirtiendo rol: $rolOriginal (${rolOriginal.runtimeType})');
 
     if (json['rol'] is String) {
-      try {
-        rolValue = int.parse(json['rol']);
-        print('  ✓ Convertido de string a int: $rolValue');
-      } catch (e) {
-        // Si no se puede convertir, asignar un valor predeterminado según el string
-        rolValue = _getRolFromString(json['rol']);
-        print('  ✓ Mapeado de string a int: $rolValue');
-      }
+      rolValue = json['rol'].toString();
+      print('  ✓ Usando rol como string: "$rolValue"');
+    } else if (json['rol'] is int) {
+      rolValue = json['rol'].toString();
+      print('  ✓ Convertido de int a string: "$rolValue"');
     } else {
-      rolValue = json['rol'] ?? 1;
-      print('  ✓ Usando valor existente: $rolValue');
+      rolValue = '1'; // Valor predeterminado
+      print('  ✓ Usando valor predeterminado: "$rolValue"');
     }
+
+    // Verificar si es super admin (rol "00" o flag del backend)
+    final bool isSuperAdminUser =
+        json['isSuperAdmin'] == true || rolValue == '00' || json['id'] == 10;
 
     final user = User(
       id: json['id'] ?? 0,
@@ -43,10 +46,11 @@ class User {
       cedula: json['cedula'] ?? '',
       email: json['email'] ?? '',
       rol: rolValue,
+      isSuperAdmin: isSuperAdminUser,
     );
 
     print(
-      '👤 Usuario creado: ${user.nombreCompleto}, rol: ${user.rol} (${user.rolNombre})',
+      '👤 Usuario creado: ${user.nombreCompleto}, rol: "${user.rol}" (${user.rolNombre})${isSuperAdminUser ? ' - SUPER ADMIN' : ''}',
     );
     return user;
   }
@@ -90,57 +94,82 @@ class User {
       'cedula': cedula,
       'email': email,
       'rol': rol,
+      'isSuperAdmin': isSuperAdmin,
     };
   }
 
   // Obtener el nombre completo del usuario
   String get nombreCompleto => '$nombre $apellido';
 
-  // Obtener el nombre del rol del usuario
+  // Métodos de conveniencia para verificar roles
+  bool get isAdmin => rol == '0' || isSuperAdminValue;
+  bool get isClient => rol == '1';
+  bool get isCook => rol == '2';
+  bool get isBarista => rol == '3';
+
+  // Verificar si es super admin (usar tanto la propiedad como el rol)
+  bool get isSuperAdminValue => isSuperAdmin == true || rol == '00';
+
+  // Obtener nombre del rol
   String get rolNombre {
+    if (isSuperAdminValue) {
+      return 'Super Administrador';
+    }
     switch (rol) {
-      case 0:
+      case '0':
         return 'Administrador';
-      case 1:
+      case '1':
         return 'Cliente';
-      case 2:
+      case '2':
         return 'Cocinero';
-      case 3:
+      case '3':
         return 'Barista';
       default:
-        return 'Desconocido';
+        return 'Usuario';
     }
   }
 
-  // Obtener el color asociado al rol (para mostrar en la UI)
+  // Obtener color del rol
   int get rolColor {
+    if (isSuperAdminValue) {
+      return 0xFFD50000; // Rojo intenso para Super Admin
+    }
     switch (rol) {
-      case 0:
-        return 0xFF9C27B0; // Morado para administradores
-      case 1:
-        return 0xFF2196F3; // Azul para clientes
-      case 2:
-        return 0xFFE57373; // Rojo para cocineros
-      case 3:
-        return 0xFF4DD0E1; // Turquesa para baristas
+      case '0':
+        return 0xFF9C27B0; // Morado para Admin
+      case '1':
+        return 0xFF2196F3; // Azul para Cliente
+      case '2':
+        return 0xFFE57373; // Rojo claro para Cocinero
+      case '3':
+        return 0xFF4DD0E1; // Cyan para Barista
       default:
-        return 0xFF9E9E9E; // Gris para rol desconocido
+        return 0xFF757575; // Gris por defecto
     }
   }
 
-  // Obtener el icono asociado al rol (para mostrar en la UI)
-  String get rolIcono {
+  // Obtener icono del rol
+  String get rolIcon {
+    if (isSuperAdminValue) {
+      return 'shield'; // Escudo para Super Admin
+    }
     switch (rol) {
-      case 0:
-        return 'admin_panel_settings'; // Admin - Consistente con FAB
-      case 1:
-        return 'person'; // Cliente
-      case 2:
-        return 'restaurant'; // Cocinero - Consistente con FAB
-      case 3:
-        return 'coffee'; // Barista - Consistente con FAB
+      case '0':
+        return 'admin_panel_settings';
+      case '1':
+        return 'person';
+      case '2':
+        return 'restaurant';
+      case '3':
+        return 'coffee';
       default:
         return 'help';
     }
   }
+
+  // Métodos de conveniencia para verificar permisos
+  bool get canDeleteUsers => isSuperAdminValue || rol == '0';
+  bool get canDeleteAdmins => isSuperAdminValue;
+  bool get canModifyRoles => isSuperAdminValue;
+  bool get isProtectedFromDeletion => isSuperAdminValue;
 }

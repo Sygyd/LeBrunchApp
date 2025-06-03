@@ -6,6 +6,7 @@ import 'Api_services/gemini_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'UI_Screens/Widgets/routes.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'services/notification_service.dart';
 
 // ScaffoldMessengerState global para mostrar SnackBars desde cualquier parte
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
@@ -17,6 +18,9 @@ Future<void> main() async {
 
   // Cargar variables de entorno
   await dotenv.load(fileName: ".env");
+
+  // Inicializar el servicio de notificaciones
+  await NotificationService.initialize();
 
   // Inicializar el servicio de Gemini (precarga)
   final geminiService = GeminiService();

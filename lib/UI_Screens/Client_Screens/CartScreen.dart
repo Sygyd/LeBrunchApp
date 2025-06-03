@@ -4,6 +4,7 @@ import '../../Api_services/gemini_service.dart';
 import '../../models/cart_item.dart';
 import '../Widgets/cart_item_card.dart';
 import '../Widgets/custom_modal.dart';
+import '../Widgets/background_scaffold.dart';
 import '../../Api_services/pedidos/create_order_service.dart';
 import 'package:le_brunch_app/Api_services/pedidos/popular_dishes_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -615,7 +616,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       }
     }
 
-    return Scaffold(
+    return BackgroundScaffold(
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())

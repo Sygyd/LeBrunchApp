@@ -5,6 +5,10 @@ const pool = require('./db');  // Conexión a PostgreSQL desde db.js
 const userRoutes = require("./login_register");
 const menuRoutes = require("./menu");
 const pedidosRoutes = require("./pedidos");
+// const authRoutes = require("./user"); // Comentado: este archivo no exporta un router
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 // Configuración de zona horaria Venezuela (GMT-4)
 process.env.TZ = 'America/Caracas';
@@ -17,8 +21,6 @@ const port = 3000;
 
 // Añadir inicialización de GoogleGenerativeAI con rotación de claves
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const multer = require("multer");
-const fs = require("fs");
 
 // Sistema de rotación de claves API de Gemini
 class GeminiKeyManager {
@@ -1069,6 +1071,81 @@ app.get('/pedidos', async (req, res) => {
   }
 });
 
+// Endpoint temporal de debug para verificar categorías en la base de datos
+app.get('/debug/categorias', async (req, res) => {
+  try {
+    console.log('🔍 Solicitud de debug de categorías');
+    
+    const result = await pool.query(`
+      SELECT DISTINCT categoria, tipo, COUNT(*) as count
+      FROM menu 
+      WHERE isDelete = FALSE 
+      GROUP BY categoria, tipo 
+      ORDER BY tipo, categoria
+    `);
+    
+    console.log('🔍 Categorías encontradas en la base de datos:');
+    result.rows.forEach(row => {
+      console.log(`   ${row.tipo}: "${row.categoria}" (${row.count} platos)`);
+    });
+    
+    res.json({
+      categorias: result.rows,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener categorías de debug:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para corregir los tipos null en la base de datos
+app.post('/debug/fix-tipos', async (req, res) => {
+  try {
+    console.log('🔧 Iniciando corrección de tipos null en la base de datos');
+    
+    // Actualizar comidas que tienen tipo null
+    const updateComidas = await pool.query(`
+      UPDATE menu 
+      SET tipo = 'comida' 
+      WHERE LOWER(categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes') 
+        AND tipo IS NULL
+    `);
+    
+    // Actualizar bebidas que tienen tipo null
+    const updateBebidas = await pool.query(`
+      UPDATE menu 
+      SET tipo = 'bebida' 
+      WHERE categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos') 
+        AND tipo IS NULL
+    `);
+    
+    console.log(`✅ Corregidos ${updateComidas.rowCount} platos de comida`);
+    console.log(`✅ Corregidos ${updateBebidas.rowCount} platos de bebida`);
+    
+    // Verificar el resultado
+    const verificacion = await pool.query(`
+      SELECT DISTINCT categoria, tipo, COUNT(*) as count
+      FROM menu 
+      WHERE isDelete = FALSE 
+      GROUP BY categoria, tipo 
+      ORDER BY tipo, categoria
+    `);
+    
+    res.json({
+      success: true,
+      message: `Corrección completada: ${updateComidas.rowCount} comidas + ${updateBebidas.rowCount} bebidas`,
+      comidasCorregidas: updateComidas.rowCount,
+      bebidasCorregidas: updateBebidas.rowCount,
+      categorias_actualizadas: verificacion.rows,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error al corregir tipos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Endpoint de métricas administrativas (sin cambios)
 app.get('/admin/metrics', async (req, res) => {
   try {
@@ -1694,30 +1771,9 @@ app.get('/pedidos/tiempo/:id', async (req, res) => {
   }
 });
 
-// Endpoint /users/:id DELETE (sin cambios)
-app.delete("/users/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log(`🗑️ Solicitud para eliminar usuario con ID: ${id}`);
-    await pool.query('BEGIN');
-    const deleteUserResult = await pool.query('DELETE FROM usuario WHERE idpersona = $1 RETURNING idpersona', [id]);
-    if (deleteUserResult.rows.length === 0) {
-      await pool.query('ROLLBACK');
-      return res.status(404).json({ success: false, message: "Usuario no encontrado" });
-    }
-    const deletePersonResult = await pool.query('DELETE FROM personas WHERE idpersonas = $1 RETURNING nombre, apellido', [id]);
-    await pool.query('COMMIT');
-    console.log(`✅ Usuario eliminado con éxito: ${deletePersonResult.rows[0]?.nombre} ${deletePersonResult.rows[0]?.apellido}`);
-    return res.status(200).json({
-      success: true, message: "Usuario eliminado con éxito",
-      deletedUser: { id: id, nombre: deletePersonResult.rows[0]?.nombre, apellido: deletePersonResult.rows[0]?.apellido }
-    });
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    console.error("❌ Error al eliminar usuario:", error);
-    return res.status(500).json({ success: false, message: "Error al eliminar el usuario", error: error.message });
-  }
-});
+// Endpoint /users/:id DELETE (ELIMINADO - Usar el del login_register.js)
+// Este endpoint estaba causando conflicto y haciendo hard delete
+// El endpoint correcto con soft delete está en login_register.js
 
 // Endpoint /db-status (sin cambios)
 app.get('/db-status', async (req, res) => {
@@ -1768,10 +1824,98 @@ app.post('/pedidos-direct', async (req, res) => {
   }
 });
 
+// Endpoint temporal para corregir rol del Super Admin
+app.post('/admin/fix-super-admin-role', async (req, res) => {
+  try {
+    console.log('🔧 Solicitud para corregir rol del Super Admin');
+    
+    // Buscar usuario luis luis
+    const findResult = await pool.query(`
+      SELECT p.nombre, p.apellido, u.rol, p.email, p.idpersonas
+      FROM usuario u 
+      JOIN personas p ON u.idpersona = p.idpersonas 
+      WHERE LOWER(p.nombre) LIKE '%luis%' AND LOWER(p.apellido) LIKE '%luis%'
+    `);
+    
+    if (findResult.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'No se encontró el usuario luis luis',
+        success: false 
+      });
+    }
+    
+    const luisUser = findResult.rows[0];
+    console.log(`📋 Usuario encontrado: ${luisUser.nombre} ${luisUser.apellido}, rol actual: "${luisUser.rol}"`);
+    
+    if (luisUser.rol === '00') {
+      return res.status(200).json({ 
+        message: 'El usuario ya tiene rol de Super Admin (00)',
+        success: true,
+        rolActual: luisUser.rol
+      });
+    }
+    
+    // Actualizar el rol a "00"
+    const updateResult = await pool.query(`
+      UPDATE usuario 
+      SET rol = '00' 
+      WHERE idpersona = $1
+    `, [luisUser.idpersonas]);
+    
+    console.log(`✅ Filas actualizadas: ${updateResult.rowCount}`);
+    
+    // Verificar el cambio
+    const verificationResult = await pool.query(`
+      SELECT p.nombre, p.apellido, u.rol, p.email
+      FROM usuario u 
+      JOIN personas p ON u.idpersona = p.idpersonas 
+      WHERE p.idpersonas = $1
+    `, [luisUser.idpersonas]);
+    
+    const updatedUser = verificationResult.rows[0];
+    
+    // Mostrar estado de todos los admins
+    const allAdminsResult = await pool.query(`
+      SELECT p.nombre, p.apellido, u.rol, p.email
+      FROM usuario u 
+      JOIN personas p ON u.idpersona = p.idpersonas 
+      WHERE u.rol IN ('00', '0')
+      ORDER BY u.rol, p.nombre
+    `);
+    
+    console.log('✅ Corrección completada');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Rol del Super Admin corregido exitosamente',
+      usuarioActualizado: {
+        nombre: updatedUser.nombre,
+        apellido: updatedUser.apellido,
+        rolAnterior: luisUser.rol,
+        rolNuevo: updatedUser.rol
+      },
+      todosLosAdmins: allAdminsResult.rows.map(user => ({
+        nombre: `${user.nombre} ${user.apellido}`,
+        rol: user.rol,
+        tipo: user.rol === '00' ? 'Super Admin' : 'Admin'
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al corregir rol del Super Admin:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
+});
+
 // Registrar los routers al final para evitar conflictos
 app.use(userRoutes);
 app.use(menuRoutes);
 app.use(pedidosRoutes);
+// app.use(authRoutes); // Comentado: user.js solo exporta funciones, no un router
 
 // Iniciar el servidor
 app.listen(port, ip, () => {

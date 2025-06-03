@@ -211,19 +211,30 @@ class CustomModal {
               children: [
                 Icon(Icons.help_outline, color: theme.colorScheme.primary),
                 const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontFamily: 'MADE TOMMY',
-                    fontWeight: FontWeight.bold,
+                Flexible(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontFamily: 'MADE TOMMY',
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.visible,
                   ),
                 ),
               ],
             ),
-            content: Text(
-              message,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontFamily: 'MADE TOMMY',
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'MADE TOMMY',
+                    ),
+                    textAlign: TextAlign.left,
+                  ),
+                ],
               ),
             ),
             actions: [

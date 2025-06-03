@@ -31,8 +31,6 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
   String _userName = '';
   String _userEmail = '';
   Map<String, dynamic> _userInfo = {};
-  int _totalPedidosCompletados = 0;
-  int _totalPedidosCancelados = 0;
 
   @override
   void initState() {
@@ -72,8 +70,6 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
         'especialidad': widget.roleEspecialidad,
       };
 
-      int totalCompletados = 0;
-      int totalCancelados = 0;
       String updatedEmail = userEmail;
 
       // Verificar si el widget sigue montado antes de continuar
@@ -120,92 +116,12 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
         }
       }
 
-      // Verificar si el widget sigue montado antes de continuar
-      if (!mounted) return;
-
-      // Cargar estadísticas - pedidos completados y cancelados
-      try {
-        final url = Uri.parse('http://$serverIp:$serverPort/db/query');
-
-        // Obtener pedidos completados
-        final responseCompletados = await http
-            .post(
-              url,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'query': '''
-              SELECT COUNT(*) as total 
-              FROM pedidos 
-              WHERE estado = 'completado'
-            ''',
-              }),
-            )
-            .timeout(
-              const Duration(seconds: 5),
-              onTimeout: () {
-                debugPrint('⏱️ Timeout al obtener pedidos completados');
-                throw Exception('Timeout en la conexión');
-              },
-            );
-
-        // Verificar si el widget sigue montado
-        if (!mounted) return;
-
-        if (responseCompletados.statusCode == 200) {
-          final data = json.decode(responseCompletados.body);
-          if (data['result'] != null && data['result'].isNotEmpty) {
-            totalCompletados =
-                int.tryParse(data['result'][0]['total'].toString()) ?? 0;
-          }
-        }
-
-        // Verificar si el widget sigue montado antes de continuar
-        if (!mounted) return;
-
-        // Obtener pedidos cancelados
-        final responseCancelados = await http
-            .post(
-              url,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'query': '''
-              SELECT COUNT(*) as total 
-              FROM pedidos 
-              WHERE estado = 'cancelado'
-            ''',
-              }),
-            )
-            .timeout(
-              const Duration(seconds: 5),
-              onTimeout: () {
-                debugPrint('⏱️ Timeout al obtener pedidos cancelados');
-                throw Exception('Timeout en la conexión');
-              },
-            );
-
-        // Verificar si el widget sigue montado
-        if (!mounted) return;
-
-        if (responseCancelados.statusCode == 200) {
-          final data = json.decode(responseCancelados.body);
-          if (data['result'] != null && data['result'].isNotEmpty) {
-            totalCancelados =
-                int.tryParse(data['result'][0]['total'].toString()) ?? 0;
-          }
-        }
-      } catch (e) {
-        debugPrint('Error al cargar estadísticas: $e');
-        // Continuamos con los valores por defecto (0)
-      }
-
       // Verificación final de mounted antes de actualizar el estado
       if (mounted) {
         setState(() {
           _userInfo = userInfo;
           _userName = userName;
           _userEmail = updatedEmail;
-          _totalPedidosCompletados = totalCompletados;
-          _totalPedidosCancelados = totalCancelados;
           _isLoading = false;
         });
       }
@@ -287,12 +203,6 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
                 _userInfo['especialidad'] ?? '',
               ),
             ]),
-
-            const SizedBox(height: 20),
-
-            // Estadísticas
-            _buildSectionHeader(context, 'Estadísticas'),
-            _buildStatsCard(context),
           ],
         ),
       ),
@@ -357,85 +267,6 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
           Expanded(child: Text(value, style: theme.textTheme.bodyLarge)),
         ],
       ),
-    );
-  }
-
-  Widget _buildStatsCard(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    context,
-                    'Pedidos Completados',
-                    _totalPedidosCompletados.toString(),
-                    Icons.check_circle,
-                    Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildStatItem(
-                    context,
-                    'Pedidos Cancelados',
-                    _totalPedidosCancelados.toString(),
-                    Icons.cancel,
-                    Colors.red,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatItem(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                label,
-                style: theme.textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            value,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

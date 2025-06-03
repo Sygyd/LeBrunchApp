@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/order_detail_card.dart';
 import '../Widgets/custom_modal.dart';
+import '../Widgets/background_scaffold.dart';
 
 /// Pantalla de Órdenes Activas compartida que puede ser usada tanto por Cocinero como por Barista
 /// Personalizable con parámetros según el rol
@@ -76,7 +77,7 @@ class _SharedActiveOrdersScreenState extends State<SharedActiveOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return BackgroundScaffold(
       appBar: null,
       body:
           widget.isLoading

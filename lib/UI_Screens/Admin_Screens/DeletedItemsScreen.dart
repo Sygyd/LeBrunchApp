@@ -688,7 +688,9 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                         ),
                       ),
                       Text(
-                        _softDeleteService.getRoleName(user['rol'] ?? 1),
+                        _softDeleteService.getRoleName(
+                          int.tryParse(user['rol']?.toString() ?? '1') ?? 1,
+                        ),
                         style: TextStyle(
                           fontFamily: 'Lighthouse',
                           fontSize: 14,

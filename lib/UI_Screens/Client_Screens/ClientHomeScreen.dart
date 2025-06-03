@@ -112,32 +112,6 @@ class ClientHomeScreen extends StatelessWidget {
                   },
                 ),
 
-                // Sección de promociones
-                Text(
-                  'Promociones del día',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontFamily: 'MADE TOMMY',
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Tarjeta de promoción
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: _buildPromoImage(theme),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
                 // Resto del contenido...
               ],
             ),
@@ -227,62 +201,6 @@ class ClientHomeScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  // Método para construir la imagen de promoción con manejo de errores
-  Widget _buildPromoImage(ThemeData theme) {
-    return Image.asset(
-      'assets/images/promo.jpg',
-      fit: BoxFit.cover,
-      height: 180,
-      width: double.infinity,
-      errorBuilder: (context, error, stackTrace) {
-        print('Error al cargar imagen de promoción: $error');
-        // Mostrar un contenedor decorativo en caso de error
-        return Container(
-          height: 180,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                theme.colorScheme.primary.withOpacity(0.7),
-                theme.colorScheme.primary,
-              ],
-            ),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.local_offer,
-                  size: 50,
-                  color: theme.colorScheme.onPrimary,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '¡Ofertas Especiales!',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'MADE TOMMY',
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Consulta nuestras promociones diarias',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onPrimary.withOpacity(0.9),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

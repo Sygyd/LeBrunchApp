@@ -1,0 +1,286 @@
+Date : 2025-06-02 14:03:06
+Directory : c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app
+Total : 182 files,  46355 codes, 2848 comments, 5619 blanks, all 54822 lines
+
+Languages
++-----------------+------------+------------+------------+------------+------------+
+| language        | files      | code       | comment    | blank      | total      |
++-----------------+------------+------------+------------+------------+------------+
+| Dart            |         81 |     31,331 |      2,077 |      3,299 |     36,707 |
+| Markdown        |         30 |      4,536 |          0 |      1,248 |      5,784 |
+| JSON            |          8 |      4,376 |          0 |          6 |      4,382 |
+| JavaScript      |          7 |      3,899 |        323 |        613 |      4,835 |
+| C++             |         16 |        571 |        131 |        189 |        891 |
+| XML             |         14 |        524 |         43 |         12 |        579 |
+| CMake           |          8 |        470 |          0 |         92 |        562 |
+| MS SQL          |          4 |        405 |        245 |        110 |        760 |
+| Swift           |          6 |         75 |          7 |         21 |        103 |
+| YAML            |          2 |         72 |          1 |          7 |         80 |
+| Gradle          |          3 |         69 |          6 |         15 |         90 |
+| HTML            |          1 |         19 |         15 |          5 |         39 |
+| Java Properties |          2 |          8 |          0 |          2 |         10 |
++-----------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                             | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                |        182 |     46,355 |      2,848 |      5,619 |     54,822 |
+| . (Files)                                                                                                        |         28 |      5,732 |          1 |        995 |      6,728 |
+| android                                                                                                          |         16 |        197 |         47 |         26 |        270 |
+| android (Files)                                                                                                  |          3 |         40 |          0 |          9 |         49 |
+| android\app                                                                                                      |         12 |        152 |         47 |         16 |        215 |
+| android\app (Files)                                                                                              |          1 |         32 |          6 |          7 |         45 |
+| android\app\src                                                                                                  |         11 |        120 |         41 |          9 |        170 |
+| android\app\src\debug                                                                                            |          1 |          3 |          4 |          1 |          8 |
+| android\app\src\main                                                                                             |          9 |        114 |         33 |          7 |        154 |
+| android\app\src\main (Files)                                                                                     |          1 |         43 |         13 |          2 |         58 |
+| android\app\src\main\res                                                                                         |          8 |         71 |         20 |          5 |         96 |
+| android\app\src\main\res\drawable                                                                                |          2 |         20 |          0 |          0 |         20 |
+| android\app\src\main\res\drawable-v21                                                                            |          1 |          4 |          7 |          2 |         13 |
+| android\app\src\main\res\mipmap-anydpi-v26                                                                       |          2 |         13 |          0 |          1 |         14 |
+| android\app\src\main\res\values                                                                                  |          2 |         19 |          3 |          2 |         24 |
+| android\app\src\main\res\values-night                                                                            |          1 |         15 |         10 |          0 |         25 |
+| android\app\src\profile                                                                                          |          1 |          3 |          4 |          1 |          8 |
+| android\gradle                                                                                                   |          1 |          5 |          0 |          1 |          6 |
+| android\gradle\wrapper                                                                                           |          1 |          5 |          0 |          1 |          6 |
+| docs                                                                                                             |          4 |        828 |          0 |        248 |      1,076 |
+| ios                                                                                                              |          8 |        108 |          4 |         12 |        124 |
+| ios\Runner                                                                                                       |          7 |        101 |          2 |          8 |        111 |
+| ios\Runner (Files)                                                                                               |          2 |         13 |          0 |          3 |         16 |
+| ios\RunnerTests                                                                                                  |          1 |          7 |          2 |          4 |         13 |
+| ios\Runner\Assets.xcassets                                                                                       |          3 |         27 |          0 |          3 |         30 |
+| ios\Runner\Assets.xcassets\AppIcon.appiconset                                                                    |          1 |          1 |          0 |          0 |          1 |
+| ios\Runner\Assets.xcassets\LaunchImage.imageset                                                                  |          2 |         26 |          0 |          3 |         29 |
+| ios\Runner\Base.lproj                                                                                            |          2 |         61 |          2 |          2 |         65 |
+| lib                                                                                                              |         81 |     31,331 |      2,077 |      3,299 |     36,707 |
+| lib (Files)                                                                                                      |          1 |         80 |         10 |         15 |        105 |
+| lib\Api_services                                                                                                 |         20 |      6,674 |        709 |      1,092 |      8,475 |
+| lib\Api_services (Files)                                                                                         |         10 |      4,423 |        523 |        749 |      5,695 |
+| lib\Api_services\menu                                                                                            |          4 |        223 |         15 |         30 |        268 |
+| lib\Api_services\navigation                                                                                      |          1 |         14 |          1 |          5 |         20 |
+| lib\Api_services\pedidos                                                                                         |          4 |      1,921 |        168 |        297 |      2,386 |
+| lib\Api_services\usuarios                                                                                        |          1 |         93 |          2 |         11 |        106 |
+| lib\UI_Screens                                                                                                   |         53 |     23,741 |      1,291 |      2,090 |     27,122 |
+| lib\UI_Screens\Admin_Screens                                                                                     |         12 |      8,937 |        381 |        649 |      9,967 |
+| lib\UI_Screens\Admin_Screens (Files)                                                                             |          9 |      6,284 |        233 |        462 |      6,979 |
+| lib\UI_Screens\Admin_Screens\Users                                                                               |          3 |      2,653 |        148 |        187 |      2,988 |
+| lib\UI_Screens\Auth_Screens                                                                                      |          1 |      1,146 |         52 |         96 |      1,294 |
+| lib\UI_Screens\Barista_Screens                                                                                   |          4 |        126 |          0 |         22 |        148 |
+| lib\UI_Screens\Client_Screens                                                                                    |          4 |      1,489 |        153 |        203 |      1,845 |
+| lib\UI_Screens\Cook_Screens                                                                                      |          4 |         99 |          0 |         19 |        118 |
+| lib\UI_Screens\Shared                                                                                            |          6 |      3,626 |        205 |        351 |      4,182 |
+| lib\UI_Screens\Widgets                                                                                           |         22 |      8,318 |        500 |        750 |      9,568 |
+| lib\models                                                                                                       |          3 |        369 |         28 |         41 |        438 |
+| lib\services                                                                                                     |          3 |        212 |         37 |         54 |        303 |
+| lib\theme                                                                                                        |          1 |        255 |          2 |          7 |        264 |
+| linux                                                                                                            |          9 |        345 |         37 |         92 |        474 |
+| linux (Files)                                                                                                    |          1 |        104 |          0 |         25 |        129 |
+| linux\flutter                                                                                                    |          4 |        125 |          9 |         27 |        161 |
+| linux\runner                                                                                                     |          4 |        116 |         28 |         40 |        184 |
+| macos                                                                                                            |          6 |        467 |          5 |         17 |        489 |
+| macos\Flutter                                                                                                    |          1 |         26 |          3 |          4 |         33 |
+| macos\Runner                                                                                                     |          4 |        434 |          0 |          9 |        443 |
+| macos\Runner (Files)                                                                                             |          2 |         23 |          0 |          7 |         30 |
+| macos\RunnerTests                                                                                                |          1 |          7 |          2 |          4 |         13 |
+| macos\Runner\Assets.xcassets                                                                                     |          1 |         68 |          0 |          1 |         69 |
+| macos\Runner\Assets.xcassets\AppIcon.appiconset                                                                  |          1 |         68 |          0 |          1 |         69 |
+| macos\Runner\Base.lproj                                                                                          |          1 |        343 |          0 |          1 |        344 |
+| sevidor                                                                                                          |         14 |      6,598 |        568 |        736 |      7,902 |
+| sevidor (Files)                                                                                                  |          9 |      6,152 |        323 |        614 |      7,089 |
+| sevidor\migrations                                                                                               |          5 |        446 |        245 |        122 |        813 |
+| web                                                                                                              |          2 |         54 |         15 |          6 |         75 |
+| windows                                                                                                          |         14 |        695 |         94 |        188 |        977 |
+| windows (Files)                                                                                                  |          1 |         89 |          0 |         20 |        109 |
+| windows\flutter                                                                                                  |          4 |        144 |          9 |         29 |        182 |
+| windows\runner                                                                                                   |          9 |        462 |         85 |        139 |        686 |
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------------------------------------------+-----------------+------------+------------+------------+------------+
+| filename                                                                                                         | language        | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------+-----------------+------------+------------+------------+------------+
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ANDROID_SDK_FIX.md                                            | Markdown        |        125 |          0 |         45 |        170 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_CHAT_BUBBLE_IMPLEMENTATION.md                           | Markdown        |        120 |          0 |         36 |        156 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_ERROR_FIXES.md                                          | Markdown        |        188 |          0 |         46 |        234 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_FEATURE_README.md                                       | Markdown        |         86 |          0 |         32 |        118 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_SERVICE_SINGLETON_FIX.md                                | Markdown        |        179 |          0 |         48 |        227 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_SUBSTRING_ERROR_FIX.md                                  | Markdown        |         79 |          0 |         31 |        110 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\AUDIO_VOLUME_IMPROVEMENTS.md                                  | Markdown        |        124 |          0 |         37 |        161 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\CORRECCION_FILTROS_USUARIOS.md                                | Markdown        |        280 |          0 |         62 |        342 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\GEMINI_AUDIO_PROCESSING.md                                    | Markdown        |        167 |          0 |         44 |        211 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\MEJORAS_SCROLL_MENU.md                                        | Markdown        |         87 |          0 |         22 |        109 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\MEJORAS_SCROLL_USUARIOS.md                                    | Markdown        |         91 |          0 |         22 |        113 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\OPTIMIZACION_SISTEMA_PLATOS_POPULARES.md                      | Markdown        |        159 |          0 |         32 |        191 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_CORRECCION_AUDIO_SINGLETON.md                         | Markdown        |         74 |          0 |         24 |         98 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_FINAL_AUDIO_FIXES.md                                  | Markdown        |        165 |          0 |         42 |        207 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_FINAL_CORRECCION_JSON_MALFORMADO.md                   | Markdown        |        112 |          0 |         39 |        151 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_FINAL_MEJORAS_AUDIO_COMPLETO.md                       | Markdown        |        192 |          0 |         48 |        240 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_MEJORAS_AUDIO.md                                      | Markdown        |        321 |          0 |         87 |        408 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_OPTIMIZACION_FLUJO_AUDIO.md                           | Markdown        |        175 |          0 |         54 |        229 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\RESUMEN_SISTEMA_PERMISOS_USUARIOS.md                          | Markdown        |        126 |          0 |         45 |        171 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\SPEECH_TO_TEXT_CRITICAL_ERROR_FIX.md                          | Markdown        |        150 |          0 |         34 |        184 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\SPEECH_TO_TEXT_CRITICAL_FIX.md                                | Markdown        |        151 |          0 |         37 |        188 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\SPEECH_TO_TEXT_FINAL_IMPROVEMENTS.md                          | Markdown        |        132 |          0 |         35 |        167 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\SPEECH_TO_TEXT_IMPROVEMENTS.md                                | Markdown        |        225 |          0 |         50 |        275 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\SPEECH_TO_TEXT_TIMEOUT_FIX.md                                 | Markdown        |        156 |          0 |         34 |        190 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\analysis_options.yaml                                         | YAML            |          1 |          0 |          1 |          2 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\build.gradle                                      | Gradle          |         32 |          6 |          7 |         45 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\debug\AndroidManifest.xml                     | XML             |          3 |          4 |          1 |          8 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\AndroidManifest.xml                      | XML             |         43 |         13 |          2 |         58 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\drawable-v21\launch_background.xml   | XML             |          4 |          7 |          2 |         13 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\drawable\ic_launcher_foreground.xml  | XML             |         11 |          0 |          0 |         11 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\drawable\launch_background.xml       | XML             |          9 |          0 |          0 |          9 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\mipmap-anydpi-v26\ic_foreground.xml  | XML             |          4 |          0 |          0 |          4 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\mipmap-anydpi-v26\ic_launcher.xml    | XML             |          9 |          0 |          1 |         10 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\values-night\styles.xml              | XML             |         15 |         10 |          0 |         25 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\values\colors.xml                    | XML             |          7 |          3 |          2 |         12 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\main\res\values\styles.xml                    | XML             |         12 |          0 |          0 |         12 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\app\src\profile\AndroidManifest.xml                   | XML             |          3 |          4 |          1 |          8 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\build.gradle                                          | Gradle          |         16 |          0 |          3 |         19 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\gradle.properties                                     | Java Properties |          3 |          0 |          1 |          4 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\gradle\wrapper\gradle-wrapper.properties              | Java Properties |          5 |          0 |          1 |          6 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\android\settings.gradle                                       | Gradle          |         21 |          0 |          5 |         26 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\docs\DATABASE_STRUCTURE.md                                    | Markdown        |        225 |          0 |         62 |        287 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\docs\PRICE_OPTIMIZATION_SUMMARY.md                            | Markdown        |        203 |          0 |         60 |        263 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\docs\README.md                                                | Markdown        |        243 |          0 |         72 |        315 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\docs\SOFT_DELETE_IMPLEMENTATION_SUMMARY.md                    | Markdown        |        157 |          0 |         54 |        211 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\RunnerTests\RunnerTests.swift                             | Swift           |          7 |          2 |          4 |         13 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\AppDelegate.swift                                  | Swift           |         12 |          0 |          2 |         14 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Assets.xcassets\AppIcon.appiconset\Contents.json   | JSON            |          1 |          0 |          0 |          1 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Assets.xcassets\LaunchImage.imageset\Contents.json | JSON            |         23 |          0 |          1 |         24 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Assets.xcassets\LaunchImage.imageset\README.md     | Markdown        |          3 |          0 |          2 |          5 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Base.lproj\LaunchScreen.storyboard                 | XML             |         36 |          1 |          1 |         38 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Base.lproj\Main.storyboard                         | XML             |         25 |          1 |          1 |         27 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\ios\Runner\Runner-Bridging-Header.h                           | C++             |          1 |          0 |          1 |          2 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\admin_chat_service.dart                      | Dart            |        425 |         26 |         76 |        527 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\audio_service.dart                           | Dart            |      1,249 |        128 |        190 |      1,567 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\cart_service.dart                            | Dart            |      1,105 |        210 |        230 |      1,545 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\gemini_api_client.dart                       | Dart            |        268 |         32 |         38 |        338 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\gemini_service.dart                          | Dart            |        338 |         49 |         62 |        449 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\global_config_service.dart                   | Dart            |        309 |         16 |         36 |        361 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\mcp_service.dart                             | Dart            |         83 |          4 |         12 |         99 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\menu\add_dish_service.dart                   | Dart            |         99 |         11 |         15 |        125 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\menu\get_dishes_service.dart                 | Dart            |         30 |          2 |          3 |         35 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\menu\get_drinks_service.dart                 | Dart            |         30 |          1 |          3 |         34 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\menu\menu_service.dart                       | Dart            |         64 |          1 |          9 |         74 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\navigation\navigation_service.dart           | Dart            |         14 |          1 |          5 |         20 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\password_reset_service.dart                  | Dart            |         85 |          5 |         15 |        105 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\pedidos\create_order_service.dart            | Dart            |        178 |         22 |         27 |        227 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\pedidos\orders_service.dart                  | Dart            |      1,342 |        116 |        202 |      1,660 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\pedidos\popular_dishes_service.dart          | Dart            |        262 |         23 |         48 |        333 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\pedidos\recommendations_service.dart         | Dart            |        139 |          7 |         20 |        166 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\soft_delete_service.dart                     | Dart            |        202 |         23 |         35 |        260 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\user_service.dart                            | Dart            |        359 |         30 |         55 |        444 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\Api_services\usuarios\register_service.dart               | Dart            |         93 |          2 |         11 |        106 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\AdminChatScreen.dart             | Dart            |        624 |         30 |         53 |        707 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\AdminHomeScreen.dart             | Dart            |        347 |         15 |         27 |        389 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\AdminOrdersScreen.dart           | Dart            |        683 |          2 |         50 |        735 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\DeletedItemsScreen.dart          | Dart            |        719 |         31 |         46 |        796 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\OrderHistoryScreen.dart          | Dart            |         29 |          0 |          4 |         33 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\PopularDishesScreen.dart         | Dart            |        784 |         28 |         66 |        878 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\ReportsScreen.dart               | Dart            |      2,655 |        108 |        179 |      2,942 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\Users\AdminUsersScreen.dart      | Dart            |      1,986 |        118 |        134 |      2,238 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\Users\add_user_modal.dart        | Dart            |        609 |         29 |         47 |        685 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\Users\filter_chip.dart           | Dart            |         58 |          1 |          6 |         65 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\add_dish_modal.dart              | Dart            |        410 |         18 |         31 |        459 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Admin_Screens\menu_screen.dart                 | Dart            |         33 |          1 |          6 |         40 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Auth_Screens\auth_modals.dart                  | Dart            |      1,146 |         52 |         96 |      1,294 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Barista_Screens\BaristaActiveOrdersScreen.dart | Dart            |         77 |          0 |         12 |         89 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Barista_Screens\BaristaHomeScreen.dart         | Dart            |         17 |          0 |          4 |         21 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Barista_Screens\BaristaOrderHistoryScreen.dart | Dart            |         17 |          0 |          3 |         20 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Barista_Screens\BaristaProfileScreen.dart      | Dart            |         15 |          0 |          3 |         18 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Client_Screens\CartScreen.dart                 | Dart            |      1,261 |        139 |        181 |      1,581 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Client_Screens\ChatScreen.dart                 | Dart            |         15 |          0 |          4 |         19 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Client_Screens\ClientHomeScreen.dart           | Dart            |        183 |         12 |         12 |        207 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Client_Screens\ClientMenuScreen.dart           | Dart            |         30 |          2 |          6 |         38 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Cook_Screens\ActiveOrdersScreen.dart           | Dart            |         50 |          0 |          9 |         59 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Cook_Screens\CookHomeScreen.dart               | Dart            |         17 |          0 |          4 |         21 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Cook_Screens\CookProfileScreen.dart            | Dart            |         15 |          0 |          3 |         18 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Cook_Screens\OrderHistoryScreen.dart           | Dart            |         17 |          0 |          3 |         20 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_active_orders_screen.dart        | Dart            |        118 |          3 |         11 |        132 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_chat_screen.dart                 | Dart            |        957 |         55 |         93 |      1,105 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_home_screen.dart                 | Dart            |        394 |         22 |         41 |        457 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_menu_view.dart                   | Dart            |        641 |         51 |         62 |        754 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_order_history_screen.dart        | Dart            |      1,286 |         60 |        115 |      1,461 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Shared\shared_profile_screen.dart              | Dart            |        230 |         14 |         29 |        273 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\ThreeDotsLoading.dart                  | Dart            |         95 |          9 |         17 |        121 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\audio_message_widget.dart              | Dart            |        277 |          7 |         28 |        312 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\audio_recorder_widget.dart             | Dart            |        548 |         30 |         75 |        653 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\background_scaffold.dart               | Dart            |         47 |          0 |          4 |         51 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\cart_item_card.dart                    | Dart            |        330 |         11 |         23 |        364 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\category_carousel.dart                 | Dart            |        209 |          7 |          9 |        225 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\chat_config_modal_content.dart         | Dart            |        651 |         11 |         34 |        696 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\chat_message_bubble.dart               | Dart            |        414 |         33 |         44 |        491 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\custom_bottom_navigation_bar.dart      | Dart            |      1,499 |        134 |        146 |      1,779 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\custom_modal.dart                      | Dart            |        324 |         19 |         17 |        360 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\date_filter_bar.dart                   | Dart            |        375 |         14 |         28 |        417 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\dish_card.dart                         | Dart            |        656 |         46 |         43 |        745 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\logout_button.dart                     | Dart            |        114 |         12 |         17 |        143 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\order_detail_card.dart                 | Dart            |      1,605 |        103 |        139 |      1,847 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\recommendations_widget.dart            | Dart            |        479 |         19 |         34 |        532 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\routes.dart                            | Dart            |        144 |         13 |         23 |        180 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\search_bar.dart                        | Dart            |         41 |          0 |          5 |         46 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\splash_screen.dart                     | Dart            |         82 |          3 |         17 |        102 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\text_with_border.dart                  | Dart            |         47 |          2 |          4 |         53 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\updated_category_carousel.dart         | Dart            |         85 |          0 |          6 |         91 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\welcome.dart                           | Dart            |        243 |         25 |         32 |        300 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\UI_Screens\Widgets\welcome_button.dart                    | Dart            |         53 |          2 |          5 |         60 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\main.dart                                                 | Dart            |         80 |         10 |         15 |        105 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\models\cart_item.dart                                     | Dart            |         67 |          3 |          7 |         77 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\models\chat_message.dart                                  | Dart            |        155 |         13 |         17 |        185 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\models\user.dart                                          | Dart            |        147 |         12 |         17 |        176 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\services\cart_event_bus.dart                              | Dart            |         33 |          8 |         11 |         52 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\services\order_status_service.dart                        | Dart            |         17 |          7 |          6 |         30 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\services\user_preferences_service.dart                    | Dart            |        162 |         22 |         37 |        221 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\lib\theme\theme.dart                                          | Dart            |        255 |          2 |          7 |        264 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\CMakeLists.txt                                          | CMake           |        104 |          0 |         25 |        129 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\flutter\CMakeLists.txt                                  | CMake           |         79 |          0 |         10 |         89 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\flutter\generated_plugin_registrant.cc                  | C++             |         19 |          4 |          5 |         28 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\flutter\generated_plugin_registrant.h                   | C++             |          5 |          5 |          6 |         16 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\flutter\generated_plugins.cmake                         | CMake           |         22 |          0 |          6 |         28 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\runner\CMakeLists.txt                                   | CMake           |         21 |          0 |          6 |         27 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\runner\main.cc                                          | C++             |          5 |          0 |          2 |          7 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\runner\my_application.cc                                | C++             |         83 |         21 |         27 |        131 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\linux\runner\my_application.h                                 | C++             |          7 |          7 |          5 |         19 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\Flutter\GeneratedPluginRegistrant.swift                 | Swift           |         26 |          3 |          4 |         33 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\RunnerTests\RunnerTests.swift                           | Swift           |          7 |          2 |          4 |         13 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\Runner\AppDelegate.swift                                | Swift           |         11 |          0 |          3 |         14 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\Runner\Assets.xcassets\AppIcon.appiconset\Contents.json | JSON            |         68 |          0 |          1 |         69 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\Runner\Base.lproj\MainMenu.xib                          | XML             |        343 |          0 |          1 |        344 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\macos\Runner\MainFlutterWindow.swift                          | Swift           |         12 |          0 |          4 |         16 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\package-lock.json                                             | JSON            |      1,984 |          0 |          1 |      1,985 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\package.json                                                  | JSON            |         12 |          0 |          1 |         13 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\pubspec.yaml                                                  | YAML            |         71 |          1 |          6 |         78 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\constants.js                                          | JavaScript      |         14 |          3 |          3 |         20 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\db.js                                                 | JavaScript      |         16 |          1 |          5 |         22 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\login_register.js                                     | JavaScript      |        866 |         86 |        164 |      1,116 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\menu.js                                               | JavaScript      |        197 |         17 |         37 |        251 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\migrations\README.md                                  | Markdown        |         41 |          0 |         12 |         53 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\migrations\complete_database_schema.sql               | MS SQL          |         83 |         84 |         24 |        191 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\migrations\migration_soft_delete.sql                  | MS SQL          |         53 |         31 |         20 |        104 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\migrations\remove_price_duplication.sql               | MS SQL          |        118 |         44 |         27 |        189 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\migrations\update_existing_database.sql               | MS SQL          |        151 |         86 |         39 |        276 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\package-lock.json                                     | JSON            |      2,215 |          0 |          1 |      2,216 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\package.json                                          | JSON            |         38 |          0 |          0 |         38 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\pedidos.js                                            | JavaScript      |      1,174 |         95 |        165 |      1,434 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\servidor.js                                           | JavaScript      |      1,593 |        115 |        226 |      1,934 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\sevidor\user.js                                               | JavaScript      |         39 |          6 |         13 |         58 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\web\index.html                                                | HTML            |         19 |         15 |          5 |         39 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\web\manifest.json                                             | JSON            |         35 |          0 |          1 |         36 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\CMakeLists.txt                                        | CMake           |         89 |          0 |         20 |        109 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\flutter\CMakeLists.txt                                | CMake           |         98 |          0 |         12 |        110 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\flutter\generated_plugin_registrant.cc                | C++             |         18 |          4 |          5 |         27 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\flutter\generated_plugin_registrant.h                 | C++             |          5 |          5 |          6 |         16 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\flutter\generated_plugins.cmake                       | CMake           |         23 |          0 |          6 |         29 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\CMakeLists.txt                                 | CMake           |         34 |          0 |          7 |         41 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\flutter_window.cpp                             | C++             |         49 |          7 |         16 |         72 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\flutter_window.h                               | C++             |         20 |          5 |          9 |         34 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\main.cpp                                       | C++             |         30 |          4 |         10 |         44 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\resource.h                                     | C++             |          9 |          6 |          2 |         17 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\utils.cpp                                      | C++             |         54 |          2 |         10 |         66 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\utils.h                                        | C++             |          8 |          6 |          6 |         20 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\win32_window.cpp                               | C++             |        210 |         24 |         55 |        289 |
+| c:\dev\Proyecto\tesis\Lb_flutter_app\le_brunch_app\windows\runner\win32_window.h                                 | C++             |         48 |         31 |         24 |        103 |
+| Total                                                                                                            |                 |     46,355 |      2,848 |      5,619 |     54,822 |
++------------------------------------------------------------------------------------------------------------------+-----------------+------------+------------+------------+------------+

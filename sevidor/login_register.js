@@ -5,24 +5,179 @@ const jwt = require("jsonwebtoken");
 const pool = require("./db");
 const { createUser } = require("./user");
 
+// Constante para el ID del Super Admin - Usuario con rol '00'
+const SUPER_ADMIN_ID = 1;
+
+// Función para inicializar soft delete en tabla usuario si no existe
+async function initializeUserSoftDelete() {
+  try {
+    console.log('🔧 Verificando columnas de soft delete en tabla usuario...');
+    
+    // Verificar si las columnas existen
+    const checkColumns = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'usuario' 
+      AND column_name IN ('isdelete', 'deleted_at', 'deleted_by')
+    `);
+    
+    const existingColumns = checkColumns.rows.map(row => row.column_name);
+    console.log('📋 Columnas existentes en tabla usuario:', existingColumns);
+    
+    // Agregar columnas faltantes
+    if (!existingColumns.includes('isdelete')) {
+      await pool.query('ALTER TABLE usuario ADD COLUMN isDelete BOOLEAN DEFAULT FALSE');
+      console.log('✅ Columna isDelete agregada a tabla usuario');
+    }
+    
+    if (!existingColumns.includes('deleted_at')) {
+      await pool.query('ALTER TABLE usuario ADD COLUMN deleted_at TIMESTAMP');
+      console.log('✅ Columna deleted_at agregada a tabla usuario');
+    }
+    
+    if (!existingColumns.includes('deleted_by')) {
+      await pool.query('ALTER TABLE usuario ADD COLUMN deleted_by INTEGER REFERENCES personas(idpersonas)');
+      console.log('✅ Columna deleted_by agregada a tabla usuario');
+    }
+    
+    // Asegurar que todos los usuarios existentes tengan isDelete = FALSE
+    const updateResult = await pool.query(`
+      UPDATE usuario 
+      SET isDelete = FALSE 
+      WHERE isDelete IS NULL
+    `);
+    
+    if (updateResult.rowCount > 0) {
+      console.log(`🔄 ${updateResult.rowCount} registros de usuario actualizados con isDelete = FALSE`);
+    }
+    
+    console.log('✅ Inicialización de soft delete en tabla usuario completada');
+    
+  } catch (error) {
+    console.error('❌ Error al inicializar soft delete en tabla usuario:', error);
+    // No lanzar error para no bloquear el servidor
+  }
+}
+
+// Ejecutar inicialización al cargar el módulo
+initializeUserSoftDelete();
+
+// Middleware para verificar si el usuario actual es super admin
+const isSuperAdmin = async (userId) => {
+  try {
+    const result = await pool.query(
+      "SELECT rol FROM usuario WHERE idpersona = $1",
+      [userId]
+    );
+    // Super admin tiene rol "00" - cualquier usuario con este rol es super admin
+    return result.rows.length > 0 && result.rows[0].rol === "00";
+  } catch (error) {
+    console.error("Error verificando super admin:", error);
+    return false;
+  }
+};
+
+// Middleware para verificar si el usuario actual es admin (incluye super admin)
+const isAdmin = async (userId) => {
+  try {
+    const result = await pool.query(
+      "SELECT rol FROM usuario WHERE idpersona = $1",
+      [userId]
+    );
+    if (result.rows.length === 0) return false;
+    
+    const userRole = result.rows[0].rol;
+    // Administrador: rol "0" (admin normal) o "00" (super admin)
+    return userRole === "0" || userRole === "00";
+  } catch (error) {
+    console.error("Error verificando admin:", error);
+    return false;
+  }
+};
+
 router.post("/register", async (req, res) => {
   try {
     const { nombre, apellido, cedula, email, contrasena, rol } = req.body;
 
+    console.log(`📝 Solicitud de registro recibida para: ${nombre} ${apellido}`);
+    console.log(`📊 Datos recibidos: cedula=${cedula}, email=${email}, rol=${rol}`);
+
+    // Validaciones básicas
     if (!nombre || !apellido || !cedula || !email || !contrasena) {
-      return res.status(400).json({ error: "Todos los campos son obligatorios" });
+      return res.status(400).json({ 
+        error: "datos_incompletos",
+        message: "Todos los campos son obligatorios" 
+      });
     }
 
-    // Usamos el rol proporcionado o 1 (cliente) por defecto
-    const rolToUse = rol || "1";
-    console.log(`Registrando usuario con rol: ${rolToUse}`);
+    // VALIDACIONES DE UNICIDAD ANTES DE CREAR
+    const cedulaExists = await pool.query(
+      "SELECT idpersonas, nombre, apellido FROM personas WHERE cedula = $1 AND isDelete = FALSE",
+      [cedula]
+    );
+    
+    if (cedulaExists.rows.length > 0) {
+      const existingUser = cedulaExists.rows[0];
+      console.log(`❌ Registro fallido: Cédula ${cedula} ya existe (usuario: ${existingUser.nombre} ${existingUser.apellido})`);
+      return res.status(400).json({ 
+        error: "cedula_duplicada",
+        message: `La cédula ${cedula} ya está registrada` 
+      });
+    }
 
-    const newUser = await createUser(nombre, apellido, cedula, email, contrasena, rolToUse);
-    return res.status(201).json({ message: "Usuario registrado con éxito", user: newUser });
+    const emailExists = await pool.query(
+      "SELECT idpersonas, nombre, apellido FROM personas WHERE email = $1 AND isDelete = FALSE",
+      [email]
+    );
+    
+    if (emailExists.rows.length > 0) {
+      const existingUser = emailExists.rows[0];
+      console.log(`❌ Registro fallido: Email ${email} ya existe (usuario: ${existingUser.nombre} ${existingUser.apellido})`);
+      return res.status(400).json({ 
+        error: "email_duplicado",
+        message: `El email ${email} ya está registrado` 
+      });
+    }
+
+    // Crear el usuario después de las validaciones
+    const user = await createUser(nombre, apellido, cedula, email, contrasena, rol);
+    console.log(`✅ Usuario registrado exitosamente: ${nombre} ${apellido} (ID: ${user.idpersona})`);
+    
+    res.status(201).json({
+      success: true,
+      message: "Usuario registrado exitosamente",
+      user: {
+        id: user.idpersona,
+        nombre,
+        apellido,
+        email,
+        rol: user.rol
+      }
+    });
 
   } catch (error) {
-    console.error("Error al registrar usuario:", error);
-    return res.status(500).json({ error: "Error en el servidor" });
+    console.error("❌ Error en registro:", error);
+
+    // Manejar errores específicos de PostgreSQL
+    if (error.code === '23505') { // Violación de restricción única
+      if (error.constraint && error.constraint.includes('cedula')) {
+        return res.status(400).json({ 
+          error: "cedula_duplicada",
+          message: "La cédula ya está registrada" 
+        });
+      } else if (error.constraint && error.constraint.includes('email')) {
+        return res.status(400).json({ 
+          error: "email_duplicado",
+          message: "El email ya está registrado" 
+        });
+      }
+    }
+
+    res.status(500).json({ 
+      error: "error_servidor",
+      message: "Error interno del servidor durante el registro",
+      details: error.message 
+    });
   }
 });
 
@@ -36,6 +191,7 @@ router.get("/users", async (req, res) => {
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
        WHERE p.isDelete = FALSE
+       AND COALESCE(u.isDelete, FALSE) = FALSE
        ORDER BY p.nombre ASC`
     );
     
@@ -46,26 +202,16 @@ router.get("/users", async (req, res) => {
       // Ver el rol original
       console.log(`👤 Usuario ${user.nombre} ${user.apellido}, rol original: ${user.rol} (${typeof user.rol})`);
       
-      // Intentar convertir a número si es string
-      let rolFinal;
-      if (typeof user.rol === 'string') {
-        if (/^\d+$/.test(user.rol)) {
-          // Es un string numérico, convertir a número
-          rolFinal = parseInt(user.rol, 10);
-        } else {
-          // Es un string no numérico, mapear según el valor
-          switch(user.rol.toLowerCase()) {
-            case 'admin': rolFinal = 0; break;
-            case 'client': case 'cliente': rolFinal = 1; break;
-            case 'cook': case 'cocinero': rolFinal = 2; break;
-            case 'barista': rolFinal = 3; break;
-            default: rolFinal = 1; // Por defecto, cliente
-          }
-        }
-      } else {
-        // Ya es un número u otro tipo
-        rolFinal = user.rol;
+      // No convertir roles a números - mantener como string para preservar "00" vs "0"
+      let rolFinal = user.rol;
+      
+      // Si es null o undefined, usar "1" como default (cliente)
+      if (rolFinal == null) {
+        rolFinal = "1";
       }
+      
+      // Convertir a string si no lo es
+      rolFinal = rolFinal.toString();
       
       console.log(`   ➡️ Rol procesado: ${rolFinal} (${typeof rolFinal})`);
       
@@ -92,7 +238,8 @@ router.get("/users/metrics", async (req, res) => {
     const totalResult = await pool.query(
       `SELECT COUNT(*) as total FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE p.isDelete = FALSE`
+       WHERE p.isDelete = FALSE
+       AND COALESCE(u.isDelete, FALSE) = FALSE`
     );
     const totalUsers = parseInt(totalResult.rows[0].total);
     
@@ -105,7 +252,8 @@ router.get("/users/metrics", async (req, res) => {
         COUNT(CASE WHEN u.rol = '3' OR u.rol = 'barista' THEN 1 END) as baristas
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE p.isDelete = FALSE`
+       WHERE p.isDelete = FALSE
+       AND COALESCE(u.isDelete, FALSE) = FALSE`
     );
     
     const metrics = {
@@ -147,7 +295,9 @@ router.get("/users/:id", async (req, res) => {
               END as rol
        FROM usuario u
        INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
+       WHERE u.idpersona = $1 
+       AND p.isDelete = FALSE
+       AND COALESCE(u.isDelete, FALSE) = FALSE`,
       [id]
     );
     
@@ -163,95 +313,80 @@ router.get("/users/:id", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  try {
     const { email, contrasena } = req.body;
 
-    console.log(`📧 Intento de login con email: ${email}`);
+  console.log(`🔐 Intento de login para: ${email}`);
 
-    // Validación de los datos de entrada
     if (!email || !contrasena) {
-      return res.status(400).json({ error: "Por favor, ingrese ambos campos." });
+    console.log("❌ Login fallido: Datos incompletos");
+    return res.status(400).json({ error: "Email y contraseña son requeridos" });
     }
 
-    // Consulta en la base de datos (solo usuarios no eliminados)
+  try {
+    // Verificar que el usuario no esté eliminado (actualizada)
     const { rows } = await pool.query(
-      `SELECT u.contrasena, u.idpersona, u.rol, p.nombre, p.apellido, p.cedula, p.email
+      `SELECT u.idpersona, u.contrasena, u.rol, p.nombre, p.apellido, p.email, p.cedula 
        FROM usuario u
-       INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE p.email = $1 AND p.isDelete = FALSE`,
+       JOIN personas p ON u.idpersona = p.idpersonas 
+       WHERE p.email = $1 
+       AND p.isDelete = FALSE
+       AND COALESCE(u.isDelete, FALSE) = FALSE`,
       [email]
     );
 
     if (rows.length === 0) {
-      console.log(`❌ Login fallido: email no encontrado o usuario eliminado: ${email}`);
-      return res.status(401).json({ error: "Credenciales incorrectas" });
+      console.log(`❌ Login fallido: Usuario no encontrado para ${email}`);
+      return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
-    const usuario = rows[0];
-    console.log(`👤 Usuario encontrado: ${usuario.nombre} ${usuario.apellido}, email: ${usuario.email}`);
-    console.log(`👤 Rol en la base de datos: ${usuario.rol} (tipo: ${typeof usuario.rol})`);
+    const user = rows[0];
+    console.log(`👤 Usuario encontrado: ${user.nombre} ${user.apellido} (ID: ${user.idpersona}, Rol: ${user.rol})`);
 
-    // Comparación de la contraseña
-    console.log(`🔐 Contraseña encriptada en BD: ${usuario.contrasena.substring(0, 15)}...`);
-    console.log(`🔐 Contraseña ingresada: ${contrasena.slice(0, 3)}${'*'.repeat(contrasena.length - 3)}`);
-    
-    try {
-    const passwordMatch = await bcrypt.compare(contrasena, usuario.contrasena);
-      console.log(`🔍 Resultado de comparación de contraseñas: ${passwordMatch ? '✅ Coincide' : '❌ No coincide'}`);
-
-    if (!passwordMatch) {
-        console.log(`❌ Login fallido: contraseña incorrecta para ${email}`);
-      return res.status(401).json({ error: "Credenciales incorrectas" });
-    }
-    } catch (bcryptError) {
-      console.error(`❌ Error en la comparación de contraseñas: ${bcryptError}`);
-      return res.status(500).json({ error: "Error en la verificación de credenciales" });
+    // Verificar la contraseña
+    const validPassword = await bcrypt.compare(contrasena, user.contrasena);
+    if (!validPassword) {
+      console.log(`❌ Login fallido: Contraseña incorrecta para ${email}`);
+      return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
-    // Asegurar que el rol esté en un formato válido
-    let rolProcessed = usuario.rol;
-    
-    // Si el rol es string, procesarlo apropiadamente
-    if (typeof rolProcessed === 'string') {
-      // Si es un número en formato string, convertirlo a entero
-      if (/^\d+$/.test(rolProcessed)) {
-        rolProcessed = parseInt(rolProcessed, 10);
-      } else {
-        // Si es texto, mapearlo a valores numéricos
-        switch(rolProcessed.toLowerCase()) {
-          case 'admin': rolProcessed = 0; break;
-          case 'client': case 'cliente': rolProcessed = 1; break;
-          case 'cook': case 'cocinero': rolProcessed = 2; break;
-          case 'barista': rolProcessed = 3; break;
-          default: rolProcessed = 1; // Por defecto, cliente
-        }
-      }
-    }
+    // Determinar si es super admin - solo verificar rol "00"
+    const isSuperAdminUser = user.rol === "00";
+    console.log(`🔑 Es Super Admin: ${isSuperAdminUser}`);
 
-    console.log(`👤 Rol procesado: ${rolProcessed} (tipo: ${typeof rolProcessed})`);
-
-    // Generar el token JWT
+    // Crear token JWT
     const token = jwt.sign(
-      { id: usuario.idpersona, rol: rolProcessed },
-      'monito',
-      { expiresIn: '1h' }
+      { 
+        id: user.idpersona, 
+        email: user.email, 
+        rol: user.rol,
+        isSuperAdmin: isSuperAdminUser
+      },
+      "monito",
+      { expiresIn: "24h" }
     );
 
-    console.log(`✅ Login exitoso para: ${email}, rol: ${rolProcessed}`);
+    console.log(`✅ Login exitoso para: ${user.nombre} ${user.apellido}`);
+    console.log(`🎟️ Token generado con super admin: ${isSuperAdminUser}`);
 
-    // Respuesta con el token y los datos del usuario
-    return res.json({
+    res.json({
       token,
-      id: usuario.idpersona,
-      nombre: usuario.nombre,
-      apellido: usuario.apellido,
-      cedula: usuario.cedula,
-      rol: rolProcessed, // Enviar el rol procesado como número
+      user: {
+        id: user.idpersona,
+        nombre: user.nombre,
+        apellido: user.apellido,
+        email: user.email,
+        cedula: user.cedula,
+        rol: user.rol,
+        isSuperAdmin: isSuperAdminUser,
+        rolNombre: user.rol === "00" ? 'Super Administrador' :
+                   user.rol === "0" ? 'Administrador' :
+                   user.rol === "1" ? 'Cliente' :
+                   user.rol === "2" ? 'Cocinero' : 'Barista'
+      }
     });
-
   } catch (error) {
     console.error("❌ Error en login:", error);
-    return res.status(500).json({ error: "Error en el servidor" });
+    res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
@@ -404,102 +539,163 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
-// Endpoint para eliminar un usuario (SOFT DELETE)
+// Endpoint para eliminar un usuario (SOFT DELETE COMPLETO - CORREGIDO)
 router.delete("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`🗑️ Solicitud para eliminar usuario con ID: ${id}`);
+    const targetUserId = parseInt(id);
     
-    // Obtener el token de autorización de los headers
+    console.log(`🗑️ Solicitud para eliminar usuario ID: ${targetUserId}`);
+
+    // Obtener información del usuario que está haciendo la solicitud (desde el token)
     const authHeader = req.headers.authorization;
-    let userIdFromToken = null;
-    let deletedBy = null;
+    let requestingUserId = null;
     
     if (authHeader && authHeader.startsWith('Bearer ')) {
       try {
-        // Verificar y decodificar el token
-        const decoded = jwt.verify(authHeader.substring(7), 'monito');
-        userIdFromToken = decoded.id;
-        deletedBy = decoded.id;
-        console.log(`👤 Usuario autenticado ID: ${userIdFromToken}`);
-        
-        // Si intenta eliminarse a sí mismo
-        if (userIdFromToken.toString() === id.toString()) {
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, 'monito');
+        requestingUserId = decoded.id;
+        console.log(`🔑 Usuario solicitante: ${requestingUserId}`);
+      } catch (tokenError) {
+        console.log('⚠️ No se pudo obtener el usuario del token');
+        return res.status(401).json({ 
+          error: "token_invalido",
+          message: "Token de autorización inválido" 
+        });
+      }
+    } else {
+      return res.status(401).json({ 
+        error: "sin_autorizacion",
+        message: "Se requiere autorización para esta acción" 
+      });
+    }
+
+    // PROTECCIÓN 1: No se puede eliminar al super admin principal
+    if (targetUserId === SUPER_ADMIN_ID) {
+      console.log(`🛡️ Intento de eliminar super admin principal bloqueado`);
           return res.status(403).json({ 
-            success: false,
-            message: "No puedes eliminar tu propia cuenta mientras estás logueado"
+        error: "superadmin_protegido",
+        message: "El Super Administrador principal no puede ser eliminado por razones de seguridad del sistema"
           });
         }
-      } catch (tokenError) {
-        console.error("❌ Error al verificar token:", tokenError);
-        // Si hay error de token, continuamos pero sin userIdFromToken
-      }
+
+    // PROTECCIÓN 2: Los usuarios no pueden eliminarse a sí mismos
+    if (targetUserId === requestingUserId) {
+      console.log(`🛡️ Usuario intentando eliminarse a sí mismo - BLOQUEADO`);
+      return res.status(403).json({ 
+        error: "autoeliminar_prohibido",
+        message: "No puedes eliminar tu propia cuenta mientras estás conectado"
+      });
     }
-    
-    // Iniciar una transacción para asegurar la integridad
-    await pool.query('BEGIN');
-    
-    // Verificar si el usuario existe y no está ya eliminado
-    const userCheck = await pool.query(
-      `SELECT p.*, u.rol FROM personas p
+
+    // Verificar que el usuario objetivo existe y obtener su información
+    const targetUserResult = await pool.query(
+      `SELECT u.rol, p.nombre, p.apellido 
+       FROM personas p
        INNER JOIN usuario u ON p.idpersonas = u.idpersona
-       WHERE p.idpersonas = $1 AND p.isDelete = FALSE`,
-      [id]
+       WHERE p.idpersonas = $1 AND p.isDelete = FALSE AND COALESCE(u.isDelete, FALSE) = FALSE`,
+      [targetUserId]
     );
     
-    if (userCheck.rows.length === 0) {
-      await pool.query('ROLLBACK');
+    if (targetUserResult.rows.length === 0) {
+      console.log(`❌ Usuario ${targetUserId} no encontrado o ya eliminado`);
       return res.status(404).json({ 
-        success: false,
+        error: "usuario_no_encontrado",
         message: "Usuario no encontrado o ya ha sido eliminado"
       });
     }
 
-    const userData = userCheck.rows[0];
+    const targetUser = targetUserResult.rows[0];
+    const targetUserRole = targetUser.rol;
     
-    // Realizar soft delete en la tabla personas
+    console.log(`🎯 Usuario objetivo: ${targetUser.nombre} ${targetUser.apellido}, rol: ${targetUserRole}`);
+
+    // VERIFICAR PERMISOS DEL USUARIO SOLICITANTE
+    const isSuperAdminRequest = await isSuperAdmin(requestingUserId);
+    const isAdminRequest = await isAdmin(requestingUserId);
+    
+    console.log(`🔍 Permisos del solicitante:`);
+    console.log(`   Es Super Admin: ${isSuperAdminRequest}`);
+    console.log(`   Es Admin: ${isAdminRequest}`);
+
+    // PROTECCIÓN 3: Solo usuarios con permisos de admin pueden eliminar usuarios
+    if (!isAdminRequest) {
+      console.log(`🛡️ Usuario sin permisos de admin intentando eliminar - BLOQUEADO`);
+      return res.status(403).json({ 
+        error: "sin_permisos_eliminar",
+        message: "No tienes permisos para eliminar usuarios"
+      });
+    }
+
+    // PROTECCIÓN 4: Solo super admin puede eliminar otros administradores
+    const targetIsAdmin = (targetUserRole === "0" || targetUserRole === "00");
+    if (targetIsAdmin && !isSuperAdminRequest) {
+      console.log(`🛡️ Admin normal intentando eliminar otro admin - BLOQUEADO`);
+      return res.status(403).json({ 
+        error: "sin_permisos_admin",
+        message: "Solo el Super Administrador puede eliminar otros administradores"
+      });
+    }
+
+    // Iniciar transacción para eliminar usuario
+    await pool.query('BEGIN');
+
+    try {
+      // Marcar persona como eliminada (soft delete)
     const deletePersonResult = await pool.query(
       `UPDATE personas 
-       SET isDelete = TRUE, 
-           deleted_at = NOW(), 
-           deleted_by = $2 
-       WHERE idpersonas = $1 AND isDelete = FALSE 
+         SET isDelete = TRUE, deleted_at = NOW(), deleted_by = $2
+         WHERE idpersonas = $1 
        RETURNING nombre, apellido`,
-      [id, deletedBy]
+        [targetUserId, requestingUserId]
+      );
+
+      // También hacer soft delete en tabla usuario
+      const deleteUserResult = await pool.query(
+        `UPDATE usuario 
+         SET isDelete = TRUE, deleted_at = NOW(), deleted_by = $2
+         WHERE idpersona = $1 
+         RETURNING idpersona`,
+        [targetUserId, requestingUserId]
     );
     
     if (deletePersonResult.rows.length === 0) {
       await pool.query('ROLLBACK');
       return res.status(404).json({ 
-        success: false,
+          error: "usuario_no_encontrado",
         message: "Usuario no encontrado"
       });
     }
     
-    // Confirmar la transacción
     await pool.query('COMMIT');
     
-    console.log(`✅ Usuario eliminado lógicamente con éxito: ${deletePersonResult.rows[0]?.nombre} ${deletePersonResult.rows[0]?.apellido} por usuario ${deletedBy || 'desconocido'}`);
+      const deletedUser = deletePersonResult.rows[0];
+      console.log(`✅ Usuario eliminado (soft delete): ${deletedUser.nombre} ${deletedUser.apellido} por usuario ${requestingUserId}`);
     
-    return res.status(200).json({
+      res.json({
       success: true,
       message: "Usuario eliminado con éxito",
       deletedUser: {
-        id: id,
-        nombre: deletePersonResult.rows[0]?.nombre,
-        apellido: deletePersonResult.rows[0]?.apellido,
-        deletedBy: deletedBy
+          id: targetUserId,
+          nombre: deletedUser.nombre,
+          apellido: deletedUser.apellido,
+          deletedBy: requestingUserId,
+          deletedAt: new Date().toISOString()
       }
     });
     
-  } catch (error) {
-    // Si hay un error, revertir la transacción
+    } catch (transactionError) {
     await pool.query('ROLLBACK');
+      throw transactionError;
+    }
+
+  } catch (error) {
     console.error("❌ Error al eliminar usuario:", error);
-    return res.status(500).json({ 
-      success: false,
-      message: "Error al eliminar el usuario",
-      error: error.message
+    res.status(500).json({ 
+      error: "error_servidor", 
+      message: "Error interno del servidor al eliminar usuario", 
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -508,263 +704,411 @@ router.delete("/users/:id", async (req, res) => {
 router.put("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const targetUserId = parseInt(id);
     const { nombre, apellido, cedula, email, rol, contrasena } = req.body;
     
-    console.log(`📝 Solicitud para actualizar usuario con ID: ${id}`);
-    console.log(`Datos recibidos:`, req.body);
+    console.log(`📝 Solicitud para actualizar usuario ID: ${targetUserId}`);
+    console.log(`📝 Datos recibidos:`, { nombre, apellido, cedula, email, rol, contrasena: contrasena ? '[HIDDEN]' : null });
     
-    // Validación básica
-    if (!nombre && !apellido && !cedula && !email && !rol && !contrasena) {
-      return res.status(400).json({ 
-        success: false,
-        message: "No se proporcionaron datos para actualizar"
+    // Obtener información del usuario que está haciendo la solicitud
+    const authHeader = req.headers.authorization;
+    let requestingUserId = null;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, 'monito');
+        requestingUserId = decoded.id;
+        console.log(`🔑 Usuario solicitante: ${requestingUserId}`);
+      } catch (tokenError) {
+        console.log('⚠️ No se pudo obtener el usuario del token');
+        return res.status(401).json({ 
+          error: "token_invalido",
+          message: "Token de autorización inválido" 
       });
     }
-    
-    // Iniciar una transacción para asegurar la integridad
-    await pool.query('BEGIN');
-    
-    // Verificar si el usuario existe y no está eliminado
-    const checkUser = await pool.query(
-      `SELECT u.idpersona FROM usuario u
-       INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
-      [id]
+    } else {
+      return res.status(401).json({ 
+        error: "sin_autorizacion",
+        message: "Se requiere autorización para esta acción" 
+      });
+    }
+
+    // Verificar que el usuario objetivo existe y no está eliminado
+    const userExists = await pool.query(
+      `SELECT u.rol as usuario_rol, p.nombre, p.apellido 
+       FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       WHERE p.idpersonas = $1 AND p.isDelete = FALSE AND COALESCE(u.isDelete, FALSE) = FALSE`,
+      [targetUserId]
     );
     
-    if (checkUser.rows.length === 0) {
-      await pool.query('ROLLBACK');
+    if (userExists.rows.length === 0) {
       return res.status(404).json({ 
-        success: false,
+        error: "usuario_no_encontrado",
         message: "Usuario no encontrado o ha sido eliminado"
       });
     }
     
-    // Actualizar datos personales en la tabla personas
-    if (nombre || apellido || cedula || email) {
-      let updatePersonaQuery = 'UPDATE personas SET';
-      const updateValues = [];
-      const queryParams = [];
-      
-      if (nombre) {
-        updateValues.push(` nombre = $${updateValues.length + 1}`);
-        queryParams.push(nombre);
-      }
-      
-      if (apellido) {
-        updateValues.push(` apellido = $${updateValues.length + 1}`);
-        queryParams.push(apellido);
-      }
-      
-      if (cedula) {
-        updateValues.push(` cedula = $${updateValues.length + 1}`);
-        queryParams.push(cedula);
-      }
-      
-      if (email) {
-        updateValues.push(` email = $${updateValues.length + 1}`);
-        queryParams.push(email);
-      }
-      
-      updatePersonaQuery += updateValues.join(',');
-      updatePersonaQuery += ` WHERE idpersonas = $${queryParams.length + 1} AND isDelete = FALSE RETURNING *`;
-      queryParams.push(id);
-      
-      const updatePersonaResult = await pool.query(updatePersonaQuery, queryParams);
-      console.log(`✅ Información personal actualizada:`, updatePersonaResult.rows[0]);
-    }
+    const targetUser = userExists.rows[0];
+    const currentTargetRole = targetUser.usuario_rol;
     
-    // Actualizar el rol y/o la contraseña si se proporcionaron
-    if (rol || contrasena) {
-      let updateUserQuery = 'UPDATE usuario SET';
-      const updateValues = [];
-      const queryParams = [];
-      
-    if (rol) {
-      // Validar que el rol sea válido
-      let rolToSave = rol;
-      // Si rol no está entre los valores válidos, usar 1 (cliente) como predeterminado
-      if (!["0", "1", "2", "3"].includes(rol.toString())) {
-        console.warn(`⚠️ Rol no válido: "${rol}", usando rol predeterminado (1)`);
-        rolToSave = "1";
-      }
-      
-        updateValues.push(` rol = $${updateValues.length + 1}`);
-        queryParams.push(rolToSave);
-        console.log(`✅ Rol actualizado a: ${rolToSave}`);
-      }
-      
-      if (contrasena) {
-        // Hashear la contraseña antes de guardarla
-        const bcrypt = require("bcrypt");
-        const hashedPassword = await bcrypt.hash(contrasena, 10);
-        
-        updateValues.push(` contrasena = $${updateValues.length + 1}`);
-        queryParams.push(hashedPassword);
-        console.log(`🔐 Contraseña actualizada para el usuario ID: ${id}`);
-      }
-      
-      if (updateValues.length > 0) {
-        updateUserQuery += updateValues.join(',');
-        updateUserQuery += ` WHERE idpersona = $${queryParams.length + 1} RETURNING *`;
-        queryParams.push(id);
-      
-        const updateUserResult = await pool.query(updateUserQuery, queryParams);
-      }
-    }
-    
-    // Confirmar la transacción
-    await pool.query('COMMIT');
-    
-    // Obtener los datos actualizados del usuario
-    const updatedUser = await pool.query(
-      `SELECT u.idpersona as id, p.nombre, p.apellido, p.cedula, p.email, u.rol
-       FROM usuario u
-       INNER JOIN personas p ON u.idpersona = p.idpersonas
-       WHERE u.idpersona = $1 AND p.isDelete = FALSE`,
-      [id]
-    );
-    
-    // Procesar el rol para devolverlo como entero
-    let rolFinal = updatedUser.rows[0].rol;
-    if (typeof rolFinal === 'string') {
-      if (/^\d+$/.test(rolFinal)) {
-        rolFinal = parseInt(rolFinal, 10);
-      } else {
-        switch(rolFinal.toLowerCase()) {
-          case 'admin': rolFinal = 0; break;
-          case 'client': case 'cliente': rolFinal = 1; break;
-          case 'cook': case 'cocinero': rolFinal = 2; break;
-          case 'barista': rolFinal = 3; break;
-          default: rolFinal = 1; // Por defecto, cliente
-        }
-      }
-    }
-    
-    updatedUser.rows[0].rol = rolFinal;
-    
-    return res.status(200).json({
-      success: true,
-      message: "Usuario actualizado con éxito",
-      user: updatedUser.rows[0]
-    });
-    
-  } catch (error) {
-    // Si hay un error, revertir la transacción
-    await pool.query('ROLLBACK');
-    console.error("❌ Error al actualizar usuario:", error);
-    return res.status(500).json({ 
-      success: false,
-      message: "Error al actualizar la información del usuario",
-      error: error.message
-    });
-  }
-});
+    console.log(`🎯 Usuario objetivo: ${targetUser.nombre} ${targetUser.apellido}, rol actual: ${currentTargetRole}`);
 
-// NUEVO: Endpoint para restaurar un usuario eliminado (solo para administradores)
-router.patch("/users/:id/restore", async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log(`🔄 Solicitud para restaurar usuario con ID: ${id}`);
+    // VERIFICAR PERMISOS DEL USUARIO SOLICITANTE
+    const isSuperAdminRequest = await isSuperAdmin(requestingUserId);
+    const isAdminRequest = await isAdmin(requestingUserId);
     
-    // Verificar que el usuario existe y está eliminado
-    const checkResult = await pool.query(
-      `SELECT p.*, u.rol FROM personas p
-       INNER JOIN usuario u ON p.idpersonas = u.idpersona
-       WHERE p.idpersonas = $1 AND p.isDelete = TRUE`, 
-      [id]
-    );
+    console.log(`🔍 Permisos del solicitante:`);
+    console.log(`   Es Super Admin: ${isSuperAdminRequest}`);
+    console.log(`   Es Admin: ${isAdminRequest}`);
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Usuario no encontrado en elementos eliminados" 
+    // PROTECCIÓN 1: Solo usuarios con permisos de admin pueden editar otros usuarios
+    if (!isAdminRequest) {
+      return res.status(403).json({ 
+        error: "sin_permisos_editar",
+        message: "No tienes permisos para editar usuarios" 
+      });
+      }
+      
+    // PROTECCIÓN 2: No se puede editar al super admin principal (ID 1) sin ser super admin
+    if (targetUserId === SUPER_ADMIN_ID && !isSuperAdminRequest) {
+      return res.status(403).json({ 
+        error: "superadmin_protegido",
+        message: "Solo el Super Administrador puede editar su propia cuenta" 
       });
     }
 
-    // Restaurar el usuario
-    const result = await pool.query(
-      `UPDATE personas 
-       SET isDelete = FALSE, 
-           deleted_at = NULL, 
-           deleted_by = NULL 
-       WHERE idpersonas = $1 
-       RETURNING *`,
-      [id]
-    );
-
-    console.log(`✅ Usuario ${id} restaurado exitosamente`);
-    return res.status(200).json({ 
-      success: true,
-      message: "Usuario restaurado exitosamente", 
-      restoredUser: {
-        id: result.rows[0].idpersonas,
-        nombre: result.rows[0].nombre,
-        apellido: result.rows[0].apellido,
-        email: result.rows[0].email
+    // PROTECCIÓN 3: Solo super admin puede editar otros administradores
+    if ((currentTargetRole === "0" || currentTargetRole === "00") && !isSuperAdminRequest) {
+      return res.status(403).json({ 
+        error: "sin_permisos_admin",
+        message: "Solo el Super Administrador puede editar otros administradores" 
+      });
       }
-    });
+      
+    // VALIDACIONES DE UNICIDAD (solo si se proporcionan datos para cambiar)
+      if (cedula) {
+      const cedulaExists = await pool.query(
+        "SELECT idpersonas, nombre, apellido FROM personas WHERE cedula = $1 AND idpersonas != $2 AND isDelete = FALSE",
+        [cedula, targetUserId]
+      );
+      
+      if (cedulaExists.rows.length > 0) {
+        const existingUser = cedulaExists.rows[0];
+        console.log(`❌ Cédula ${cedula} ya está en uso por usuario ID: ${existingUser.idpersonas}`);
+        return res.status(400).json({ 
+          error: "cedula_duplicada",
+          message: `La cédula ${cedula} ya está registrada por ${existingUser.nombre} ${existingUser.apellido}` 
+        });
+      }
+      }
+      
+      if (email) {
+      const emailExists = await pool.query(
+        "SELECT idpersonas, nombre, apellido FROM personas WHERE email = $1 AND idpersonas != $2 AND isDelete = FALSE",
+        [email, targetUserId]
+      );
+      
+      if (emailExists.rows.length > 0) {
+        const existingUser = emailExists.rows[0];
+        console.log(`❌ Email ${email} ya está en uso por usuario ID: ${existingUser.idpersonas}`);
+        return res.status(400).json({ 
+          error: "email_duplicado",
+          message: `El email ${email} ya está registrado por ${existingUser.nombre} ${existingUser.apellido}` 
+        });
+      }
+    }
+
+    // VALIDACIONES DE ROL (si se proporciona)
+    if (rol !== undefined) {
+      console.log(`🔍 Solicitud de cambio de rol: ${currentTargetRole} → ${rol}`);
+      
+      // REGLA 1: Solo el super admin puede asignar rol "00" (super admin)
+      if (rol === "00" && !isSuperAdminRequest) {
+        console.log(`❌ Intento de asignar rol super admin sin permisos`);
+        return res.status(403).json({ 
+          error: "sin_permisos_superadmin",
+          message: "Solo el Super Administrador puede asignar el rol de Super Administrador" 
+        });
+    }
+    
+      // REGLA 2: No se puede cambiar el rol del super admin principal
+      if (targetUserId === SUPER_ADMIN_ID && currentTargetRole === "00" && rol !== "00") {
+        console.log(`❌ Intento de cambiar rol del super admin principal`);
+        return res.status(403).json({ 
+          error: "superadmin_inmutable",
+          message: "El rol del Super Administrador principal es inmutable" 
+        });
+      }
+      
+      // REGLA 3: Solo super admin puede cambiar roles a/desde administrador
+      const targetIsOrWillBeAdmin = (currentTargetRole === "0" || currentTargetRole === "00") || (rol === "0" || rol === "00");
+      if (targetIsOrWillBeAdmin && !isSuperAdminRequest) {
+        console.log(`❌ Admin normal intentando cambiar rol de/hacia administrador`);
+        return res.status(403).json({ 
+          error: "sin_permisos_rol_admin",
+          message: "Solo el Super Administrador puede cambiar roles de administradores o asignar roles de administrador" 
+        });
+      }
+      
+      // REGLA 4: Validar que el rol sea válido
+      const validRoles = ["00", "0", "1", "2", "3"];
+      if (!validRoles.includes(rol)) {
+        return res.status(400).json({ 
+          error: "rol_invalido",
+          message: `Rol inválido. Debe ser uno de: ${validRoles.join(', ')}` 
+        });
+      }
+    }
+
+    // INICIAR TRANSACCIÓN
+    await pool.query('BEGIN');
+
+    try {
+      // Actualizar datos en la tabla personas (si se proporcionan)
+      if (nombre || apellido || cedula || email) {
+        const updatePersonaQuery = `
+          UPDATE personas 
+          SET nombre = COALESCE($1, nombre),
+              apellido = COALESCE($2, apellido),
+              cedula = COALESCE($3, cedula),
+              email = COALESCE($4, email)
+          WHERE idpersonas = $5
+        `;
+        await pool.query(updatePersonaQuery, [nombre, apellido, cedula, email, targetUserId]);
+        console.log(`✅ Datos personales actualizados para usuario ${targetUserId}`);
+      }
+      
+      // Actualizar datos en la tabla usuario (rol y/o contraseña)
+      let updateUserQuery = "UPDATE usuario SET ";
+      const updateParams = [];
+      let paramIndex = 1;
+
+      if (rol !== undefined) {
+        updateUserQuery += `rol = $${paramIndex}, `;
+        updateParams.push(rol);
+        paramIndex++;
+        console.log(`📝 Actualizando rol a: ${rol}`);
+      }
+
+      if (contrasena) {
+        const hashedPassword = await bcrypt.hash(contrasena, 10);
+        updateUserQuery += `contrasena = $${paramIndex}, `;
+        updateParams.push(hashedPassword);
+        paramIndex++;
+        console.log(`🔐 Actualizando contraseña (hasheada)`);
+      }
+
+      // Ejecutar actualización de usuario si hay cambios
+      if (updateParams.length > 0) {
+        updateUserQuery = updateUserQuery.slice(0, -2) + ` WHERE idpersona = $${paramIndex}`;
+        updateParams.push(targetUserId);
+        await pool.query(updateUserQuery, updateParams);
+        console.log(`✅ Datos de usuario actualizados para usuario ${targetUserId}`);
+      }
+
+      // CONFIRMAR TRANSACCIÓN
+    await pool.query('COMMIT');
+    
+      console.log(`✅ Usuario ${targetUserId} actualizado exitosamente por usuario ${requestingUserId}`);
+      res.json({
+        success: true,
+        message: "Usuario actualizado exitosamente",
+        updatedFields: {
+          personalData: !!(nombre || apellido || cedula || email),
+          role: !!rol,
+          password: !!contrasena
+        }
+      });
+
+    } catch (transactionError) {
+      await pool.query('ROLLBACK');
+      throw transactionError;
+    }
+
   } catch (error) {
-    console.error('❌ Error al restaurar usuario:', error);
-    return res.status(500).json({ 
-      success: false,
-      message: "Error al restaurar el usuario",
-      error: error.message 
+    console.error("❌ Error al actualizar usuario:", error);
+    
+    // Manejar errores específicos de PostgreSQL
+    if (error.code === '23505') { // Violación de restricción única
+      if (error.constraint && error.constraint.includes('cedula')) {
+        return res.status(400).json({ 
+          error: "cedula_duplicada",
+          message: "La cédula ya está registrada por otro usuario" 
+        });
+      } else if (error.constraint && error.constraint.includes('email')) {
+        return res.status(400).json({ 
+          error: "email_duplicado",
+          message: "El email ya está registrado por otro usuario" 
+        });
+      }
+    }
+
+    res.status(500).json({ 
+      error: "error_servidor", 
+      message: "Error interno del servidor al actualizar usuario",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// NUEVO: Endpoint para obtener usuarios eliminados (solo para administradores)
+// NUEVO: Endpoint para obtener usuarios eliminados
 router.get("/users/deleted/list", async (req, res) => {
   try {
-    console.log('📋 Solicitud de usuarios eliminados recibida');
-    
+    console.log('🗑️ Solicitud para obtener usuarios eliminados');
+
     const result = await pool.query(
-      `SELECT p.idpersonas as id, p.nombre, p.apellido, p.cedula, p.email, 
-              u.rol, p.deleted_at, p.deleted_by,
-              deleter.nombre as deleted_by_name, deleter.apellido as deleted_by_lastname
+      `SELECT 
+        p.idpersonas as id,
+        p.nombre,
+        p.apellido,
+        p.cedula,
+        p.email,
+        p.deleted_at,
+        p.deleted_by,
+        CAST(u.rol AS INTEGER) as rol,
+        deleter.nombre as deleted_by_name,
+        deleter.apellido as deleted_by_lastname
        FROM personas p
        INNER JOIN usuario u ON p.idpersonas = u.idpersona
        LEFT JOIN personas deleter ON p.deleted_by = deleter.idpersonas
-       WHERE p.isDelete = TRUE
+       WHERE p.isDelete = TRUE 
+       AND COALESCE(u.isDelete, TRUE) = TRUE
        ORDER BY p.deleted_at DESC`
     );
-    
-    // Procesar roles como en el endpoint principal
-    const processedUsers = result.rows.map(user => {
-      let rolFinal = user.rol;
-      if (typeof rolFinal === 'string') {
-        if (/^\d+$/.test(rolFinal)) {
-          rolFinal = parseInt(rolFinal, 10);
-        } else {
-          switch(rolFinal.toLowerCase()) {
-            case 'admin': rolFinal = 0; break;
-            case 'client': case 'cliente': rolFinal = 1; break;
-            case 'cook': case 'cocinero': rolFinal = 2; break;
-            case 'barista': rolFinal = 3; break;
-            default: rolFinal = 1;
-          }
-        }
-      }
-      
-      return {
-        ...user,
-        rol: rolFinal
-      };
+
+    console.log(`✅ Encontrados ${result.rows.length} usuarios eliminados`);
+
+    res.json({
+      deletedUsers: result.rows,
+      count: result.rows.length
     });
     
-    console.log(`📋 ${processedUsers.length} usuarios eliminados encontrados`);
-    
-    return res.status(200).json({
-      deletedUsers: processedUsers,
-      count: processedUsers.length
-    });
   } catch (error) {
-    console.error("❌ Error al obtener usuarios eliminados:", error);
-    return res.status(500).json({ 
-      error: "Error al obtener usuarios eliminados del servidor",
+    console.error('❌ Error al obtener usuarios eliminados:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener usuarios eliminados',
       details: error.message 
     });
+  }
+});
+
+// NUEVO: Endpoint para restaurar un usuario eliminado
+router.patch("/users/:id/restore", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const targetUserId = parseInt(id);
+    
+    console.log(`🔄 Solicitud para restaurar usuario ID: ${targetUserId}`);
+    
+    // Verificar que el usuario existe y está eliminado
+    const checkResult = await pool.query(
+      `SELECT p.*, u.rol 
+       FROM personas p
+       INNER JOIN usuario u ON p.idpersonas = u.idpersona
+       WHERE p.idpersonas = $1 AND p.isDelete = TRUE AND u.isDelete = TRUE`, 
+      [targetUserId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      console.log(`❌ Usuario ${targetUserId} no encontrado en elementos eliminados`);
+      return res.status(404).json({ 
+        error: "Usuario no encontrado en elementos eliminados" 
+      });
+    }
+
+    const userData = checkResult.rows[0];
+
+    // Verificar que no exista conflicto con datos de usuarios activos
+    const conflictCheck = await pool.query(
+      `SELECT idpersonas, nombre, apellido 
+       FROM personas 
+       WHERE (email = $1 OR cedula = $2) 
+       AND idpersonas != $3 
+       AND isDelete = FALSE`,
+      [userData.email, userData.cedula, targetUserId]
+    );
+
+    if (conflictCheck.rows.length > 0) {
+      const conflictUser = conflictCheck.rows[0];
+      console.log(`❌ Conflicto al restaurar usuario: datos ya en uso por usuario activo`);
+      return res.status(400).json({ 
+        error: "No se puede restaurar el usuario",
+        message: `Los datos (email o cédula) ya están en uso por ${conflictUser.nombre} ${conflictUser.apellido}` 
+      });
+    }
+
+    // Iniciar transacción para restaurar usuario
+    await pool.query('BEGIN');
+
+    try {
+      // Restaurar en tabla personas
+      await pool.query(
+      `UPDATE personas 
+         SET isDelete = FALSE, deleted_at = NULL, deleted_by = NULL
+         WHERE idpersonas = $1`,
+        [targetUserId]
+      );
+
+      // Restaurar en tabla usuario
+      await pool.query(
+        `UPDATE usuario 
+         SET isDelete = FALSE, deleted_at = NULL, deleted_by = NULL
+         WHERE idpersona = $1`,
+        [targetUserId]
+    );
+
+      await pool.query('COMMIT');
+
+      console.log(`✅ Usuario restaurado: ${userData.nombre} ${userData.apellido}`);
+
+      res.json({
+      success: true,
+      message: "Usuario restaurado exitosamente", 
+      restoredUser: {
+          id: targetUserId,
+          nombre: userData.nombre,
+          apellido: userData.apellido,
+          email: userData.email,
+          rol: userData.rol
+      }
+    });
+
+    } catch (transactionError) {
+      await pool.query('ROLLBACK');
+      throw transactionError;
+    }
+
+  } catch (error) {
+    console.error('❌ Error al restaurar usuario:', error);
+    res.status(500).json({ 
+      error: 'Error al restaurar usuario',
+      details: error.message 
+    });
+  }
+});
+
+// Endpoint para verificar permisos del usuario actual
+router.get("/user/permissions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = parseInt(id);
+    
+    const isSuperAdminUser = await isSuperAdmin(userId);
+    const isAdminUser = await isAdmin(userId);
+    
+    res.json({
+      userId,
+      isSuperAdmin: isSuperAdminUser,
+      isAdmin: isAdminUser,
+      canDeleteAdmins: isSuperAdminUser,
+      canDeleteUsers: isAdminUser,
+      canModifyRoles: isSuperAdminUser
+    });
+  } catch (error) {
+    console.error("❌ Error al verificar permisos:", error);
+    res.status(500).json({ error: "Error al verificar permisos" });
   }
 });
 

@@ -1,18 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
+import '../Widgets/custom_modal.dart';
+import '../Widgets/background_scaffold.dart';
+import '../../services/notification_service.dart';
+import '../../theme/theme.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import 'dart:math' as math;
-import '../Widgets/background_scaffold.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import '../Widgets/custom_modal.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import '../../services/notification_service.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -76,9 +91,68 @@ class _ReportsScreenState extends State<ReportsScreen> {
       String? selectedCategory =
           _selectedCategory == 'todos' ? null : _selectedCategory;
 
+      // Calcular fechas específicas según el período seleccionado
+      String? startDateCalculated;
+      String? endDateCalculated;
+
+      final now = DateTime.now();
+      final formatter = DateFormat('yyyy-MM-dd');
+
+      // Si es período personalizado, usar las fechas personalizadas
+      if (_currentPeriod == 'personalizado') {
+        startDateCalculated = _customStartDate;
+        endDateCalculated = _customEndDate;
+      } else {
+        // Para otros períodos, calcular las fechas específicas
+        switch (_currentPeriod) {
+          case 'hoy':
+            // Solo el día actual
+            startDateCalculated = formatter.format(
+              DateTime(now.year, now.month, now.day),
+            );
+            endDateCalculated = formatter.format(
+              DateTime(now.year, now.month, now.day, 23, 59, 59),
+            );
+            break;
+          case 'semana':
+            // Desde el lunes de esta semana hasta hoy
+            final firstDayOfWeek = now.subtract(
+              Duration(days: now.weekday - 1),
+            );
+            startDateCalculated = formatter.format(
+              DateTime(
+                firstDayOfWeek.year,
+                firstDayOfWeek.month,
+                firstDayOfWeek.day,
+              ),
+            );
+            endDateCalculated = formatter.format(now);
+            break;
+          case 'mes':
+            // Desde el primer día del mes hasta hoy
+            startDateCalculated = formatter.format(
+              DateTime(now.year, now.month, 1),
+            );
+            endDateCalculated = formatter.format(now);
+            break;
+          case 'año':
+            // Desde el primer día del año hasta hoy
+            startDateCalculated = formatter.format(DateTime(now.year, 1, 1));
+            endDateCalculated = formatter.format(now);
+            break;
+          case 'todos':
+            // Sin restricción de fechas
+            startDateCalculated = null;
+            endDateCalculated = null;
+            break;
+        }
+      }
+
       print(
-        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod), categoría: $selectedCategory',
+        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod)',
       );
+      print('📅 Fechas calculadas: $startDateCalculated a $endDateCalculated');
+      print('🏷️ Categoría: $selectedCategory');
 
       // Preparar datos iniciales
       Map<String, dynamic> summary = {
@@ -90,21 +164,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       if (!mounted) return;
 
-      // Obtener resumen de pedidos
+      // Obtener resumen de pedidos con fechas específicas
       final ordersSummary = await _ordersService.getOrdersSummary(
         period: servicePeriod,
-        customStartDate: _customStartDate,
-        customEndDate: _customEndDate,
+        customStartDate: startDateCalculated,
+        customEndDate: endDateCalculated,
         categoria: selectedCategory,
       );
 
       print('📊 Resumen de pedidos recibido: $ordersSummary');
 
-      // Obtener platos populares
+      // Obtener platos populares con fechas específicas
       final dishes = await _popularDishesService.getPopularDishesDirect(
         period: servicePeriod,
-        startDate: _customStartDate,
-        endDate: _customEndDate,
+        startDate: startDateCalculated,
+        endDate: endDateCalculated,
         categoria: selectedCategory,
       );
 
@@ -272,7 +346,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             context: context,
             title: 'Permisos de almacenamiento',
             message:
-                'Para guardar el reporte, necesitamos acceso al almacenamiento. Se abrirá la configuración del dispositivo donde deberás activar "Permitir administrar todos los archivos".',
+                'Para guardar el reporte, necesitamos acceso al almacenamiento. Se abrirá configuración donde deberás activar "Permitir administrar archivos".',
             confirmText: 'Ir a Configuración',
             cancelText: 'Cancelar',
           );
@@ -308,658 +382,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     }
     return false;
-  }
-
-  Future<void> _generateAndDownloadPDF() async {
-    try {
-      bool hasPermission = await _requestStoragePermission();
-
-      if (!hasPermission) {
-        if (!mounted) return;
-        await CustomModal.showError(
-          context: context,
-          title: 'Permiso denegado',
-          message:
-              'No se puede descargar el reporte sin los permisos necesarios.',
-        );
-        return;
-      }
-
-      // Mostrar modal de progreso
-      if (!mounted) return;
-      bool showingProgress = true;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return WillPopScope(
-            onWillPop: () async => false,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Generando reporte',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const Text(
-                    'Por favor espera mientras generamos tu reporte...',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-
-      // Crear el documento PDF
-      final pdf = pw.Document();
-
-      // Obtener el título del reporte según los filtros
-      String reportTitle = _getReportTitle();
-      String categoryFilter =
-          categoryLabels[_selectedCategory] ?? 'Todos los items';
-      String dateRange = '';
-
-      switch (_currentPeriod) {
-        case 'hoy':
-          dateRange = DateFormat('dd/MM/yyyy').format(DateTime.now());
-          break;
-        case 'semana':
-          final now = DateTime.now();
-          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-          dateRange =
-              '${DateFormat('dd/MM/yyyy').format(startOfWeek)} - ${DateFormat('dd/MM/yyyy').format(now)}';
-          break;
-        case 'mes':
-          final now = DateTime.now();
-          final startOfMonth = DateTime(now.year, now.month, 1);
-          dateRange =
-              '${DateFormat('dd/MM/yyyy').format(startOfMonth)} - ${DateFormat('dd/MM/yyyy').format(now)}';
-          break;
-        case 'año':
-          final now = DateTime.now();
-          final startOfYear = DateTime(now.year, 1, 1);
-          dateRange =
-              '${DateFormat('dd/MM/yyyy').format(startOfYear)} - ${DateFormat('dd/MM/yyyy').format(now)}';
-          break;
-        case 'personalizado':
-          if (_customStartDate != null && _customEndDate != null) {
-            final startDate = DateFormat('yyyy-MM-dd').parse(_customStartDate!);
-            final endDate = DateFormat('yyyy-MM-dd').parse(_customEndDate!);
-            dateRange =
-                '${DateFormat('dd/MM/yyyy').format(startDate)} - ${DateFormat('dd/MM/yyyy').format(endDate)}';
-          }
-          break;
-      }
-
-      // Asegurar que los valores numéricos sean válidos
-      final totalPedidos = _summaryData['totalPedidos']?.toString() ?? '0';
-      final totalVentas = _summaryData['totalVentas'] ?? 0.0;
-      final ticketPromedio = _summaryData['ticketPromedio'] ?? 0.0;
-      final minTicket = _summaryData['minPedido'] ?? 0.0;
-      final maxTicket = _summaryData['maxPedido'] ?? 0.0;
-      final ventasPorHora =
-          _summaryData['ventasPorHora'] as List<dynamic>? ?? [];
-      final ventasPorCategoria =
-          _summaryData['ventasPorCategoria'] as List<dynamic>? ?? [];
-      final ticketPromedioPorDia =
-          _summaryData['ticketPromedioPorDia'] as List<dynamic>? ?? [];
-
-      // Agregar contenido al PDF
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          build: (pw.Context context) {
-            return [
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  // Encabezado
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(15),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('43A047'),
-                      borderRadius: pw.BorderRadius.circular(10),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'Le Brunch - Reporte',
-                          style: pw.TextStyle(
-                            fontSize: 24,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.white,
-                          ),
-                        ),
-                        pw.SizedBox(height: 5),
-                        pw.Text(
-                          categoryFilter,
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            color: PdfColors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 20),
-
-                  // Información del período y filtros
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.grey300),
-                      borderRadius: pw.BorderRadius.circular(8),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Row(children: [pw.Text('Período: $_currentPeriod')]),
-                        pw.SizedBox(height: 5),
-                        pw.Row(children: [pw.Text('Filtro: $categoryFilter')]),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 20),
-
-                  // Resumen de ventas
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(15),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey100,
-                      borderRadius: pw.BorderRadius.circular(10),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'Resumen de ventas',
-                          style: pw.TextStyle(
-                            fontSize: 18,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.SizedBox(height: 10),
-                        _buildSummaryRow('Total de pedidos', totalPedidos),
-                        _buildSummaryRow(
-                          'Total de ventas',
-                          _formatCurrency(totalVentas),
-                        ),
-                        _buildSummaryRow(
-                          'Ticket promedio',
-                          _formatCurrency(ticketPromedio),
-                        ),
-                        pw.SizedBox(height: 10),
-                        pw.Divider(color: PdfColors.grey300),
-                        pw.SizedBox(height: 10),
-                        pw.Text(
-                          'Rango de tickets',
-                          style: pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.SizedBox(height: 5),
-                        _buildSummaryRow(
-                          'Ticket mínimo',
-                          _formatCurrency(minTicket),
-                        ),
-                        _buildSummaryRow(
-                          'Ticket máximo',
-                          _formatCurrency(maxTicket),
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 20),
-
-                  // Platos más vendidos
-                  if (_popularDishes.isNotEmpty)
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(15),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(10),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Platos más vendidos',
-                            style: pw.TextStyle(
-                              fontSize: 18,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.SizedBox(height: 10),
-                          ..._popularDishes.map((dish) {
-                            final nombre = dish['nombre'] as String;
-                            final cantidadVendida =
-                                int.tryParse(
-                                  dish['cantidad_vendida'].toString(),
-                                ) ??
-                                0;
-                            final porcentaje = ((cantidadVendida /
-                                        (int.tryParse(totalPedidos) ?? 1)) *
-                                    100)
-                                .toStringAsFixed(1);
-
-                            return pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Row(
-                                  mainAxisAlignment:
-                                      pw.MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    pw.Text(nombre),
-                                    pw.Text(
-                                      '$cantidadVendida und. ($porcentaje%)',
-                                    ),
-                                  ],
-                                ),
-                                pw.SizedBox(height: 5),
-                                pw.Container(
-                                  height: 10,
-                                  child: pw.Stack(
-                                    children: [
-                                      pw.Container(
-                                        decoration: pw.BoxDecoration(
-                                          color: PdfColors.grey300,
-                                          borderRadius: pw
-                                              .BorderRadius.circular(5),
-                                        ),
-                                      ),
-                                      pw.Container(
-                                        width:
-                                            400 *
-                                            (cantidadVendida /
-                                                (int.tryParse(totalPedidos) ??
-                                                    1)),
-                                        decoration: pw.BoxDecoration(
-                                          color: PdfColors.green300,
-                                          borderRadius: pw
-                                              .BorderRadius.circular(5),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                pw.SizedBox(height: 10),
-                              ],
-                            );
-                          }).toList(),
-                        ],
-                      ),
-                    ),
-                  pw.SizedBox(height: 20),
-
-                  // Gráficos
-                  if (ventasPorHora.isNotEmpty)
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(15),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(10),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Ventas por hora',
-                            style: pw.TextStyle(
-                              fontSize: 18,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.SizedBox(height: 10),
-                          _buildVentasPorHoraChart(ventasPorHora),
-                        ],
-                      ),
-                    ),
-                  pw.SizedBox(height: 20),
-
-                  if (ventasPorCategoria.isNotEmpty)
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(15),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(10),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Ventas por categoría',
-                            style: pw.TextStyle(
-                              fontSize: 18,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.SizedBox(height: 10),
-                          _buildVentasPorCategoriaChart(ventasPorCategoria),
-                        ],
-                      ),
-                    ),
-                  pw.SizedBox(height: 20),
-
-                  if (ticketPromedioPorDia.isNotEmpty)
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(15),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(10),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Ticket promedio por día',
-                            style: pw.TextStyle(
-                              fontSize: 18,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.SizedBox(height: 10),
-                          _buildTicketPromedioPorDiaChart(ticketPromedioPorDia),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ];
-          },
-        ),
-      );
-
-      // Obtener el directorio de descargas
-      Directory? dir;
-      if (Platform.isAndroid) {
-        dir = Directory('/storage/emulated/0/Download');
-        if (!await dir.exists()) {
-          dir = await getExternalStorageDirectory();
-        }
-      } else {
-        dir = await getApplicationDocumentsDirectory();
-      }
-
-      if (dir == null) {
-        throw Exception('No se pudo acceder al directorio de almacenamiento');
-      }
-
-      // Generar nombre de archivo único
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final file = File('${dir.path}/reporte_lebrunch_$timestamp.pdf');
-
-      // Guardar el archivo
-      await file.writeAsBytes(await pdf.save());
-
-      if (!mounted) return;
-      // Cerrar el modal de progreso si está abierto
-      if (showingProgress && Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-
-      // Mostrar modal de éxito
-      await CustomModal.showSuccess(
-        context: context,
-        title: '¡Reporte generado!',
-        message: 'El reporte se ha guardado exitosamente en:\n${file.path}',
-        buttonText: 'Entendido',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      // Cerrar el modal de progreso si está abierto
-      if (Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-
-      // Mostrar modal de error
-      await CustomModal.showError(
-        context: context,
-        title: 'Error',
-        message: 'Ocurrió un error al generar el reporte: ${e.toString()}',
-      );
-    }
-  }
-
-  // Función auxiliar para construir filas de resumen en el PDF
-  pw.Widget _buildSummaryRow(String label, String value) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(vertical: 5),
-      child: pw.Row(
-        children: [
-          pw.Text(label),
-          pw.Spacer(),
-          pw.Text(value, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  // Función para construir el gráfico de ventas por hora
-  pw.Widget _buildVentasPorHoraChart(List<dynamic> data) {
-    try {
-      // Convertir datos de manera segura
-      final processedData =
-          data.map((item) {
-            double totalVentas = 0.0;
-            int hora = 0;
-            try {
-              if (item['total_ventas'] is num) {
-                totalVentas = (item['total_ventas'] as num).toDouble();
-              } else {
-                totalVentas =
-                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
-              }
-              hora = int.tryParse(item['hora'].toString()) ?? 0;
-            } catch (e) {
-              print('Error procesando total_ventas: $e');
-            }
-            return {'total_ventas': totalVentas, 'hora': hora};
-          }).toList();
-
-      // Encontrar el valor máximo para escalar el gráfico
-      double maxValue = processedData.fold(
-        0.0,
-        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
-      );
-
-      return pw.Container(
-        height: 200,
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children:
-              processedData.map((item) {
-                final height =
-                    ((item['total_ventas'] as double? ?? 0.0) /
-                        (maxValue > 0 ? maxValue : 1)) *
-                    150;
-                return pw.Expanded(
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.end,
-                    children: [
-                      pw.Container(
-                        height: height,
-                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.green300,
-                          borderRadius: pw.BorderRadius.vertical(
-                            top: pw.Radius.circular(4),
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        '${item['hora']}h',
-                        style: pw.TextStyle(fontSize: 8),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-        ),
-      );
-    } catch (e) {
-      print('Error generando gráfico de ventas por hora: $e');
-      return pw.Container();
-    }
-  }
-
-  // Función para construir el gráfico de ventas por categoría
-  pw.Widget _buildVentasPorCategoriaChart(List<dynamic> data) {
-    try {
-      // Convertir datos de manera segura
-      final processedData =
-          data.map((item) {
-            double totalVentas = 0.0;
-            String categoria = '';
-            try {
-              if (item['total_ventas'] is num) {
-                totalVentas = (item['total_ventas'] as num).toDouble();
-              } else {
-                totalVentas =
-                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
-              }
-              categoria = item['categoria']?.toString() ?? '';
-            } catch (e) {
-              print('Error procesando datos de categoría: $e');
-            }
-            return {'categoria': categoria, 'total_ventas': totalVentas};
-          }).toList();
-
-      // Encontrar el valor máximo para escalar el gráfico
-      double maxValue = processedData.fold(
-        0.0,
-        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
-      );
-
-      return pw.Container(
-        height: 200,
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children:
-              processedData.map((item) {
-                final height =
-                    ((item['total_ventas'] as double? ?? 0.0) /
-                        (maxValue > 0 ? maxValue : 1)) *
-                    150;
-                return pw.Expanded(
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.end,
-                    children: [
-                      pw.Container(
-                        height: height,
-                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.green300,
-                          borderRadius: pw.BorderRadius.vertical(
-                            top: pw.Radius.circular(4),
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        item['categoria']?.toString() ?? '',
-                        style: pw.TextStyle(fontSize: 8),
-                      ),
-                      pw.Text(
-                        _formatCurrency(item['total_ventas'] as double? ?? 0.0),
-                        style: pw.TextStyle(fontSize: 6),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-        ),
-      );
-    } catch (e) {
-      print('Error generando gráfico de ventas por categoría: $e');
-      return pw.Container();
-    }
-  }
-
-  // Función para construir el gráfico de ticket promedio por día
-  pw.Widget _buildTicketPromedioPorDiaChart(List<dynamic> data) {
-    try {
-      final diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-
-      // Convertir datos de manera segura
-      final processedData =
-          data.map((item) {
-            double ticketPromedio = 0.0;
-            try {
-              if (item['ticket_promedio'] is num) {
-                ticketPromedio = (item['ticket_promedio'] as num).toDouble();
-              } else {
-                ticketPromedio =
-                    double.tryParse(item['ticket_promedio'].toString()) ?? 0.0;
-              }
-            } catch (e) {
-              print('Error procesando ticket_promedio: $e');
-            }
-            return {'ticket_promedio': ticketPromedio};
-          }).toList();
-
-      // Encontrar el valor máximo para escalar el gráfico
-      double maxValue = processedData.fold(
-        0.0,
-        (max, item) =>
-            math.max(max, (item['ticket_promedio'] as double? ?? 0.0)),
-      );
-
-      return pw.Container(
-        height: 200,
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children:
-              processedData.map((item) {
-                final height =
-                    ((item['ticket_promedio'] as double? ?? 0.0) /
-                        (maxValue > 0 ? maxValue : 1)) *
-                    150;
-                return pw.Expanded(
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.end,
-                    children: [
-                      pw.Container(
-                        height: height,
-                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.green300,
-                          borderRadius: pw.BorderRadius.vertical(
-                            top: pw.Radius.circular(4),
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        diasSemana[processedData.indexOf(item)],
-                        style: pw.TextStyle(fontSize: 8),
-                      ),
-                      pw.Text(
-                        _formatCurrency(
-                          item['ticket_promedio'] as double? ?? 0.0,
-                        ),
-                        style: pw.TextStyle(fontSize: 6),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-        ),
-      );
-    } catch (e) {
-      print('Error generando gráfico de ticket promedio por día: $e');
-      return pw.Container();
-    }
   }
 
   @override
@@ -1117,7 +539,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             style: TextStyle(
                               fontFamily: 'Lighthouse',
                               fontSize: 18,
-                              color: theme.colorScheme.error,
+                              color: Theme.of(context).colorScheme.error,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -1127,7 +549,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             style: TextStyle(
                               fontFamily: 'Lighthouse',
                               fontSize: 14,
-                              color: theme.colorScheme.error.withOpacity(0.8),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.error.withOpacity(0.8),
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -1182,6 +606,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 12),
+                              // BOTÓN TEMPORAL DE PRUEBA - ELIMINAR DESPUÉS
+                              ElevatedButton.icon(
+                                onPressed: _testNotification,
+                                icon: const Icon(Icons.notifications),
+                                label: const Text('🧪 Probar notificación'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1194,26 +633,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildStatisticsCards(ThemeData theme) {
-    // Asegurar que los valores son números válidos
     final totalPedidos = _summaryData['totalPedidos'] ?? 0;
+    final totalVentas = _summaryData['totalVentas'] ?? 0.0;
+    final ticketPromedio = _summaryData['ticketPromedio'] ?? 0.0;
+
+    // Asegurar que los valores son números válidos
+    final totalPedidosInt =
+        totalPedidos is int
+            ? totalPedidos
+            : int.tryParse(totalPedidos.toString()) ?? 0;
 
     // Forzar la conversión a double para evitar errores de tipo
-    final totalVentas =
-        _summaryData['totalVentas'] != null
-            ? double.parse(_summaryData['totalVentas'].toString())
-            : 0.0;
-
-    final ticketPromedio =
-        _summaryData['ticketPromedio'] != null
-            ? double.parse(_summaryData['ticketPromedio'].toString())
-            : 0.0;
+    final totalVentasDouble =
+        totalVentas is double
+            ? totalVentas
+            : double.tryParse(totalVentas.toString()) ?? 0.0;
+    final ticketPromedioDouble =
+        ticketPromedio is double
+            ? ticketPromedio
+            : double.tryParse(ticketPromedio.toString()) ?? 0.0;
 
     print(
-      '💰 Valores para tarjetas: Pedidos=$totalPedidos, Ventas=$totalVentas, Ticket=$ticketPromedio',
+      '💰 Valores para tarjetas: Pedidos=$totalPedidosInt, Ventas=$totalVentasDouble, Ticket=$ticketPromedioDouble',
     );
 
     // Si no hay pedidos, mostrar un mensaje
-    if (totalPedidos == 0) {
+    if (totalPedidosInt == 0) {
       return Card(
         elevation: 2,
         child: Padding(
@@ -1251,7 +696,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               child: _buildStatCard(
                 theme,
                 'Total de pedidos',
-                '$totalPedidos',
+                '$totalPedidosInt',
                 Icons.receipt_long,
               ),
             ),
@@ -1260,7 +705,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               child: _buildStatCard(
                 theme,
                 'Ventas totales',
-                _formatCurrency(totalVentas),
+                _formatCurrency(totalVentasDouble),
                 Icons.attach_money,
               ),
             ),
@@ -1273,7 +718,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               child: _buildStatCard(
                 theme,
                 'Ticket promedio',
-                _formatCurrency(ticketPromedio),
+                _formatCurrency(ticketPromedioDouble),
                 Icons.point_of_sale,
               ),
             ),
@@ -2323,85 +1768,895 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  // Procesar los datos cuando se reciben
-  void _processSummaryData(Map<String, dynamic> data) {
-    if (data['ventasPorCategoria'] != null) {
-      final List<dynamic> rawData = data['ventasPorCategoria'];
-      data['ventasPorCategoria'] =
-          rawData.map((venta) {
-            return {
-              ...venta,
-              'total_ventas': double.parse(venta['total_ventas'].toString()),
-            };
-          }).toList();
-    }
-
-    if (data['ventasPorHora'] != null) {
-      final List<dynamic> rawData = data['ventasPorHora'];
-      data['ventasPorHora'] =
-          rawData.map((venta) {
-            return {
-              ...venta,
-              'hora': int.parse(venta['hora'].toString()),
-              'total_ventas': double.parse(venta['total_ventas'].toString()),
-            };
-          }).toList();
-    }
-
-    _summaryData = data;
-  }
-
-  // Modificar el método que obtiene los datos
-  Future<void> _fetchData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = '';
-    });
+  Future<void> _generateAndDownloadPDF() async {
+    const int progressNotificationId = 12345;
 
     try {
-      String? servicePeriod = _convertPeriodToServiceFormat(_currentPeriod);
-      String? selectedCategory =
-          _selectedCategory == 'todos' ? null : _selectedCategory;
+      bool hasPermission = await _requestStoragePermission();
 
-      print(
-        '🔍 Cargando reporte para período: $_currentPeriod (API: $servicePeriod), categoría: $selectedCategory',
+      if (!hasPermission) {
+        if (!mounted) return;
+        await CustomModal.showError(
+          context: context,
+          title: 'Permiso denegado',
+          message:
+              'No se puede descargar el reporte sin los permisos necesarios.',
+        );
+        return;
+      }
+
+      // Mostrar notificación de progreso inicial
+      await NotificationService.showDownloadProgressNotification(
+        id: progressNotificationId,
+        title: 'Generando reporte PDF',
+        message: 'Preparando documento...',
+        progress: 0,
+        maxProgress: 100,
       );
 
-      // Obtener resumen de pedidos
-      final ordersSummary = await _ordersService.getOrdersSummary(
-        period: servicePeriod,
-        customStartDate: _customStartDate,
-        customEndDate: _customEndDate,
-        categoria: selectedCategory,
+      // Mostrar modal de progreso
+      if (!mounted) return;
+      bool showingProgress = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return WillPopScope(
+            onWillPop: () async => false,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Generando reporte',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    'Por favor espera mientras generamos tu reporte...',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
 
-      print('📊 Resumen de pedidos recibido: $ordersSummary');
-
-      // Obtener platos populares
-      final dishes = await _popularDishesService.getPopularDishesDirect(
-        period: servicePeriod,
-        startDate: _customStartDate,
-        endDate: _customEndDate,
-        categoria: selectedCategory,
+      // Actualizar progreso: preparación
+      await NotificationService.showDownloadProgressNotification(
+        id: progressNotificationId,
+        title: 'Generando reporte PDF',
+        message: 'Recopilando datos...',
+        progress: 20,
+        maxProgress: 100,
       );
 
-      print('📊 Platos populares recibidos: ${dishes.length}');
+      // Crear el documento PDF
+      final pdf = pw.Document();
+
+      // Obtener el título del reporte según los filtros
+      String reportTitle = _getReportTitle();
+      String categoryFilter =
+          categoryLabels[_selectedCategory] ?? 'Todos los items';
+      String dateRange = '';
+
+      switch (_currentPeriod) {
+        case 'hoy':
+          dateRange = DateFormat('dd/MM/yyyy').format(DateTime.now());
+          break;
+        case 'semana':
+          final now = DateTime.now();
+          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfWeek)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'mes':
+          final now = DateTime.now();
+          final startOfMonth = DateTime(now.year, now.month, 1);
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfMonth)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'año':
+          final now = DateTime.now();
+          final startOfYear = DateTime(now.year, 1, 1);
+          dateRange =
+              '${DateFormat('dd/MM/yyyy').format(startOfYear)} - ${DateFormat('dd/MM/yyyy').format(now)}';
+          break;
+        case 'personalizado':
+          if (_customStartDate != null && _customEndDate != null) {
+            final startDate = DateFormat('yyyy-MM-dd').parse(_customStartDate!);
+            final endDate = DateFormat('yyyy-MM-dd').parse(_customEndDate!);
+            dateRange =
+                '${DateFormat('dd/MM/yyyy').format(startDate)} - ${DateFormat('dd/MM/yyyy').format(endDate)}';
+          }
+          break;
+      }
+
+      // Actualizar progreso: creando contenido
+      await NotificationService.showDownloadProgressNotification(
+        id: progressNotificationId,
+        title: 'Generando reporte PDF',
+        message: 'Creando contenido del documento...',
+        progress: 50,
+        maxProgress: 100,
+      );
+
+      // Asegurar que los valores numéricos sean válidos
+      final totalPedidos = _summaryData['totalPedidos']?.toString() ?? '0';
+      final totalVentas = _summaryData['totalVentas'] ?? 0.0;
+      final ticketPromedio = _summaryData['ticketPromedio'] ?? 0.0;
+      final minTicket = _summaryData['minPedido'] ?? 0.0;
+      final maxTicket = _summaryData['maxPedido'] ?? 0.0;
+      final ventasPorHora =
+          _summaryData['ventasPorHora'] as List<dynamic>? ?? [];
+      final ventasPorCategoria =
+          _summaryData['ventasPorCategoria'] as List<dynamic>? ?? [];
+      final ticketPromedioPorDia =
+          _summaryData['ticketPromedioPorDia'] as List<dynamic>? ?? [];
+
+      // Cargar el logo desde assets
+      final logoData = await rootBundle.load('assets/logos/logo_lebrunch.png');
+      final logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
+
+      // Agregar contenido al PDF
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Encabezado con logo
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(20),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex(
+                        '#3EA69B',
+                      ), // Color primary del theme
+                      borderRadius: pw.BorderRadius.circular(12),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Logo
+                        pw.Container(
+                          width: 80,
+                          height: 80,
+                          child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                        ),
+                        pw.SizedBox(width: 20),
+                        // Información del reporte
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.end,
+                            children: [
+                              pw.Text(
+                                'Reporte de Ventas',
+                                style: pw.TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.white,
+                                ),
+                              ),
+                              pw.SizedBox(height: 8),
+                              pw.Text(
+                                categoryFilter,
+                                style: pw.TextStyle(
+                                  fontSize: 16,
+                                  color: PdfColors.white,
+                                ),
+                              ),
+                              if (dateRange.isNotEmpty) ...[
+                                pw.SizedBox(height: 4),
+                                pw.Text(
+                                  dateRange,
+                                  style: pw.TextStyle(
+                                    fontSize: 14,
+                                    color: PdfColors.white,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 25),
+
+                  // Información del período y filtros (ahora más compacta)
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(
+                        color: PdfColor.fromHex('#94C7C0'),
+                      ), // Secondary color del theme
+                      borderRadius: pw.BorderRadius.circular(8),
+                      color: PdfColor.fromHex(
+                        '#F8FFFE',
+                      ), // Muy claro basado en el primary
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Período: $_currentPeriod',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex(
+                              '#2D8A80',
+                            ), // primaryContainer del theme
+                          ),
+                        ),
+                        pw.Text(
+                          'Generado: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            color: PdfColor.fromHex(
+                              '#444444',
+                            ), // onSurface del theme
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 25),
+
+                  // Resumen de ventas
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex(
+                        '#F8FFFE',
+                      ), // Color muy claro basado en el primary
+                      border: pw.Border.all(
+                        color: PdfColor.fromHex('#94C7C0'),
+                      ), // Secondary color
+                      borderRadius: pw.BorderRadius.circular(10),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Resumen de ventas',
+                          style: pw.TextStyle(
+                            fontSize: 18,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex(
+                              '#2D8A80',
+                            ), // primaryContainer del theme
+                          ),
+                        ),
+                        pw.SizedBox(height: 10),
+                        _buildSummaryRow('Total de pedidos', totalPedidos),
+                        _buildSummaryRow(
+                          'Total de ventas',
+                          _formatCurrency(totalVentas),
+                        ),
+                        _buildSummaryRow(
+                          'Ticket promedio',
+                          _formatCurrency(ticketPromedio),
+                        ),
+                        pw.SizedBox(height: 10),
+                        pw.Divider(
+                          color: PdfColor.fromHex('#94C7C0'),
+                        ), // Secondary color
+                        pw.SizedBox(height: 10),
+                        pw.Text(
+                          'Rango de tickets',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex(
+                              '#2D8A80',
+                            ), // primaryContainer del theme
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        _buildSummaryRow(
+                          'Ticket mínimo',
+                          _formatCurrency(minTicket),
+                        ),
+                        _buildSummaryRow(
+                          'Ticket máximo',
+                          _formatCurrency(maxTicket),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Platos más vendidos
+                  if (_popularDishes.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex(
+                          '#F8FFFE',
+                        ), // Color muy claro basado en el primary
+                        border: pw.Border.all(
+                          color: PdfColor.fromHex('#94C7C0'),
+                        ), // Secondary color
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Platos más vendidos',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex(
+                                '#2D8A80',
+                              ), // primaryContainer del theme
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          ..._popularDishes.map((dish) {
+                            final nombre = dish['nombre'] as String;
+                            final cantidadVendida =
+                                int.tryParse(
+                                  dish['cantidad_vendida'].toString(),
+                                ) ??
+                                0;
+                            final porcentaje = ((cantidadVendida /
+                                        (int.tryParse(totalPedidos) ?? 1)) *
+                                    100)
+                                .toStringAsFixed(1);
+
+                            return pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Row(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    pw.Text(
+                                      nombre,
+                                      style: pw.TextStyle(
+                                        color: PdfColor.fromHex(
+                                          '#444444',
+                                        ), // onSurface del theme
+                                      ),
+                                    ),
+                                    pw.Text(
+                                      '$cantidadVendida und. ($porcentaje%)',
+                                      style: pw.TextStyle(
+                                        color: PdfColor.fromHex(
+                                          '#2D8A80',
+                                        ), // primaryContainer del theme
+                                        fontWeight: pw.FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                pw.SizedBox(height: 5),
+                                pw.Container(
+                                  height: 10,
+                                  child: pw.Stack(
+                                    children: [
+                                      pw.Container(
+                                        decoration: pw.BoxDecoration(
+                                          color: PdfColor.fromHex(
+                                            '#C2C8BC',
+                                          ), // outline del theme como fondo
+                                          borderRadius: pw
+                                              .BorderRadius.circular(5),
+                                        ),
+                                      ),
+                                      pw.Container(
+                                        width:
+                                            400 *
+                                            (cantidadVendida /
+                                                (int.tryParse(totalPedidos) ??
+                                                    1)),
+                                        decoration: pw.BoxDecoration(
+                                          color: PdfColor.fromHex(
+                                            '#3EA69B',
+                                          ), // primary del theme
+                                          borderRadius: pw
+                                              .BorderRadius.circular(5),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                pw.SizedBox(height: 10),
+                              ],
+                            );
+                          }).toList(),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  // Gráficos
+                  if (ventasPorHora.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex(
+                          '#F8FFFE',
+                        ), // Color muy claro basado en el primary
+                        border: pw.Border.all(
+                          color: PdfColor.fromHex('#94C7C0'),
+                        ), // Secondary color
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ventas por hora',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex(
+                                '#2D8A80',
+                              ), // primaryContainer del theme
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildVentasPorHoraChart(ventasPorHora),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  if (ventasPorCategoria.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex(
+                          '#F8FFFE',
+                        ), // Color muy claro basado en el primary
+                        border: pw.Border.all(
+                          color: PdfColor.fromHex('#94C7C0'),
+                        ), // Secondary color
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ventas por categoría',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex(
+                                '#2D8A80',
+                              ), // primaryContainer del theme
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildVentasPorCategoriaChart(ventasPorCategoria),
+                        ],
+                      ),
+                    ),
+                  pw.SizedBox(height: 20),
+
+                  if (ticketPromedioPorDia.isNotEmpty)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(15),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex(
+                          '#F8FFFE',
+                        ), // Color muy claro basado en el primary
+                        border: pw.Border.all(
+                          color: PdfColor.fromHex('#94C7C0'),
+                        ), // Secondary color
+                        borderRadius: pw.BorderRadius.circular(10),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Ticket promedio por día',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex(
+                                '#2D8A80',
+                              ), // primaryContainer del theme
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          _buildTicketPromedioPorDiaChart(ticketPromedioPorDia),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+
+      // Actualizar progreso: guardando archivo
+      await NotificationService.showDownloadProgressNotification(
+        id: progressNotificationId,
+        title: 'Generando reporte PDF',
+        message: 'Guardando archivo...',
+        progress: 80,
+        maxProgress: 100,
+      );
+
+      // Obtener el directorio de descargas
+      Directory? dir;
+      if (Platform.isAndroid) {
+        dir = Directory('/storage/emulated/0/Download');
+        if (!await dir.exists()) {
+          dir = await getExternalStorageDirectory();
+        }
+      } else {
+        dir = await getApplicationDocumentsDirectory();
+      }
+
+      if (dir == null) {
+        throw Exception('No se pudo acceder al directorio de almacenamiento');
+      }
+
+      // Generar nombre de archivo único
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'reporte_lebrunch_$timestamp.pdf';
+      final file = File('${dir.path}/$fileName');
+
+      // Guardar el archivo
+      await file.writeAsBytes(await pdf.save());
+
+      // Completar progreso
+      await NotificationService.showDownloadProgressNotification(
+        id: progressNotificationId,
+        title: 'Generando reporte PDF',
+        message: 'Completado!',
+        progress: 100,
+        maxProgress: 100,
+      );
+
+      // Esperar un momento antes de cancelar la notificación de progreso
+      await Future.delayed(const Duration(milliseconds: 500));
+      await NotificationService.cancelNotification(progressNotificationId);
+
+      // Mostrar notificación de descarga completa
+      await NotificationService.showPdfDownloadedNotification(
+        fileName: fileName,
+        filePath: file.path,
+      );
+
+      if (!mounted) return;
+      // Cerrar el modal de progreso si está abierto
+      if (showingProgress && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostrar modal de éxito con información sobre la notificación
+      await CustomModal.showSuccess(
+        context: context,
+        title: '¡Reporte generado!',
+        message:
+            'El reporte se ha guardado exitosamente.\n\nPuedes encontrarlo en tus notificaciones o en:\n${file.path}',
+        buttonText: 'Entendido',
+      );
+    } catch (e) {
+      // Cancelar notificación de progreso en caso de error
+      await NotificationService.cancelNotification(progressNotificationId);
+
+      if (!mounted) return;
+      // Cerrar el modal de progreso si está abierto
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostrar modal de error
+      await CustomModal.showError(
+        context: context,
+        title: 'Error',
+        message: 'Ocurrió un error al generar el reporte: ${e.toString()}',
+      );
+    }
+  }
+
+  // Función auxiliar para construir filas de resumen en el PDF
+  pw.Widget _buildSummaryRow(String label, String value) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 5),
+      child: pw.Row(
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              color: PdfColor.fromHex('#444444'), // onSurface del theme
+            ),
+          ),
+          pw.Spacer(),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#2D8A80'), // primaryContainer del theme
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Función para construir el gráfico de ventas por hora
+  pw.Widget _buildVentasPorHoraChart(List<dynamic> data) {
+    try {
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double totalVentas = 0.0;
+            int hora = 0;
+            try {
+              if (item['total_ventas'] is num) {
+                totalVentas = (item['total_ventas'] as num).toDouble();
+              } else {
+                totalVentas =
+                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
+              }
+              hora = int.tryParse(item['hora'].toString()) ?? 0;
+            } catch (e) {
+              print('Error procesando total_ventas: $e');
+            }
+            return {'total_ventas': totalVentas, 'hora': hora};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['total_ventas'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex(
+                            '#3EA69B',
+                          ), // primary del theme
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        '${item['hora']}h',
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          color: PdfColor.fromHex(
+                            '#444444',
+                          ), // onSurface del theme
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ventas por hora: $e');
+      return pw.Container();
+    }
+  }
+
+  // Función para construir el gráfico de ventas por categoría
+  pw.Widget _buildVentasPorCategoriaChart(List<dynamic> data) {
+    try {
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double totalVentas = 0.0;
+            String categoria = '';
+            try {
+              if (item['total_ventas'] is num) {
+                totalVentas = (item['total_ventas'] as num).toDouble();
+              } else {
+                totalVentas =
+                    double.tryParse(item['total_ventas'].toString()) ?? 0.0;
+              }
+              categoria = item['categoria']?.toString() ?? '';
+            } catch (e) {
+              print('Error procesando datos de categoría: $e');
+            }
+            return {'categoria': categoria, 'total_ventas': totalVentas};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) => math.max(max, (item['total_ventas'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['total_ventas'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex(
+                            '#94C7C0',
+                          ), // secondary del theme
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        item['categoria']?.toString() ?? '',
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          color: PdfColor.fromHex(
+                            '#444444',
+                          ), // onSurface del theme
+                        ),
+                      ),
+                      pw.Text(
+                        _formatCurrency(item['total_ventas'] as double? ?? 0.0),
+                        style: pw.TextStyle(
+                          fontSize: 6,
+                          color: PdfColor.fromHex(
+                            '#2D8A80',
+                          ), // primaryContainer del theme
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ventas por categoría: $e');
+      return pw.Container();
+    }
+  }
+
+  // Función para construir el gráfico de ticket promedio por día
+  pw.Widget _buildTicketPromedioPorDiaChart(List<dynamic> data) {
+    try {
+      final diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+      // Convertir datos de manera segura
+      final processedData =
+          data.map((item) {
+            double ticketPromedio = 0.0;
+            try {
+              if (item['ticket_promedio'] is num) {
+                ticketPromedio = (item['ticket_promedio'] as num).toDouble();
+              } else {
+                ticketPromedio =
+                    double.tryParse(item['ticket_promedio'].toString()) ?? 0.0;
+              }
+            } catch (e) {
+              print('Error procesando ticket_promedio: $e');
+            }
+            return {'ticket_promedio': ticketPromedio};
+          }).toList();
+
+      // Encontrar el valor máximo para escalar el gráfico
+      double maxValue = processedData.fold(
+        0.0,
+        (max, item) =>
+            math.max(max, (item['ticket_promedio'] as double? ?? 0.0)),
+      );
+
+      return pw.Container(
+        height: 200,
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children:
+              processedData.map((item) {
+                final height =
+                    ((item['ticket_promedio'] as double? ?? 0.0) /
+                        (maxValue > 0 ? maxValue : 1)) *
+                    150;
+                return pw.Expanded(
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Container(
+                        height: height,
+                        margin: const pw.EdgeInsets.symmetric(horizontal: 2),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex(
+                            '#2D8A80',
+                          ), // primaryContainer del theme
+                          borderRadius: pw.BorderRadius.vertical(
+                            top: pw.Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        diasSemana[processedData.indexOf(item)],
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          color: PdfColor.fromHex(
+                            '#444444',
+                          ), // onSurface del theme
+                        ),
+                      ),
+                      pw.Text(
+                        _formatCurrency(
+                          item['ticket_promedio'] as double? ?? 0.0,
+                        ),
+                        style: pw.TextStyle(
+                          fontSize: 6,
+                          color: PdfColor.fromHex(
+                            '#2D8A80',
+                          ), // primaryContainer del theme
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+        ),
+      );
+    } catch (e) {
+      print('Error generando gráfico de ticket promedio por día: $e');
+      return pw.Container();
+    }
+  }
+
+  // Función temporal de prueba para notificaciones - ELIMINAR DESPUÉS
+  Future<void> _testNotification() async {
+    try {
+      await NotificationService.showTestNotification();
 
       if (mounted) {
-        setState(() {
-          _summaryData = ordersSummary;
-          _popularDishes = dishes;
-          _isLoading = false;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🧪 Notificación de prueba enviada'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
-      print('❌ Error al cargar datos del reporte: $e');
+      print('❌ Error al enviar notificación de prueba: $e');
       if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'Error al cargar datos: $e';
-          _isLoading = false;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }

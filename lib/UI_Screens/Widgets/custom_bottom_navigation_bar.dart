@@ -1,5 +1,6 @@
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '/UI_Screens/Admin_Screens/menu_screen.dart';
 import '/UI_Screens/Client_Screens/ClientHomeScreen.dart';
 import '/UI_Screens/Client_Screens/CartScreen.dart';
@@ -23,6 +24,7 @@ import 'text_with_border.dart';
 import 'package:http/http.dart' as http;
 import '../../Api_services/cart_service.dart';
 import '../../services/cart_event_bus.dart';
+import 'background_scaffold.dart';
 
 // PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
 class PlaceholderScreen extends StatelessWidget {
@@ -34,7 +36,7 @@ class PlaceholderScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async => false,
-      child: Scaffold(
+      child: BackgroundScaffold(
         appBar: AppBar(title: Text(title), automaticallyImplyLeading: false),
         body: Center(
           child: Column(
@@ -75,6 +77,8 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   int _userRole = 0;
   String? _userName;
   String? _userId; // Variable para almacenar el ID del usuario actual
+  bool _isSuperAdmin =
+      false; // **NUEVO**: Variable para trackear si es super admin
   bool _isLoading = true;
   final GlobalKey<CurvedNavigationBarState> _navBarKey = GlobalKey();
   final storage = const FlutterSecureStorage();
@@ -408,7 +412,9 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const BackgroundScaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     final theme = Theme.of(context);
@@ -477,9 +483,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         }
         return false; // Siempre retornar false para evitar la navegación hacia atrás
       },
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: backgroundColor,
+      child: BackgroundScaffold(
         appBar: AppBar(
           title: _buildAppBarTitle(),
           automaticallyImplyLeading: false,
@@ -1196,23 +1200,71 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     final theme = Theme.of(context);
     final prefs = await SharedPreferences.getInstance();
 
-    // Obtener información del usuario desde SharedPreferences
+    // Obtener información básica del usuario desde SharedPreferences
     final userId = prefs.getInt('user_id');
-    final userEmail = prefs.getString('user_email') ?? 'correo@ejemplo.com';
-    final userCedula = prefs.getString('user_cedula') ?? '';
+    final serverIp = prefs.getString('serverIp') ?? '192.168.1.121';
+    final serverPort = '3000';
 
-    // En una implementación real, estos datos vendrían del servidor
-    final Map<String, String> userInfo = {
-      'nombre': _userName?.split(' ').first ?? 'Usuario',
+    // Valores por defecto mientras se cargan los datos
+    Map<String, String> userInfo = {
+      'nombre': _userName?.split(' ').first ?? '',
       'apellido':
           (_userName != null && _userName!.split(' ').length > 1)
               ? _userName!.split(' ').last
               : '',
-      'cedula': userCedula,
-      'email': userEmail,
-      'id': userId?.toString() ?? 'N/A',
+      'cedula': prefs.getString('user_cedula') ?? '',
+      'email': prefs.getString('user_email') ?? '',
+      'id': userId?.toString() ?? '',
     };
 
+    // Intentar obtener datos actualizados del servidor antes de mostrar el modal
+    if (userId != null) {
+      try {
+        print('📊 Obteniendo datos actualizados del usuario $userId...');
+
+        final response = await http
+            .get(
+              Uri.parse('http://$serverIp:$serverPort/users/$userId'),
+              headers: {'Content-Type': 'application/json'},
+            )
+            .timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> userData =
+              json.decode(response.body) as Map<String, dynamic>;
+
+          print('✅ Datos del usuario obtenidos: $userData');
+
+          // Actualizar con los datos reales del servidor
+          userInfo = {
+            'nombre': userData['nombre']?.toString() ?? '',
+            'apellido': userData['apellido']?.toString() ?? '',
+            'cedula': userData['cedula']?.toString() ?? '',
+            'email': userData['email']?.toString() ?? '',
+            'id': userData['id']?.toString() ?? userId.toString(),
+          };
+
+          // Actualizar también SharedPreferences con datos frescos
+          if (userData['email'] != null &&
+              userData['email'].toString().isNotEmpty) {
+            await prefs.setString('user_email', userData['email'].toString());
+          }
+          if (userData['cedula'] != null &&
+              userData['cedula'].toString().isNotEmpty) {
+            await prefs.setString('user_cedula', userData['cedula'].toString());
+          }
+
+          print('✅ Datos del usuario actualizados en SharedPreferences');
+        } else {
+          print('❌ Error al obtener datos del usuario: ${response.statusCode}');
+        }
+      } catch (e) {
+        print('❌ Error al cargar datos del usuario: $e');
+        // Continuamos con los datos de SharedPreferences si hay error
+      }
+    }
+
+    // Mostrar el modal con los datos obtenidos (ya sean del servidor o locales)
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1241,7 +1293,11 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
                             radius: 60,
                             backgroundColor: theme.colorScheme.primary,
                             child: Text(
-                              _userName != null && _userName!.isNotEmpty
+                              userInfo['nombre']?.isNotEmpty == true
+                                  ? userInfo['nombre']!
+                                      .substring(0, 1)
+                                      .toUpperCase()
+                                  : _userName != null && _userName!.isNotEmpty
                                   ? _userName!.substring(0, 1).toUpperCase()
                                   : 'U',
                               style: TextStyle(
@@ -1253,7 +1309,10 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            _userName ?? 'Usuario',
+                            userInfo['nombre']?.isNotEmpty == true &&
+                                    userInfo['apellido']?.isNotEmpty == true
+                                ? '${userInfo['nombre']} ${userInfo['apellido']}'
+                                : _userName ?? 'Usuario',
                             style: theme.textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -1453,23 +1512,6 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
             minimumSize: const Size(double.infinity, 50),
           ),
         ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () {
-            // Aquí iría la navegación a los pedidos anteriores
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Historial de pedidos no implementado'),
-              ),
-            );
-          },
-          icon: const Icon(Icons.history),
-          label: const Text('Mis Pedidos Anteriores'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 50),
-          ),
-        ),
       ],
     );
   }
@@ -1544,6 +1586,11 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
   // Obtener nombre del rol actual
   String _getRoleName() {
+    // **NUEVO**: Verificar si es super admin primero
+    if (_isSuperAdmin && _userRole == 0) {
+      return 'Super Administrador';
+    }
+
     switch (_userRole) {
       case 0:
         return 'Administrador';
@@ -1674,6 +1721,9 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
       final roleId = prefs.getInt('user_rol');
       final name = prefs.getString('user_name');
       final userId = prefs.getInt('user_id');
+      final isSuperAdmin =
+          prefs.getBool('is_super_admin') ??
+          false; // **NUEVO**: Cargar flag de super admin
 
       // Guardar ID de usuario para referencia en CartService
       if (userId != null) {
@@ -1688,11 +1738,24 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         await _cartService.setUserId('guest');
       }
 
+      print('🔑 Datos cargados del usuario:');
+      print('   - Rol: $roleId');
+      print('   - Nombre: $name');
+      print('   - ID: $userId');
+      print('   - Es Super Admin: $isSuperAdmin');
+
       setState(() {
-        _userRole = roleId ?? 0;
+        _userRole = roleId ?? 1; // Por defecto cliente si no hay rol
         _userName = name;
+        _isSuperAdmin =
+            isSuperAdmin; // **NUEVO**: Guardar estado de super admin
         _isLoading = false;
       });
+
+      // **NUEVO**: Si es super admin con rol 0, asegurar que las pantallas de admin se carguen
+      if (_isSuperAdmin && _userRole == 0) {
+        print('🔑 Super Admin detectado - Cargando pantallas de administrador');
+      }
     } catch (e) {
       print('Error al cargar datos de usuario: $e');
       setState(() {

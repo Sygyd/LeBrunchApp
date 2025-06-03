@@ -22,14 +22,21 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
   // Clave global para acceder al DateFilterBar
   final GlobalKey<DateFilterBarState> _dateFilterKey = GlobalKey();
   bool _isLoading = true;
+  bool _isFiltering = false; // Variable para controlar el estado de filtrado
   String? _error; // Definición de variable de error
   List<Map<String, dynamic>> _popularDishes = [];
   List<Map<String, dynamic>> _filteredDishes = [];
   String _selectedPeriod =
       'all'; // Período seleccionado: day, week, month, year
-  List<Map<String, dynamic>> _categories = []; // Lista de categorías
+
+  // ✨ OPTIMIZACIÓN: Estructura mejorada para categorías jerárquicas
+  Map<String, List<Map<String, dynamic>>> _categoriesByType = {
+    'comida': [],
+    'bebida': [],
+  };
   Map<String, bool> _selectedCategories =
       {}; // Categorías seleccionadas como Map
+  String? _selectedMainType; // 'comida' o 'bebida' seleccionado
 
   // Variables para el rango de fechas personalizado
   DateTime? _startDate;
@@ -42,7 +49,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     _isLoading = true;
     _selectedCategories = {};
     _selectedPeriod = 'all';
-    _categories = [];
+    _categoriesByType = {'comida': [], 'bebida': []};
     _startDate = DateTime.now().subtract(const Duration(days: 7));
     _endDate = DateTime.now();
 
@@ -50,7 +57,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     _loadCategoriesAndDishes();
   }
 
-  // Método para cargar categorías y platos en un solo flujo
+  // ✨ OPTIMIZACIÓN: Método mejorado para cargar categorías jerárquicas
   Future<void> _loadCategoriesAndDishes() async {
     try {
       setState(() {
@@ -58,11 +65,11 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         _error = null;
       });
 
-      // Paso 1: Cargar las categorías
-      await _loadCategories();
+      // Paso 1: Cargar las categorías organizadas por tipo
+      await _loadCategoriesHierarchical();
 
-      // Paso 2: Cargar los platos populares
-      await _loadPopularDishes();
+      // Paso 2: Cargar los platos populares con límite aumentado
+      await _loadPopularDishes(isInitialLoad: true);
     } catch (e) {
       setState(() {
         _error = 'Error al cargar datos: $e';
@@ -72,35 +79,70 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     }
   }
 
-  // Carga las categorías desde el menú
-  Future<void> _loadCategories() async {
+  // ✨ OPTIMIZACIÓN: Cargar categorías organizadas jerárquicamente
+  Future<void> _loadCategoriesHierarchical() async {
     try {
-      final menu =
-          await _menuService.getDishes(); // Uso de método correcto getDishes
+      final menu = await _menuService.getDishes();
 
-      // Extraer categorías únicas del menú
-      final Set<String> categories = {};
+      // Agrupar categorías por tipo (comida/bebida)
+      final Map<String, Set<String>> categoriesByType = {
+        'comida': {},
+        'bebida': {},
+      };
 
       for (var item in menu) {
         if (item['categoria'] != null &&
-            item['categoria'].toString().isNotEmpty) {
-          categories.add(item['categoria']);
+            item['categoria'].toString().isNotEmpty &&
+            item['tipo'] != null) {
+          final tipo = item['tipo'].toString().toLowerCase();
+          final categoria = item['categoria'].toString();
+
+          if (tipo == 'comida' || tipo == 'bebida') {
+            categoriesByType[tipo]?.add(categoria);
+          }
         }
       }
 
-      // Convertir a lista y ordenar alfabéticamente
-      final sortedCategories = categories.toList()..sort();
-
       if (mounted) {
         setState(() {
-          _categories =
-              sortedCategories
-                  .map((cat) => {'id': cat, 'name': cat, 'icon': 'restaurant'})
-                  .toList();
+          _categoriesByType = {
+            'comida':
+                categoriesByType['comida']!
+                    .map(
+                      (cat) => {
+                        'id': cat,
+                        'name': cat,
+                        'type': 'comida',
+                        'icon': 'restaurant',
+                      },
+                    )
+                    .toList()
+                  ..sort(
+                    (a, b) =>
+                        (a['name'] as String).compareTo(b['name'] as String),
+                  ),
+            'bebida':
+                categoriesByType['bebida']!
+                    .map(
+                      (cat) => {
+                        'id': cat,
+                        'name': cat,
+                        'type': 'bebida',
+                        'icon': 'local_cafe',
+                      },
+                    )
+                    .toList()
+                  ..sort(
+                    (a, b) =>
+                        (a['name'] as String).compareTo(b['name'] as String),
+                  ),
+          };
         });
       }
 
-      print('🔍 Categorías cargadas: $_categories');
+      print('🔍 Categorías cargadas por tipo:');
+      print('   Comida: ${_categoriesByType['comida']!.length} categorías');
+      print('   Bebida: ${_categoriesByType['bebida']!.length} categorías');
     } catch (e) {
       print('⚠️ Error al cargar categorías: $e');
       if (mounted) {
@@ -111,12 +153,19 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     }
   }
 
-  // Carga los platos populares según los filtros seleccionados
-  Future<void> _loadPopularDishes() async {
+  // ✨ OPTIMIZACIÓN: Cargar platos populares con límite aumentado
+  Future<void> _loadPopularDishes({bool isInitialLoad = false}) async {
     if (!mounted) return;
 
+    // Usar _isFiltering para filtros y _isLoading solo para carga inicial
     setState(() {
-      _isLoading = true;
+      if (isInitialLoad) {
+        _isLoading = true;
+        _isFiltering = false;
+      } else {
+        _isLoading = false;
+        _isFiltering = true;
+      }
       _error = null;
     });
 
@@ -128,34 +177,108 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
       String? period = _selectedPeriod;
       String? selectedCategory;
 
-      // Formatear fechas si el período es personalizado
+      // Calcular fechas específicas según el período seleccionado
+      final DateTime now = DateTime.now();
+
       if (_selectedPeriod == 'custom' &&
           _startDate != null &&
           _endDate != null) {
+        // Fechas personalizadas
         startDateStr = DateFormat('yyyy-MM-dd').format(_startDate!);
         endDateStr = DateFormat('yyyy-MM-dd').format(_endDate!);
         period = null; // No enviar período si es personalizado
+        print('📅 Usando fechas personalizadas: $startDateStr a $endDateStr');
+      } else if (_selectedPeriod == 'day') {
+        // HOY: desde las 00:00 hasta las 23:59 del día actual
+        startDateStr = DateFormat('yyyy-MM-dd').format(now);
+        endDateStr = DateFormat('yyyy-MM-dd').format(now);
+        period = null; // Usar fechas específicas en lugar del período
+        print('📅 Filtro HOY: $startDateStr (día completo)');
+      } else if (_selectedPeriod == 'week') {
+        // ESTA SEMANA: últimos 7 días incluyendo hoy
+        final DateTime weekAgo = now.subtract(
+          const Duration(days: 6),
+        ); // 6 días atrás + hoy = 7 días
+        startDateStr = DateFormat('yyyy-MM-dd').format(weekAgo);
+        endDateStr = DateFormat('yyyy-MM-dd').format(now);
+        period = null; // Usar fechas específicas en lugar del período
+        print('📅 Filtro SEMANA: $startDateStr a $endDateStr (últimos 7 días)');
+      } else if (_selectedPeriod == 'month') {
+        // ESTE MES: últimos 30 días
+        final DateTime monthAgo = now.subtract(
+          const Duration(days: 29),
+        ); // 29 días atrás + hoy = 30 días
+        startDateStr = DateFormat('yyyy-MM-dd').format(monthAgo);
+        endDateStr = DateFormat('yyyy-MM-dd').format(now);
+        period = null; // Usar fechas específicas en lugar del período
+        print('📅 Filtro MES: $startDateStr a $endDateStr (últimos 30 días)');
+      } else if (_selectedPeriod == 'year') {
+        // ESTE AÑO: últimos 365 días
+        final DateTime yearAgo = now.subtract(
+          const Duration(days: 364),
+        ); // 364 días atrás + hoy = 365 días
+        startDateStr = DateFormat('yyyy-MM-dd').format(yearAgo);
+        endDateStr = DateFormat('yyyy-MM-dd').format(now);
+        period = null; // Usar fechas específicas en lugar del período
+        print('📅 Filtro AÑO: $startDateStr a $endDateStr (últimos 365 días)');
       } else if (_selectedPeriod == 'all') {
-        // Si el filtro es "todos", no enviar período específico
+        // TODOS: no enviar fechas ni período
         period = null;
+        startDateStr = null;
+        endDateStr = null;
+        print('📅 Filtro TODOS: sin restricciones de fecha');
       }
 
-      // Obtener la categoría seleccionada, si hay alguna
+      // Determinar categoría para el filtro con prioridad correcta
       if (_selectedCategories.isNotEmpty) {
+        // Si hay una categoría específica seleccionada, usarla con prioridad
         selectedCategory = _selectedCategories.keys.first;
+        print(
+          '📊 [OPTIMIZADO] Categoría específica seleccionada: $selectedCategory',
+        );
+      } else if (_selectedMainType != null) {
+        // Si solo hay tipo principal seleccionado, usarlo
+        selectedCategory = _selectedMainType;
+        print('📊 [OPTIMIZADO] Tipo principal seleccionado: $selectedCategory');
+      } else {
+        // Sin filtros de categoría
+        selectedCategory = null;
+        print('📊 [OPTIMIZADO] Sin filtros de categoría aplicados');
       }
 
+      print('🔄 Parámetros de consulta:');
+      print('   📅 Período seleccionado en UI: $_selectedPeriod');
+      print('   📅 Período enviado al servidor: $period');
+      print('   📅 Fecha inicio enviada: $startDateStr');
+      print('   📅 Fecha fin enviada: $endDateStr');
       print(
-        '🔄 Cargando platos populares con: período=$period, inicio=$startDateStr, fin=$endDateStr, categoría=$selectedCategory',
+        '   🏷️ Filtro categoría: $selectedCategory (${_selectedMainType != null
+            ? "tipo principal"
+            : _selectedCategories.isNotEmpty
+            ? "categoría específica"
+            : "ninguno"})',
       );
+      print('   📊 Límite de resultados: 50');
 
-      // Intentar obtener platos populares con método directo primero
+      // Log adicional para debugging
+      if (startDateStr != null && endDateStr != null) {
+        print('   ⏰ Rango de fechas activo: Sí');
+        final startDate = DateTime.parse(startDateStr);
+        final endDate = DateTime.parse(endDateStr);
+        final daysDifference = endDate.difference(startDate).inDays + 1;
+        print('   📊 Días incluidos en el filtro: $daysDifference');
+      } else {
+        print('   ⏰ Rango de fechas activo: No (todos los datos)');
+      }
+
+      // ✨ OPTIMIZACIÓN: Aumentar límite a 50 items o sin límite
       List<Map<String, dynamic>> result = await popularDishesService
           .getPopularDishesDirect(
             period: period,
             startDate: startDateStr,
             endDate: endDateStr,
             categoria: selectedCategory,
+            limit: 50, // Aumentado de 20 a 50
           );
 
       if (mounted) {
@@ -163,10 +286,50 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
           _popularDishes = result;
           _filteredDishes = List.from(result); // Inicialmente mostrar todos
           _isLoading = false;
+          _isFiltering = false;
         });
 
-        // Aplicar filtros a los resultados obtenidos
+        // ✨ MEJORA: Aplicar filtros locales adicionales si es necesario
         _applyFilters();
+
+        print('✅ Datos cargados: ${result.length} platos');
+        if (result.isNotEmpty) {
+          print('📊 Primeros 3 platos recibidos del servidor:');
+          for (int i = 0; i < (result.length > 3 ? 3 : result.length); i++) {
+            final dish = result[i];
+            print(
+              '   ${i + 1}. ${dish['nombre']} (${dish['tipo']}/${dish['categoria']}) - ${dish['cantidad_vendida']} vendidos',
+            );
+          }
+
+          // Log adicional: verificar si hay datos que no deberían estar según el filtro
+          if (_selectedPeriod == 'day') {
+            final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+            print('🔍 VERIFICACIÓN FILTRO HOY ($today):');
+            print('   → Se esperan solo platos vendidos HOY');
+            print(
+              '   → Si aparecen platos con ventas 0, revisar lógica del servidor',
+            );
+          } else if (_selectedPeriod == 'week') {
+            final weekAgo = DateTime.now().subtract(const Duration(days: 6));
+            final weekAgoStr = DateFormat('yyyy-MM-dd').format(weekAgo);
+            final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+            print('🔍 VERIFICACIÓN FILTRO SEMANA ($weekAgoStr a $today):');
+            print('   → Se esperan solo platos vendidos en los últimos 7 días');
+            print(
+              '   → Si aparecen platos con ventas 0, revisar lógica del servidor',
+            );
+          }
+        } else {
+          print('⚠️ No se recibieron datos del servidor');
+          if (_selectedPeriod == 'day') {
+            print('   → Posible causa: No hay ventas registradas HOY');
+          } else if (_selectedPeriod == 'week') {
+            print(
+              '   → Posible causa: No hay ventas registradas en los últimos 7 días',
+            );
+          }
+        }
       }
     } catch (e) {
       print('⚠️ Error al cargar platos populares: $e');
@@ -174,6 +337,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         setState(() {
           _error = 'Error al cargar platos populares: $e';
           _isLoading = false;
+          _isFiltering = false;
         });
         _showErrorSnackBar('No se pudieron cargar los platos populares');
       }
@@ -191,7 +355,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     );
   }
 
-  // Aplica los filtros seleccionados a la lista de platos
+  // ✨ OPTIMIZACIÓN: Filtros mejorados con soporte para tipos principales
   void _applyFilters() {
     if (_popularDishes.isEmpty) {
       setState(() {
@@ -200,53 +364,102 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
       return;
     }
 
-    // Si no hay categorías seleccionadas, mostrar todos los platos
-    if (_selectedCategories.isEmpty) {
-      setState(() {
-        _filteredDishes = List.from(_popularDishes);
-      });
-      return;
+    List<Map<String, dynamic>> filteredDishes = List.from(_popularDishes);
+
+    // ✨ MEJORA: Si ya se filtró en el servidor, no necesitamos filtrar localmente
+    // pero mantenemos la funcionalidad por compatibilidad
+
+    // Filtrar por tipo principal (comida/bebida) - solo si no se hizo en servidor
+    if (_selectedMainType != null && _selectedCategories.isEmpty) {
+      filteredDishes =
+          filteredDishes.where((dish) {
+            final dishType = dish['tipo']?.toString().toLowerCase();
+            final matches = dishType == _selectedMainType;
+            if (!matches) {
+              print(
+                '🔍 Filtro local: Excluyendo ${dish['nombre']} (tipo: $dishType, buscando: $_selectedMainType)',
+              );
+            }
+            return matches;
+          }).toList();
+      print(
+        '🔍 Filtro local por tipo principal $_selectedMainType: ${filteredDishes.length} platos',
+      );
     }
 
-    final filteredDishes =
-        _popularDishes.where((dish) {
-          // Verificar si el plato tiene una categoría válida
-          if (dish['categoria'] == null ||
-              dish['categoria'].toString().isEmpty) {
-            return false;
-          }
-
-          // Comprobar si la categoría del plato coincide con alguna seleccionada
-          for (var category in _selectedCategories.keys) {
-            if (dish['categoria'].toString().toLowerCase() ==
-                category.toLowerCase()) {
-              return true;
+    // Filtrar por categoría específica - solo si no se hizo en servidor
+    if (_selectedCategories.isNotEmpty) {
+      filteredDishes =
+          filteredDishes.where((dish) {
+            if (dish['categoria'] == null ||
+                dish['categoria'].toString().isEmpty) {
+              return false;
             }
-          }
 
-          return false;
-        }).toList();
+            for (var category in _selectedCategories.keys) {
+              final matches =
+                  dish['categoria'].toString().toLowerCase() ==
+                  category.toLowerCase();
+              if (matches) {
+                return true;
+              }
+            }
+            return false;
+          }).toList();
+      print(
+        '🔍 Filtro local por categoría ${_selectedCategories.keys}: ${filteredDishes.length} platos',
+      );
+    }
 
     setState(() {
       _filteredDishes = filteredDishes;
     });
 
-    print('🔍 Filtros aplicados: ${_selectedCategories.keys}');
+    print('🔍 Resumen de filtros aplicados:');
+    print('   🏷️ Tipo principal: $_selectedMainType');
+    print('   📂 Categorías específicas: ${_selectedCategories.keys}');
     print(
-      '📊 Platos mostrados: ${_filteredDishes.length} de ${_popularDishes.length}',
+      '   📊 Platos mostrados: ${_filteredDishes.length} de ${_popularDishes.length}',
     );
+
+    // Debug: mostrar tipos y categorías de los platos filtrados
+    if (_filteredDishes.isNotEmpty && _filteredDishes.length <= 10) {
+      print('📋 Platos después del filtro:');
+      for (int i = 0; i < _filteredDishes.length; i++) {
+        final dish = _filteredDishes[i];
+        print(
+          '   ${i + 1}. ${dish['nombre']} (${dish['tipo']}/${dish['categoria']})',
+        );
+      }
+    }
   }
 
-  // Maneja la selección/deselección de una categoría
+  // ✨ OPTIMIZACIÓN: Manejo mejorado de selección de tipo principal
+  void _toggleMainType(String type) {
+    setState(() {
+      if (_selectedMainType == type) {
+        // Si el mismo tipo está seleccionado, deseleccionar
+        _selectedMainType = null;
+      } else {
+        // Seleccionar nuevo tipo y limpiar categorías específicas
+        _selectedMainType = type;
+        _selectedCategories.clear();
+      }
+      _applyFilters();
+    });
+  }
+
+  // Maneja la selección/deselección de una categoría específica
   void _toggleCategory(String category) {
     setState(() {
       if (_selectedCategories.containsKey(category)) {
         // Si ya estaba seleccionada, deseleccionarla
         _selectedCategories.remove(category);
       } else {
-        // Si no estaba seleccionada, seleccionarla (y deseleccionar otras)
+        // Seleccionar categoría y limpiar tipo principal
         _selectedCategories.clear(); // Permitir solo una selección
         _selectedCategories[category] = true;
+        _selectedMainType = null; // Limpiar selección de tipo principal
       }
 
       // Aplicar filtros
@@ -262,8 +475,8 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
 
     setState(() {
       _selectedPeriod = period;
-      // Limpiar cualquier filtro de categoría al cambiar el período
-      _selectedCategories.clear();
+      // Mantener filtros de categoría al cambiar el período
+      // _selectedCategories.clear(); // Comentado para mantener filtros
 
       // Actualizar fechas para el período seleccionado
       switch (period) {
@@ -288,7 +501,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     });
 
     // Recargar datos con el nuevo período
-    _loadPopularDishes();
+    _loadPopularDishes(isInitialLoad: false);
   }
 
   // Selecciona el rango de fechas personalizado
@@ -319,18 +532,48 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         _startDate = pickedRange.start;
         _endDate = pickedRange.end;
         _selectedPeriod = 'custom';
-        // Limpiar cualquier filtro de categoría al cambiar el período
-        _selectedCategories.clear();
+        // Mantener filtros de categoría al cambiar el período
       });
 
       // Recargar datos con el nuevo rango de fechas
-      _loadPopularDishes();
+      _loadPopularDishes(isInitialLoad: false);
     }
   }
 
-  // Widget que construye un filtro de categoría
-  Widget _buildCategoryFilter(String category) {
+  // ✨ OPTIMIZACIÓN: Widget para filtro de tipo principal (Comida/Bebida)
+  Widget _buildMainTypeFilter(String type, String label, IconData icon) {
+    final isSelected = _selectedMainType == type;
+    final color = type == 'comida' ? Colors.orange : Colors.blue;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: FilterChip(
+        avatar: Icon(icon, size: 18, color: isSelected ? Colors.white : color),
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => _toggleMainType(type),
+        backgroundColor: Colors.white,
+        selectedColor: color.withOpacity(0.2),
+        checkmarkColor: color,
+        labelStyle: TextStyle(
+          color: isSelected ? color : Colors.black87,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.0),
+          side: BorderSide(
+            color: isSelected ? color : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Widget que construye un filtro de categoría específica
+  Widget _buildCategoryFilter(String category, String type) {
     final isSelected = _selectedCategories.containsKey(category);
+    final color = type == 'comida' ? Colors.orange : Colors.blue;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
@@ -339,54 +582,18 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         selected: isSelected,
         onSelected: (_) => _toggleCategory(category),
         backgroundColor: Colors.white,
-        selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-        checkmarkColor: Theme.of(context).colorScheme.primary,
+        selectedColor: color.withOpacity(0.15),
+        checkmarkColor: color,
         labelStyle: TextStyle(
-          color:
-              isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.black87,
+          color: isSelected ? color : Colors.black87,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          fontSize: 12,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16.0),
+          borderRadius: BorderRadius.circular(14.0),
           side: BorderSide(
-            color:
-                isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey.shade300,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Widget que construye un filtro de período
-  Widget _buildPeriodFilter(String period, String label) {
-    final isSelected = _selectedPeriod == period;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: isSelected,
-        onSelected: (_) => _updatePeriod(period),
-        backgroundColor: Colors.white,
-        selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-        labelStyle: TextStyle(
-          color:
-              isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.black87,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16.0),
-          side: BorderSide(
-            color:
-                isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey.shade300,
+            color: isSelected ? color : Colors.grey.shade300,
+            width: 1,
           ),
         ),
       ),
@@ -467,24 +674,40 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasAnyCategories =
+        _categoriesByType['comida']!.isNotEmpty ||
+        _categoriesByType['bebida']!.isNotEmpty;
 
     return BackgroundScaffold(
       appBar: AppBar(
-        title: Text(
-          'Platos Más Populares',
-          style: TextStyle(
-            fontFamily: 'Lighthouse',
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.3),
-                offset: const Offset(1, 1),
-                blurRadius: 3,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Platos Más Populares',
+              style: TextStyle(
+                fontFamily: 'Lighthouse',
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.3),
+                    offset: const Offset(1, 1),
+                    blurRadius: 3,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Text(
+              'Análisis de ventas',
+              style: TextStyle(
+                fontFamily: 'Lighthouse',
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
+          ],
         ),
         automaticallyImplyLeading: true,
         backgroundColor: const Color(0xFF3ea69b),
@@ -507,361 +730,100 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
           ),
         ),
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Agregar DateFilterBar
-          DateFilterBar(
-            key: _dateFilterKey,
-            initialFilter: _mapPeriodToFilter(_selectedPeriod),
-            onFilterChanged: (String filter) {
-              setState(() {
-                _selectedPeriod = _mapFilterToPeriod(filter);
-                // Si se cambia el filtro de período, mantener las categorías seleccionadas
-                // para permitir una combinación de ambos filtros
-              });
-              _loadPopularDishes();
-            },
-            onCustomDateRangeSelected: (String startDate, String endDate) {
-              setState(() {
-                _startDate = DateFormat('yyyy-MM-dd').parse(startDate);
-                _endDate = DateFormat('yyyy-MM-dd').parse(endDate);
-                _selectedPeriod = 'custom';
-                // No limpiar categorías al seleccionar un rango de fechas personalizado
-              });
-              _loadPopularDishes();
-            },
-          ),
+      body:
+          _isLoading &&
+                  !_isFiltering // Solo mostrar loading completo en carga inicial
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                onRefresh: () => _loadPopularDishes(isInitialLoad: false),
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    // DateFilterBar como sliver
+                    SliverToBoxAdapter(
+                      child: DateFilterBar(
+                        key: _dateFilterKey,
+                        initialFilter: _mapPeriodToFilter(_selectedPeriod),
+                        onFilterChanged: (String filter) {
+                          setState(() {
+                            _selectedPeriod = _mapFilterToPeriod(filter);
+                          });
+                          _loadPopularDishes(
+                            isInitialLoad: false,
+                          ); // Cargar con filtrado
+                        },
+                        onCustomDateRangeSelected: (
+                          String startDate,
+                          String endDate,
+                        ) {
+                          setState(() {
+                            _startDate = DateFormat(
+                              'yyyy-MM-dd',
+                            ).parse(startDate);
+                            _endDate = DateFormat('yyyy-MM-dd').parse(endDate);
+                            _selectedPeriod = 'custom';
+                          });
+                          _loadPopularDishes(
+                            isInitialLoad: false,
+                          ); // Cargar con filtrado
+                        },
+                      ),
+                    ),
 
-          // Filtros de categoría
-          if (_categories.isNotEmpty)
-            Card(
-              margin: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8.0,
-              ),
-              elevation: 1,
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Categorías:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.secondary,
+                    // Panel de filtros de categoría como sliver
+                    SliverToBoxAdapter(child: _buildCategoryFiltersPanel()),
+
+                    // Indicador sutil de filtrado
+                    if (_isFiltering)
+                      SliverToBoxAdapter(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Actualizando datos...',
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        if (_selectedCategories.isNotEmpty)
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _selectedCategories.clear();
-                              });
-                              _applyFilters();
-                            },
-                            child: const Text('Limpiar filtros'),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8.0,
-                      runSpacing: 8.0,
-                      children:
-                          _categories
-                              .map(
-                                (category) => _buildCategoryFilter(
-                                  category['name'] as String,
-                                ),
-                              )
-                              .toList(),
-                    ),
+                      ),
+
+                    // Lista de platos populares
+                    if (_error != null)
+                      SliverFillRemaining(child: _buildErrorState(theme))
+                    else if (_filteredDishes.isEmpty)
+                      SliverFillRemaining(child: _buildEmptyState(theme))
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final dish = _filteredDishes[index];
+                          return _buildDishCard(dish, theme, index);
+                        }, childCount: _filteredDishes.length),
+                      ),
                   ],
                 ),
               ),
-            ),
-
-          // Resumen de platos
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_filteredDishes.length} platos encontrados',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Lista de platos populares
-          Expanded(
-            child:
-                _isLoading
-                    ? Center(
-                      child: CircularProgressIndicator(
-                        color: theme.colorScheme.primary,
-                      ),
-                    )
-                    : _filteredDishes.isEmpty
-                    ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.restaurant_menu,
-                            size: 64,
-                            color: theme.colorScheme.primary.withOpacity(0.5),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No hay ventas disponibles',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _selectedPeriod == 'custom'
-                                ? 'No hay ventas en el rango de fechas seleccionado'
-                                : 'No hay ventas para el período seleccionado',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.6,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _selectedPeriod = 'all';
-                                _selectedCategories.clear();
-                              });
-                              // Intentar actualizar el filtro en el DateFilterBar
-                              _dateFilterKey.currentState?.updateFilter(
-                                'todos',
-                              );
-                              _loadPopularDishes();
-                            },
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Mostrar todos los platos'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _filteredDishes.length,
-                      itemBuilder: (context, index) {
-                        final dish = _filteredDishes[index];
-                        final rank = index + 1;
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.all(16),
-                            leading: Stack(
-                              children: [
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: Colors.transparent,
-                                  // Imagen del plato o fallback
-                                  child: ClipOval(
-                                    child:
-                                        dish['imagen_url'] != null
-                                            ? CachedNetworkImage(
-                                              imageUrl: dish['imagen_url'],
-                                              width: 56,
-                                              height: 56,
-                                              fit: BoxFit.cover,
-                                              placeholder:
-                                                  (context, url) => Container(
-                                                    width: 56,
-                                                    height: 56,
-                                                    color: theme
-                                                        .colorScheme
-                                                        .primary
-                                                        .withOpacity(0.2),
-                                                    child: const Center(
-                                                      child:
-                                                          CircularProgressIndicator(),
-                                                    ),
-                                                  ),
-                                              errorWidget:
-                                                  (context, url, error) =>
-                                                      Container(
-                                                        width: 56,
-                                                        height: 56,
-                                                        color: theme
-                                                            .colorScheme
-                                                            .primary
-                                                            .withOpacity(0.2),
-                                                        child: Icon(
-                                                          Icons.restaurant,
-                                                          color:
-                                                              theme
-                                                                  .colorScheme
-                                                                  .primary,
-                                                        ),
-                                                      ),
-                                            )
-                                            : Container(
-                                              width: 56,
-                                              height: 56,
-                                              color: theme.colorScheme.primary
-                                                  .withOpacity(0.2),
-                                              child: Icon(
-                                                Icons.restaurant,
-                                                color:
-                                                    theme.colorScheme.primary,
-                                              ),
-                                            ),
-                                  ),
-                                ),
-                                // Ranking
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  child: CircleAvatar(
-                                    radius: 12,
-                                    backgroundColor: _getRankColor(rank, theme),
-                                    child: Text(
-                                      '$rank',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            title: Text(
-                              dish['nombre'] ?? 'Plato sin nombre',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'LightHouse',
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 4),
-                                // Categoría
-                                if (dish['categoria'] != null) ...[
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.category_outlined,
-                                        size: 16,
-                                        color: theme.colorScheme.primary,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        dish['categoria'].toString(),
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontFamily: 'MADE TOMMY',
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                                // Cantidad vendida
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.shopping_cart_outlined,
-                                      size: 16,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      dish['cantidad_vendida'] == 0
-                                          ? 'Sin ventas en este período'
-                                          : 'Vendidos: ${dish['cantidad_vendida']}',
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontFamily: 'MADE TOMMY',
-                                            color:
-                                                dish['cantidad_vendida'] == 0
-                                                    ? Colors.grey
-                                                    : null,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                // Precio del plato
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.attach_money,
-                                      size: 16,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Precio: ${_formatCurrency(dish['precio'] ?? dish['precio_promedio'] ?? 0.0)}',
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(fontFamily: 'MADE TOMMY'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  dish['cantidad_vendida'] == 0
-                                      ? 'N/A'
-                                      : _formatCurrency(_calcularTotal(dish)),
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        dish['cantidad_vendida'] == 0
-                                            ? Colors.grey
-                                            : Colors.green.shade700,
-                                    fontFamily: 'MADE TOMMY',
-                                  ),
-                                ),
-                                Text(
-                                  'Total',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurface
-                                        .withOpacity(0.6),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -886,11 +848,17 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     );
   }
 
-  Color _getRankColor(int rank, ThemeData theme) {
-    if (rank == 1) return Colors.amber; // Oro
-    if (rank == 2) return Colors.blueGrey.shade300; // Plata
-    if (rank == 3) return Colors.brown.shade300; // Bronce
-    return theme.colorScheme.primary; // Color por defecto
+  Color _getRankingColor(int index) {
+    switch (index) {
+      case 0:
+        return Colors.amber; // Oro para el primer lugar
+      case 1:
+        return Colors.grey.shade400; // Plata para el segundo lugar
+      case 2:
+        return Colors.brown.shade400; // Bronce para el tercer lugar
+      default:
+        return Colors.blue.shade400; // Azul para el resto
+    }
   }
 
   // Mapea el período interno (week, day, etc.) al filtro del DateFilterBar (semana, hoy, etc.)
@@ -958,5 +926,766 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     }
 
     return cantidad * precioFinal;
+  }
+
+  Widget _buildCategoryFiltersPanel() {
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      elevation: 3,
+      color: theme.colorScheme.surface,
+      shadowColor: theme.colorScheme.primary.withOpacity(0.3),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Encabezado con botón limpiar - Mejorado
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Filtros por categoría:',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (_selectedMainType != null ||
+                      _selectedCategories.isNotEmpty)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colorScheme.error,
+                          width: 1,
+                        ),
+                      ),
+                      child: TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _selectedMainType = null;
+                            _selectedCategories.clear();
+                          });
+                          _loadPopularDishes(isInitialLoad: false);
+                        },
+                        icon: Icon(
+                          Icons.clear,
+                          size: 18,
+                          color: theme.colorScheme.error,
+                        ),
+                        label: Text(
+                          'Limpiar',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ✨ Filtros principales (Comida/Bebida) - Mejorados visualmente
+              Text(
+                'Tipos principales:',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  // Filtro de Comida - Mejorado
+                  Expanded(
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient:
+                            _selectedMainType == 'comida'
+                                ? LinearGradient(
+                                  colors: [
+                                    Colors.orange.shade600,
+                                    Colors.orange.shade500,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                                : null,
+                        color:
+                            _selectedMainType == 'comida'
+                                ? null
+                                : Colors.orange.shade50,
+                        border: Border.all(
+                          color: Colors.orange.shade600,
+                          width: _selectedMainType == 'comida' ? 2 : 1,
+                        ),
+                        boxShadow:
+                            _selectedMainType == 'comida'
+                                ? [
+                                  BoxShadow(
+                                    color: Colors.orange.shade600.withOpacity(
+                                      0.3,
+                                    ),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                                : null,
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            setState(() {
+                              if (_selectedMainType == 'comida') {
+                                _selectedMainType = null;
+                              } else {
+                                _selectedMainType = 'comida';
+                                _selectedCategories.clear();
+                              }
+                            });
+                            _loadPopularDishes(isInitialLoad: false);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.restaurant,
+                                  size: 20,
+                                  color:
+                                      _selectedMainType == 'comida'
+                                          ? Colors.white
+                                          : Colors.orange.shade800,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Comida (${_categoriesByType['comida']!.length})',
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color:
+                                          _selectedMainType == 'comida'
+                                              ? Colors.white
+                                              : Colors.orange.shade800,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Filtro de Bebida - Mejorado
+                  Expanded(
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient:
+                            _selectedMainType == 'bebida'
+                                ? LinearGradient(
+                                  colors: [
+                                    Colors.blue.shade600,
+                                    Colors.blue.shade500,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                                : null,
+                        color:
+                            _selectedMainType == 'bebida'
+                                ? null
+                                : Colors.blue.shade50,
+                        border: Border.all(
+                          color: Colors.blue.shade600,
+                          width: _selectedMainType == 'bebida' ? 2 : 1,
+                        ),
+                        boxShadow:
+                            _selectedMainType == 'bebida'
+                                ? [
+                                  BoxShadow(
+                                    color: Colors.blue.shade600.withOpacity(
+                                      0.3,
+                                    ),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                                : null,
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            setState(() {
+                              if (_selectedMainType == 'bebida') {
+                                _selectedMainType = null;
+                              } else {
+                                _selectedMainType = 'bebida';
+                                _selectedCategories.clear();
+                              }
+                            });
+                            _loadPopularDishes(isInitialLoad: false);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.local_cafe,
+                                  size: 20,
+                                  color:
+                                      _selectedMainType == 'bebida'
+                                          ? Colors.white
+                                          : Colors.blue.shade800,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Bebida (${_categoriesByType['bebida']!.length})',
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color:
+                                          _selectedMainType == 'bebida'
+                                              ? Colors.white
+                                              : Colors.blue.shade800,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // ✨ Indicador de subcategorías disponibles - Más visible
+              if (_selectedMainType != null && _selectedCategories.isEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        (_selectedMainType == 'comida'
+                                ? Colors.orange
+                                : Colors.blue)
+                            .shade100,
+                        (_selectedMainType == 'comida'
+                                ? Colors.orange
+                                : Colors.blue)
+                            .shade50,
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color:
+                          (_selectedMainType == 'comida'
+                                  ? Colors.orange
+                                  : Colors.blue)
+                              .shade600,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.arrow_downward,
+                        size: 16,
+                        color:
+                            (_selectedMainType == 'comida'
+                                    ? Colors.orange
+                                    : Colors.blue)
+                                .shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Elige una categoría específica de ${_selectedMainType} para filtrar más:',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color:
+                                (_selectedMainType == 'comida'
+                                        ? Colors.orange
+                                        : Colors.blue)
+                                    .shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // ✨ Subcategorías de Comida - Mejoradas visualmente
+              if (_selectedMainType == 'comida' &&
+                  _categoriesByType['comida']!.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Categorías específicas de comida:',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: Colors.orange.shade800,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  child: Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children:
+                        _categoriesByType['comida']!.map<Widget>((category) {
+                          final categoryName = category['name'] as String;
+                          final isSelected = _selectedCategories.containsKey(
+                            categoryName,
+                          );
+                          return Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              gradient:
+                                  isSelected
+                                      ? LinearGradient(
+                                        colors: [
+                                          Colors.orange.shade600,
+                                          Colors.orange.shade500,
+                                        ],
+                                      )
+                                      : null,
+                              color: isSelected ? null : Colors.orange.shade50,
+                              border: Border.all(
+                                color: Colors.orange.shade600,
+                                width: isSelected ? 2 : 1,
+                              ),
+                              boxShadow:
+                                  isSelected
+                                      ? [
+                                        BoxShadow(
+                                          color: Colors.orange.shade600
+                                              .withOpacity(0.3),
+                                          blurRadius: 4,
+                                          spreadRadius: 1,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                      : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedCategories.remove(categoryName);
+                                    } else {
+                                      _selectedCategories.clear();
+                                      _selectedCategories[categoryName] = true;
+                                    }
+                                  });
+                                  _loadPopularDishes(isInitialLoad: false);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 10,
+                                  ),
+                                  child: Text(
+                                    categoryName,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color:
+                                              isSelected
+                                                  ? Colors.white
+                                                  : Colors.orange.shade800,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                ),
+              ],
+
+              // ✨ Subcategorías de Bebida - Mejoradas visualmente
+              if (_selectedMainType == 'bebida' &&
+                  _categoriesByType['bebida']!.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Categorías específicas de bebida:',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: Colors.blue.shade800,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  child: Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children:
+                        _categoriesByType['bebida']!.map<Widget>((category) {
+                          final categoryName = category['name'] as String;
+                          final isSelected = _selectedCategories.containsKey(
+                            categoryName,
+                          );
+                          return Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              gradient:
+                                  isSelected
+                                      ? LinearGradient(
+                                        colors: [
+                                          Colors.blue.shade600,
+                                          Colors.blue.shade500,
+                                        ],
+                                      )
+                                      : null,
+                              color: isSelected ? null : Colors.blue.shade50,
+                              border: Border.all(
+                                color: Colors.blue.shade600,
+                                width: isSelected ? 2 : 1,
+                              ),
+                              boxShadow:
+                                  isSelected
+                                      ? [
+                                        BoxShadow(
+                                          color: Colors.blue.shade600
+                                              .withOpacity(0.3),
+                                          blurRadius: 4,
+                                          spreadRadius: 1,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                      : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedCategories.remove(categoryName);
+                                    } else {
+                                      _selectedCategories.clear();
+                                      _selectedCategories[categoryName] = true;
+                                    }
+                                  });
+                                  _loadPopularDishes(isInitialLoad: false);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 10,
+                                  ),
+                                  child: Text(
+                                    categoryName,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color:
+                                              isSelected
+                                                  ? Colors.white
+                                                  : Colors.blue.shade800,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.error_outline, size: 64, color: Colors.red.shade400),
+        const SizedBox(height: 16),
+        Text(
+          'Error al cargar datos',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.red.shade600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _error ?? 'Error desconocido',
+          style: TextStyle(color: Colors.grey.shade600),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: () => _loadPopularDishes(isInitialLoad: false),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Reintentar'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDishCard(Map<String, dynamic> dish, ThemeData theme, int index) {
+    final nombre = dish['nombre'] ?? 'Sin nombre';
+    final categoria = dish['categoria'] ?? 'Sin categoría';
+    final precio = dish['precio'] ?? 0.0;
+    final cantidadVendida = dish['cantidad_vendida'] ?? 0;
+    final imagenUrl = dish['imagen_url'];
+    final tipo = dish['tipo'] ?? '';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Ranking badge
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _getRankingColor(index),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // Imagen del plato
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child:
+                  imagenUrl != null && imagenUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                        imageUrl: imagenUrl,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        placeholder:
+                            (context, url) => Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.restaurant),
+                            ),
+                        errorWidget:
+                            (context, url, error) => Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.restaurant),
+                            ),
+                      )
+                      : Container(
+                        width: 60,
+                        height: 60,
+                        color: Colors.grey.shade200,
+                        child: const Icon(Icons.restaurant),
+                      ),
+            ),
+            const SizedBox(width: 16),
+
+            // Información del plato
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    nombre,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getCategoryColor(tipo),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          categoria,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.shopping_cart,
+                        size: 16,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$cantidadVendida vendidos',
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '\$${precio.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.restaurant_menu, size: 64, color: Colors.grey.shade400),
+        const SizedBox(height: 16),
+        Text(
+          'No hay platos populares',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'No se encontraron platos para el período seleccionado',
+          style: TextStyle(color: Colors.grey.shade500),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: () => _loadPopularDishes(isInitialLoad: false),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Reintentar'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _getCategoryColor(String? tipo) {
+    if (tipo?.toLowerCase() == 'bebida') {
+      return Colors.blue.shade600;
+    } else {
+      return Colors.orange.shade600;
+    }
+  }
+
+  // Cargar categorías disponibles desde el menú
+  Future<void> _loadCategories() async {
+    // Definir categorías estáticas basadas en el menú conocido
+    setState(() {
+      _categoriesByType['comida'] = [
+        {'name': 'Tablas'},
+        {'name': 'Panquecas'},
+        {'name': 'Tostadas Francesas'},
+        {'name': 'Gofres'},
+        {'name': 'Omelettes'},
+      ];
+      _categoriesByType['bebida'] = [
+        {'name': 'Expresos'},
+        {'name': 'Frapuccinos'},
+        {'name': 'Cold Brew'},
+        {'name': 'Jugos'},
+      ];
+    });
+
+    print('✅ Categorías cargadas');
   }
 }

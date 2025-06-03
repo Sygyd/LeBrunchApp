@@ -64,6 +64,19 @@ class _MenuViewState extends State<MenuView> {
     _showDrinks = widget.initialShowDrinks;
     _fetchDishes();
     _fetchDrinks();
+
+    // Agregar listener para actualizar la búsqueda en tiempo real
+    _searchController.addListener(() {
+      setState(() {
+        // Solo trigger rebuild cuando cambie el texto
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchDishes() async {
@@ -254,66 +267,75 @@ class _MenuViewState extends State<MenuView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Column(
+    return Stack(
       children: [
-        // Selector de Platos/Bebidas
-        _buildMenuTypeSelector(theme),
-
-        // Barra de búsqueda
-        Padding(
-          padding: const EdgeInsets.only(
-            left: 16.0,
-            right: 16.0,
-            top: 8.0,
-            bottom: 12.0,
+        // El CustomScrollView principal
+        CustomScrollView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
           ),
-          child: custom.SearchBar(controller: _searchController),
-        ),
+          slivers: [
+            // Selector de Platos/Bebidas como sliver
+            SliverToBoxAdapter(child: _buildMenuTypeSelector(theme)),
 
-        // Carrusel de categorías con selección múltiple
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10.0),
-          child: SizedBox(
-            height: 120,
-            child: CategoryCarousel(
-              categories: _showDrinks ? _drinkCategories : _dishCategories,
-              multiSelect: true,
-              selectedCategories: _selectedCategories,
-              onCategoryToggled: (category) {
-                setState(() {
-                  if (_selectedCategories.contains(category)) {
-                    _selectedCategories.remove(category);
-                  } else {
-                    _selectedCategories.add(category);
-                  }
-                });
-              },
+            // Barra de búsqueda como sliver
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  left: 16.0,
+                  right: 16.0,
+                  top: 8.0,
+                  bottom: 12.0,
+                ),
+                child: custom.SearchBar(controller: _searchController),
+              ),
             ),
-          ),
-        ),
 
-        // Lista de platos/bebidas
-        Expanded(
-          child: Stack(
-            children: [
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _buildItemList(),
-
-              // Botón flotante para agregar (solo para administradores)
-              if (widget.userRole == 0)
-                Positioned(
-                  right: 16,
-                  bottom: 16,
-                  child: FloatingActionButton(
-                    onPressed: _addDish,
-                    child: const Icon(Icons.add),
-                    tooltip: 'Agregar ${_showDrinks ? 'bebida' : 'plato'}',
+            // Carrusel de categorías como sliver
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 10.0),
+                child: SizedBox(
+                  height: 120,
+                  child: CategoryCarousel(
+                    categories:
+                        _showDrinks ? _drinkCategories : _dishCategories,
+                    multiSelect: true,
+                    selectedCategories: _selectedCategories,
+                    onCategoryToggled: (category) {
+                      setState(() {
+                        if (_selectedCategories.contains(category)) {
+                          _selectedCategories.remove(category);
+                        } else {
+                          _selectedCategories.add(category);
+                        }
+                      });
+                    },
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+
+            // Lista de platos/bebidas como sliver
+            _isLoading
+                ? const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+                : _buildItemListSliver(),
+          ],
         ),
+
+        // Botón flotante para agregar (solo para administradores)
+        if (widget.userRole == 0)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              onPressed: _addDish,
+              child: const Icon(Icons.add),
+              tooltip: 'Agregar ${_showDrinks ? 'bebida' : 'plato'}',
+            ),
+          ),
       ],
     );
   }
@@ -425,7 +447,7 @@ class _MenuViewState extends State<MenuView> {
     );
   }
 
-  Widget _buildItemList() {
+  Widget _buildItemListSliver() {
     // Usar platos o bebidas según la selección
     final items = _showDrinks ? _drinks : _dishes;
     final categories = _showDrinks ? _drinkCategories : _dishCategories;
@@ -451,7 +473,7 @@ class _MenuViewState extends State<MenuView> {
         }).toList();
 
     if (filteredItems.isEmpty) {
-      return _buildEmptyState();
+      return SliverFillRemaining(child: _buildEmptyState());
     }
 
     // Agrupar los items por categoría
@@ -480,26 +502,18 @@ class _MenuViewState extends State<MenuView> {
 
     // Si no hay categorías con items después del filtrado
     if (itemsByCategory.isEmpty) {
-      return _buildEmptyState();
+      return SliverFillRemaining(child: _buildEmptyState());
     }
 
-    // Usamos un widget que no obligue a reconstruir toda la vista
-    return ListView.builder(
-      key: ValueKey(
-        'item-list-${_selectedCategories.join(',')}-${_showDrinks ? 'drinks' : 'dishes'}',
-      ),
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      padding: const EdgeInsets.only(bottom: 120),
-      // Construir secciones para cada categoría
-      itemCount: itemsByCategory.length,
-      itemBuilder: (context, index) {
-        // Obtener la categoría en el orden del carousel
-        final categoryName = itemsByCategory.keys.toList()[index];
-        final categoryItems = itemsByCategory[categoryName]!;
+    // Crear una lista de widgets para las categorías
+    List<Widget> categoryWidgets = [];
 
-        return Column(
+    for (int index = 0; index < itemsByCategory.length; index++) {
+      final categoryName = itemsByCategory.keys.toList()[index];
+      final categoryItems = itemsByCategory[categoryName]!;
+
+      categoryWidgets.add(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Encabezado de categoría
@@ -537,8 +551,20 @@ class _MenuViewState extends State<MenuView> {
               child: _buildCategoryItemGrid(categoryItems),
             ),
           ],
-        );
-      },
+        ),
+      );
+    }
+
+    // Agregar padding bottom para el FloatingActionButton
+    categoryWidgets.add(
+      const SizedBox(height: 80), // Espacio para el FAB
+    );
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => categoryWidgets[index],
+        childCount: categoryWidgets.length,
+      ),
     );
   }
 

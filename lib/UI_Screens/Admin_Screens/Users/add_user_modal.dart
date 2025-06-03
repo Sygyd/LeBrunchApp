@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../models/user.dart';
 import '../../../Api_services/user_service.dart';
@@ -144,7 +145,9 @@ class _AddUserModalState extends State<AddUserModal>
           apellido: user['apellido'] ?? '',
           cedula: user['cedula'] ?? '',
           email: user['email'] ?? '',
-          rol: rolToUse, // Usar el mismo rol que enviamos
+          rol:
+              rolToUse
+                  .toString(), // Convertir int a String para compatibilidad con el modelo User
         );
 
         if (mounted) {
@@ -159,8 +162,100 @@ class _AddUserModalState extends State<AddUserModal>
         if (mounted) {
           setState(() {
             _isLoading = false;
-            _errorMessage = e.toString();
           });
+
+          String errorMessage = 'Error al crear usuario';
+
+          print('❌ Error completo al crear usuario: $e');
+
+          // Detectar tipos específicos de error basados en el mensaje del servidor
+          final errorString = e.toString();
+
+          // Intentar extraer el mensaje JSON si existe
+          try {
+            // Buscar patrones de JSON en el error
+            final RegExp jsonRegex = RegExp(r'\{.*\}');
+            final match = jsonRegex.firstMatch(errorString);
+            if (match != null) {
+              final jsonString = match.group(0)!;
+              final Map<String, dynamic> errorData = json.decode(jsonString);
+              final String? serverMessage = errorData['message'] as String?;
+              final String? errorType = errorData['error'] as String?;
+
+              print(
+                '📝 Error del servidor - Tipo: $errorType, Mensaje: $serverMessage',
+              );
+
+              if (serverMessage != null && serverMessage.isNotEmpty) {
+                errorMessage = serverMessage;
+              } else if (errorType != null) {
+                switch (errorType) {
+                  case 'cedula_duplicada':
+                    errorMessage =
+                        'La cédula ya está registrada por otro usuario';
+                    break;
+                  case 'email_duplicado':
+                    errorMessage =
+                        'El email ya está registrado por otro usuario';
+                    break;
+                  case 'datos_incompletos':
+                    errorMessage = 'Todos los campos son obligatorios';
+                    break;
+                  case 'error_servidor':
+                    errorMessage = 'Error del servidor. Intenta nuevamente';
+                    break;
+                  default:
+                    errorMessage = 'Error al crear usuario: $errorType';
+                }
+              }
+            } else {
+              // Si no hay JSON, buscar patrones de texto específicos
+              final lowerErrorString = errorString.toLowerCase();
+
+              if (lowerErrorString.contains('cédula') &&
+                  lowerErrorString.contains('registrada')) {
+                errorMessage = 'La cédula ya está registrada por otro usuario';
+              } else if (lowerErrorString.contains('email') &&
+                  lowerErrorString.contains('registrado')) {
+                errorMessage = 'El email ya está registrado por otro usuario';
+              } else if (lowerErrorString.contains('datos_incompletos')) {
+                errorMessage = 'Todos los campos son obligatorios';
+              } else if (lowerErrorString.contains('error_servidor')) {
+                errorMessage = 'Error del servidor. Intenta nuevamente';
+              } else {
+                // Como último recurso, usar el mensaje completo del error si es corto
+                if (errorString.length < 100) {
+                  errorMessage =
+                      'Error: ${errorString.replaceAll('Exception: ', '')}';
+                }
+              }
+            }
+          } catch (parseError) {
+            print('❌ Error al parsear JSON del error: $parseError');
+            // Fallback a detección de texto simple
+            final lowerErrorString = errorString.toLowerCase();
+
+            if (lowerErrorString.contains('cédula') &&
+                lowerErrorString.contains('registrada')) {
+              errorMessage = 'La cédula ya está registrada por otro usuario';
+            } else if (lowerErrorString.contains('email') &&
+                lowerErrorString.contains('registrado')) {
+              errorMessage = 'El email ya está registrado por otro usuario';
+            } else if (lowerErrorString.contains('network') ||
+                lowerErrorString.contains('conexión')) {
+              errorMessage = 'Error de conexión con el servidor';
+            } else {
+              errorMessage =
+                  'Error al crear usuario: ${errorString.replaceAll('Exception: ', '')}';
+            }
+          }
+
+          setState(() {
+            _errorMessage = errorMessage;
+          });
+
+          print('📝 Mensaje de error final mostrado: $errorMessage');
+
           _showErrorMessage();
         }
       } finally {

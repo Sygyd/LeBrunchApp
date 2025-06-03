@@ -365,18 +365,99 @@ router.get("/pedidos/ventas/rango", async (req, res) => {
   }
 });
 
-// Obtener los platos más vendidos
+// Obtener los platos más vendidos - VERSIÓN OPTIMIZADA
 router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
   try {
     const { limit = 5, startDate, endDate, period, categoria } = req.query;
     
-    // Construir la consulta base
+    console.log(`📊 [OPTIMIZADO] Solicitud de platos populares recibida:`);
+    console.log(`   📅 Fechas recibidas: ${startDate} a ${endDate}`);
+    console.log(`   📅 Período: ${period}`);
+    console.log(`   🎯 Categoría: ${categoria}`);
+    
+    // PASO 1: Obtener el rango de fechas reales de la base de datos
+    const fechasRealesQuery = `
+      SELECT 
+        MIN(DATE(fecha)) as fecha_minima,
+        MAX(DATE(fecha)) as fecha_maxima,
+        COUNT(*) as total_pedidos
+      FROM pedidos 
+      WHERE estado = 'completado'
+    `;
+    
+    const fechasRealesResult = await pool.query(fechasRealesQuery);
+    const { fecha_minima, fecha_maxima, total_pedidos } = fechasRealesResult.rows[0];
+    
+    console.log(`📊 [OPTIMIZADO] Datos reales en BD:`);
+    console.log(`   📅 Rango real: ${fecha_minima} a ${fecha_maxima}`);
+    console.log(`   📊 Total pedidos completados: ${total_pedidos}`);
+    
+    // Si no hay datos, devolver array vacío
+    if (!fecha_minima || !fecha_maxima || total_pedidos === '0') {
+      console.log(`📊 [OPTIMIZADO] No hay datos de ventas en la base de datos`);
+      return res.status(200).json([]);
+    }
+    
+    // PASO 2: Determinar fechas de consulta basadas en datos reales
+    let fechaInicio, fechaFin;
+    const fechaMaxReal = new Date(fecha_maxima);
+    const fechaMinReal = new Date(fecha_minima);
+    
+    // Si se proporcionan fechas específicas, validarlas contra datos reales
+    if (startDate && endDate) {
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+      
+      // Ajustar fechas al rango real disponible
+      fechaInicio = startDateObj < fechaMinReal ? fechaMinReal : startDateObj;
+      fechaFin = endDateObj > fechaMaxReal ? fechaMaxReal : endDateObj;
+      
+      console.log(`📊 [OPTIMIZADO] Fechas ajustadas al rango real: ${fechaInicio.toISOString().split('T')[0]} a ${fechaFin.toISOString().split('T')[0]}`);
+    } else {
+      // Usar período basado en datos reales
+      fechaFin = fechaMaxReal;
+      
+      switch (period) {
+        case 'day':
+        case 'hoy':
+          fechaInicio = fechaMaxReal;
+          break;
+        case 'week':
+        case 'semana':
+          fechaInicio = new Date(fechaMaxReal);
+          fechaInicio.setDate(fechaInicio.getDate() - 7);
+          if (fechaInicio < fechaMinReal) fechaInicio = fechaMinReal;
+          break;
+        case 'month':
+        case 'mes':
+          fechaInicio = new Date(fechaMaxReal);
+          fechaInicio.setDate(fechaInicio.getDate() - 30);
+          if (fechaInicio < fechaMinReal) fechaInicio = fechaMinReal;
+          break;
+        case 'year':
+        case 'año':
+          fechaInicio = new Date(fechaMaxReal);
+          fechaInicio.setDate(fechaInicio.getDate() - 365);
+          if (fechaInicio < fechaMinReal) fechaInicio = fechaMinReal;
+          break;
+        default:
+          // Para 'all' o sin período, usar todo el rango disponible
+          fechaInicio = fechaMinReal;
+          fechaFin = fechaMaxReal;
+      }
+      
+      console.log(`📊 [OPTIMIZADO] Período '${period}' convertido a fechas reales: ${fechaInicio.toISOString().split('T')[0]} a ${fechaFin.toISOString().split('T')[0]}`);
+    }
+    
+    // PASO 3: Construir consulta optimizada
     let query = `
-      WITH ventas_platos AS (
+      WITH ventas_reales AS (
         SELECT 
           pd.idplato,
           SUM(pd.cantidad) as cantidad_vendida,
-          AVG(m.precio) as precio_promedio
+          COUNT(DISTINCT p.idpedido) as pedidos_distintos,
+          AVG(m.precio) as precio_promedio,
+          SUM(pd.cantidad * m.precio) as ingresos_totales
         FROM 
           pedido_detalle pd
         INNER JOIN 
@@ -385,86 +466,135 @@ router.get("/pedidos/stats/mas-vendidos", async (req, res) => {
           menu m ON pd.idplato = m.idplato
         WHERE 
           p.estado = 'completado'
+          AND DATE(p.fecha) >= $1
+          AND DATE(p.fecha) <= $2
+          AND m.isDelete = FALSE
     `;
 
-    const queryParams = [];
-    let paramCounter = 1;
+    const queryParams = [
+      fechaInicio.toISOString().split('T')[0],
+      fechaFin.toISOString().split('T')[0]
+    ];
+    let paramCounter = 3;
 
-    // Agregar filtros de fecha
-    if (startDate) {
-      queryParams.push(startDate);
-      query += ` AND p.fecha >= $${paramCounter}::date`;
-      paramCounter++;
-    }
-    
-    if (endDate) {
-      queryParams.push(endDate);
-      query += ` AND p.fecha <= $${paramCounter}::date + interval '1 day'`;
-      paramCounter++;
-    }
-
-    // Agregar filtro de categoría
+    // Agregar filtro de categoría optimizado
     if (categoria === 'comida') {
-      query += ` AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')`;
+      query += ` AND m.tipo = 'comida'`;
     } else if (categoria === 'bebida') {
-      query += ` AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')`;
+      query += ` AND m.tipo = 'bebida'`;
+    } else if (categoria && categoria !== 'todos' && categoria !== 'null') {
+      // Filtro por categoría específica (ej: "Omelettes")
+      queryParams.push(categoria);
+      query += ` AND m.categoria = $${paramCounter}`;
+      paramCounter++;
     }
 
-    // Completar la primera parte de la consulta
+    // Completar la consulta
     query += `
         GROUP BY 
-          pd.idplato
+          pd.idplato, m.precio
       )
       SELECT 
         m.idplato,
         m.nombre,
         m.categoria,
         m.precio,
-        COALESCE(vp.cantidad_vendida, 0) as cantidad_vendida,
-        COALESCE(vp.precio_promedio, m.precio) as precio_promedio
+        m.imagen_url,
+        m.tipo,
+        COALESCE(vr.cantidad_vendida, 0) as cantidad_vendida,
+        COALESCE(vr.pedidos_distintos, 0) as pedidos_distintos,
+        COALESCE(vr.precio_promedio, m.precio) as precio_promedio,
+        COALESCE(vr.ingresos_totales, 0) as ingresos_totales
       FROM 
         menu m
       LEFT JOIN 
-        ventas_platos vp ON m.idplato = vp.idplato
+        ventas_reales vr ON m.idplato = vr.idplato
       WHERE 
-        COALESCE(vp.cantidad_vendida, 0) > 0
+        m.isDelete = FALSE
+        AND m.disponibilidad = TRUE
+        AND COALESCE(vr.cantidad_vendida, 0) > 0
     `;
 
-    // Agregar el mismo filtro de categoría en la segunda parte
+    // Agregar filtro de categoría también en la segunda parte
     if (categoria === 'comida') {
-      query += ` AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')`;
+      query += ` AND m.tipo = 'comida'`;
     } else if (categoria === 'bebida') {
-      query += ` AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')`;
+      query += ` AND m.tipo = 'bebida'`;
+    } else if (categoria && categoria !== 'todos' && categoria !== 'null') {
+      query += ` AND m.categoria = $${queryParams.length}`;
     }
 
-    // Agregar ordenamiento y límite
+    // Ordenamiento y límite
     queryParams.push(limit);
     query += `
       ORDER BY 
-        vp.cantidad_vendida DESC NULLS LAST
-      LIMIT $${paramCounter}
+        vr.cantidad_vendida DESC NULLS LAST,
+        vr.ingresos_totales DESC NULLS LAST,
+        m.nombre ASC
+      LIMIT $${queryParams.length}
     `;
 
-    console.log('📊 Consulta de platos populares:', query);
-    console.log('📊 Parámetros:', queryParams);
+    console.log(`📊 [OPTIMIZADO] Ejecutando consulta optimizada con ${queryParams.length} parámetros`);
+    console.log(`📊 [OPTIMIZADO] Parámetros: [${queryParams.join(', ')}]`);
     
+    // PASO 4: Ejecutar consulta
     const { rows } = await pool.query(query, queryParams);
     
-    // Formatear resultados
+    // PASO 5: Formatear resultados
     const formattedRows = rows.map(row => ({
-      ...row,
+      idplato: parseInt(row.idplato),
+      nombre: row.nombre,
+      categoria: row.categoria,
+      precio: parseFloat(row.precio),
+      imagen_url: row.imagen_url,
+      tipo: row.tipo,
+      cantidad_vendida: parseInt(row.cantidad_vendida),
+      pedidos_distintos: parseInt(row.pedidos_distintos),
       precio_promedio: parseFloat(row.precio_promedio),
-      cantidad_vendida: parseInt(row.cantidad_vendida)
+      ingresos_totales: parseFloat(row.ingresos_totales)
     }));
     
-    console.log(`📊 Platos populares encontrados: ${formattedRows.length}`);
+    console.log(`📊 [OPTIMIZADO] Resultados encontrados: ${formattedRows.length} platos`);
+    console.log(`📊 [OPTIMIZADO] Rango de fechas usado: ${fechaInicio.toISOString().split('T')[0]} a ${fechaFin.toISOString().split('T')[0]}`);
     
+    if (formattedRows.length > 0) {
+      console.log(`📊 [OPTIMIZADO] Top 3 platos:`);
+      formattedRows.slice(0, 3).forEach((plato, index) => {
+        console.log(`   ${index + 1}. ${plato.nombre}: ${plato.cantidad_vendida} vendidos, $${plato.ingresos_totales.toFixed(2)} ingresos`);
+      });
+    }
+    
+    // PASO 6: Agregar metadatos de la consulta
+    const response = {
+      platos: formattedRows,
+      metadata: {
+        rango_consultado: {
+          inicio: fechaInicio.toISOString().split('T')[0],
+          fin: fechaFin.toISOString().split('T')[0]
+        },
+        rango_disponible: {
+          inicio: fecha_minima,
+          fin: fecha_maxima
+        },
+        total_pedidos_periodo: total_pedidos,
+        filtros_aplicados: {
+          categoria: categoria || 'todos',
+          periodo: period || 'personalizado',
+          limite: parseInt(limit)
+        },
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    // Para mantener compatibilidad, devolver solo el array de platos
     return res.status(200).json(formattedRows);
+    
   } catch (error) {
-    console.error("❌ Error al obtener platos más vendidos:", error);
+    console.error("❌ [OPTIMIZADO] Error al obtener platos más vendidos:", error);
     return res.status(500).json({
       error: "Error al obtener platos más vendidos",
-      details: error.message
+      details: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -519,7 +649,7 @@ router.get("/pedidos/resumen", async (req, res) => {
     let fechaInicio, fechaFin;
     const hoy = new Date();
     
-    // Si se proporcionan fechas futuras, mostrar datos históricos de los últimos 30 días
+    // Si se proporcionan fechas específicas
     if (startDate) {
       fechaInicio = new Date(`${startDate}T00:00:00`);
       if (fechaInicio > hoy) {
@@ -560,10 +690,67 @@ router.get("/pedidos/resumen", async (req, res) => {
           fechaInicio = new Date(hoy);
           fechaInicio.setFullYear(hoy.getFullYear() - 1);
           break;
+        case 'all':
+        case 'todos':
+          // Para "todos", obtener desde el primer pedido en la BD
+          console.log('📊 Período "todos" detectado - obteniendo rango completo de la BD');
+          try {
+            const rangoResult = await pool.query(`
+              SELECT 
+                MIN(DATE(fecha)) as fecha_minima,
+                MAX(DATE(fecha)) as fecha_maxima
+              FROM pedidos 
+              WHERE estado = 'completado'
+            `);
+            
+            if (rangoResult.rows[0].fecha_minima && rangoResult.rows[0].fecha_maxima) {
+              fechaInicio = new Date(`${rangoResult.rows[0].fecha_minima}T00:00:00`);
+              fechaFin = new Date(`${rangoResult.rows[0].fecha_maxima}T23:59:59`);
+              console.log(`📊 Rango completo encontrado: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
+            } else {
+              // Si no hay datos, usar el día actual
+              fechaInicio = new Date(hoy);
+              fechaInicio.setHours(0, 0, 0, 0);
+              console.log('📊 No hay datos en la BD, usando día actual');
+            }
+          } catch (error) {
+            console.error('❌ Error al obtener rango de fechas de la BD:', error);
+            // Fallback: usar todos los datos hasta hoy
+            fechaInicio = new Date('2000-01-01T00:00:00'); // Fecha muy antigua
+            fechaFin = new Date(hoy);
+            fechaFin.setHours(23, 59, 59, 999);
+          }
+          break;
         default:
+          // Para período no especificado o desconocido, también usar todos los datos
+          console.log(`📊 Período no reconocido "${period}" - usando todos los datos disponibles`);
+          try {
+            const rangoResult = await pool.query(`
+              SELECT 
+                MIN(DATE(fecha)) as fecha_minima,
+                MAX(DATE(fecha)) as fecha_maxima
+              FROM pedidos 
+              WHERE estado = 'completado'
+            `);
+            
+            if (rangoResult.rows[0].fecha_minima && rangoResult.rows[0].fecha_maxima) {
+              fechaInicio = new Date(`${rangoResult.rows[0].fecha_minima}T00:00:00`);
+              fechaFin = new Date(`${rangoResult.rows[0].fecha_maxima}T23:59:59`);
+              console.log(`📊 Rango completo (default): ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
+            } else {
+              // Si no hay datos, usar últimos 30 días como antes
           fechaInicio = new Date(hoy);
-          fechaInicio.setDate(hoy.getDate() - 30); // Por defecto mostrar últimos 30 días
+              fechaInicio.setDate(hoy.getDate() - 30);
           fechaInicio.setHours(0, 0, 0, 0);
+              console.log('📊 No hay datos, usando últimos 30 días como fallback');
+            }
+          } catch (error) {
+            console.error('❌ Error al obtener rango default:', error);
+            // Fallback final: últimos 30 días
+            fechaInicio = new Date(hoy);
+            fechaInicio.setDate(hoy.getDate() - 30);
+            fechaInicio.setHours(0, 0, 0, 0);
+          }
       }
     }
 
@@ -1227,6 +1414,76 @@ router.get("/pedidos/cliente/:clienteId/estadisticas", async (req, res) => {
     return res.status(500).json({
       error: "Error al obtener estadísticas del cliente",
       details: error.message
+    });
+  }
+});
+
+// Obtener información sobre el rango de fechas disponibles en la base de datos
+router.get("/pedidos/stats/fechas-disponibles", async (req, res) => {
+  try {
+    console.log("📅 [INFO] Solicitud de información de fechas disponibles");
+    
+    const query = `
+      SELECT 
+        MIN(DATE(fecha)) as fecha_minima,
+        MAX(DATE(fecha)) as fecha_maxima,
+        COUNT(*) as total_pedidos,
+        COUNT(CASE WHEN estado = 'completado' THEN 1 END) as pedidos_completados,
+        COUNT(DISTINCT DATE(fecha)) as dias_con_actividad,
+        MIN(fecha) as timestamp_minimo,
+        MAX(fecha) as timestamp_maximo
+      FROM pedidos
+    `;
+    
+    const { rows } = await pool.query(query);
+    const info = rows[0];
+    
+    // Calcular estadísticas adicionales
+    const fechaMin = new Date(info.fecha_minima);
+    const fechaMax = new Date(info.fecha_maxima);
+    const diasTotales = Math.ceil((fechaMax - fechaMin) / (1000 * 60 * 60 * 24)) + 1;
+    
+    const response = {
+      rango_disponible: {
+        fecha_minima: info.fecha_minima,
+        fecha_maxima: info.fecha_maxima,
+        timestamp_minimo: info.timestamp_minimo,
+        timestamp_maximo: info.timestamp_maximo
+      },
+      estadisticas: {
+        total_pedidos: parseInt(info.total_pedidos),
+        pedidos_completados: parseInt(info.pedidos_completados),
+        dias_con_actividad: parseInt(info.dias_con_actividad),
+        dias_totales: diasTotales,
+        porcentaje_actividad: diasTotales > 0 ? Math.round((parseInt(info.dias_con_actividad) / diasTotales) * 100) : 0
+      },
+      periodos_sugeridos: {
+        ultima_semana: {
+          inicio: new Date(fechaMax.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          fin: info.fecha_maxima
+        },
+        ultimo_mes: {
+          inicio: new Date(fechaMax.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          fin: info.fecha_maxima
+        },
+        todo_disponible: {
+          inicio: info.fecha_minima,
+          fin: info.fecha_maxima
+        }
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log(`📅 [INFO] Rango disponible: ${info.fecha_minima} a ${info.fecha_maxima}`);
+    console.log(`📅 [INFO] Total pedidos: ${info.total_pedidos} (${info.pedidos_completados} completados)`);
+    
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("❌ Error al obtener información de fechas:", error);
+    return res.status(500).json({
+      error: "Error al obtener información de fechas disponibles",
+      details: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });

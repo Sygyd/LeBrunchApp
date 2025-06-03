@@ -18,44 +18,51 @@ class PopularDishesService {
     return baseUrl;
   }
 
-  // Obtener los platos más populares con filtros opcionales
+  // Obtener los platos más populares con filtros opcionales - VERSIÓN OPTIMIZADA
   Future<List<Map<String, dynamic>>> getPopularDishes({
-    String? period, // 'day', 'week', 'month', 'year'
+    String? period,
     String? startDate,
     String? endDate,
     String? category,
     int limit = 20,
   }) async {
     try {
-      // Construir los parámetros de consulta
+      // Construir los parámetros de consulta de forma optimizada
       final queryParams = <String, String>{'limit': limit.toString()};
 
-      // Agregar parámetros opcionales si están disponibles
-      if (period != null && period != 'custom') {
+      // ¡OPTIMIZACIÓN! Solo agregar parámetros que realmente se necesitan
+      if (period != null && period.isNotEmpty && period != 'null') {
         queryParams['period'] = period;
+        print('🔧 [OPTIMIZADO] Agregando período: $period');
       }
 
-      if (startDate != null) {
+      if (startDate != null && startDate.isNotEmpty && startDate != 'null') {
         queryParams['startDate'] = startDate;
+        print('🔧 [OPTIMIZADO] Agregando fecha inicio: $startDate');
       }
 
-      if (endDate != null) {
+      if (endDate != null && endDate.isNotEmpty && endDate != 'null') {
         queryParams['endDate'] = endDate;
+        print('🔧 [OPTIMIZADO] Agregando fecha fin: $endDate');
       }
 
-      if (category != null && category.isNotEmpty) {
+      if (category != null &&
+          category.isNotEmpty &&
+          category != 'null' &&
+          category != 'todos') {
         queryParams['categoria'] = category;
+        print('🔧 [OPTIMIZADO] Agregando categoría: $category');
       }
 
       // Obtener la URL base del servidor
       final baseUrl = await _getBaseUrl();
 
-      // Construir la URI con los parámetros
+      // Construir la URI con los parámetros optimizados
       final uri = Uri.parse(
         '$baseUrl/pedidos/stats/mas-vendidos',
       ).replace(queryParameters: queryParams);
 
-      print('🔍 Consultando platos populares: $uri');
+      print('🌐 [OPTIMIZADO] URL de consulta: $uri');
 
       // Realizar la solicitud HTTP
       final response = await http.get(uri);
@@ -65,23 +72,29 @@ class PopularDishesService {
 
         if (data is List) {
           final dishes = List<Map<String, dynamic>>.from(data);
-          print('✅ Se obtuvieron ${dishes.length} platos populares');
+          print('✅ [OPTIMIZADO] Respuesta exitosa: ${dishes.length} platos');
 
-          // Obtener las categorías para los platos si no tienen
-          final dishesWithCategories = await _addCategoriesIfMissing(dishes);
-          return dishesWithCategories;
+          // Procesar las URLs de las imágenes de forma optimizada
+          final dishesWithFullUrls = await _processDishesWithFullUrls(dishes);
+
+          print(
+            '🖼️ [OPTIMIZADO] URLs procesadas para ${dishesWithFullUrls.length} platos',
+          );
+          return dishesWithFullUrls;
         } else {
-          print('❌ Formato de respuesta inesperado');
+          print(
+            '❌ [OPTIMIZADO] Formato de respuesta inesperado: ${data.runtimeType}',
+          );
           return [];
         }
       } else {
         print(
-          '❌ Error al obtener platos populares: ${response.statusCode} - ${response.body}',
+          '❌ [OPTIMIZADO] Error HTTP ${response.statusCode}: ${response.body}',
         );
         return [];
       }
     } catch (e) {
-      print('⚠️ Excepción al obtener platos populares: $e');
+      print('❌ [OPTIMIZADO] Error en getPopularDishes: $e');
       return [];
     }
   }
@@ -153,22 +166,30 @@ class PopularDishesService {
     return '$baseUrl/$imageUrl';
   }
 
-  // Método para procesar los platos y asegurar URLs completas
+  // Método optimizado para procesar URLs de imágenes
   Future<List<Map<String, dynamic>>> _processDishesWithFullUrls(
     List<Map<String, dynamic>> dishes,
   ) async {
-    List<Map<String, dynamic>> processedDishes = [];
-    for (var dish in dishes) {
+    if (dishes.isEmpty) return dishes;
+
+    final baseUrl = await _getBaseUrl();
+
+    return dishes.map((dish) {
       var processedDish = Map<String, dynamic>.from(dish);
-      processedDish['imagen_url'] = await _ensureFullImageUrl(
-        dish['imagen_url'],
-      );
-      processedDishes.add(processedDish);
-    }
-    return processedDishes;
+      final originalUrl = dish['imagen_url'];
+
+      if (originalUrl != null && originalUrl.isNotEmpty) {
+        if (!originalUrl.startsWith('http://') &&
+            !originalUrl.startsWith('https://')) {
+          processedDish['imagen_url'] = '$baseUrl/$originalUrl';
+        }
+      }
+
+      return processedDish;
+    }).toList();
   }
 
-  // Método para obtener los platos más vendidos con filtros opcionales
+  // Método para obtener los platos más vendidos con filtros opcionales - VERSIÓN OPTIMIZADA
   Future<List<Map<String, dynamic>>> getPopularDishesDirect({
     String? period,
     String? startDate,
@@ -177,123 +198,38 @@ class PopularDishesService {
     String? categoria,
   }) async {
     try {
-      print(
-        'Solicitud de platos populares: periodo=$period, categoría=$categoria, fechas=$startDate a $endDate',
+      print('🔄 [OPTIMIZADO] PopularDishesService: Solicitud optimizada');
+      print('   📅 Período: ${period ?? 'null'}');
+      print('   📅 Fechas: ${startDate ?? 'null'} a ${endDate ?? 'null'}');
+      print('   🎯 Categoría: ${categoria ?? 'null'}');
+      print('   📊 Límite: $limit');
+
+      // Usar el método estándar optimizado
+      final result = await getPopularDishes(
+        period: period,
+        startDate: startDate,
+        endDate: endDate,
+        category: categoria,
+        limit: limit,
       );
-
-      // Convertir el período a fechas si no se proporcionaron fechas específicas
-      if (startDate == null && endDate == null && period != null) {
-        final DateTime now = DateTime.now();
-        endDate = DateFormat('yyyy-MM-dd').format(now);
-
-        switch (period) {
-          case 'day':
-            startDate = endDate; // Mismo día
-            break;
-          case 'week':
-            startDate = DateFormat(
-              'yyyy-MM-dd',
-            ).format(now.subtract(const Duration(days: 7)));
-            break;
-          case 'month':
-            startDate = DateFormat(
-              'yyyy-MM-dd',
-            ).format(now.subtract(const Duration(days: 30)));
-            break;
-          case 'year':
-            startDate = DateFormat(
-              'yyyy-MM-dd',
-            ).format(now.subtract(const Duration(days: 365)));
-            break;
-          case 'all':
-            // No establecer fechas para incluir todos los datos
-            startDate = null;
-            endDate = null;
-            break;
-        }
-
-        if (startDate != null && endDate != null) {
-          print('Período $period convertido a fechas: $startDate a $endDate');
-        }
-      }
-
-      // Construir la consulta SQL optimizada para obtener platos populares
-      String sql = '''
-      WITH ventas_platos AS (
-        SELECT 
-          pd.idplato,
-          SUM(pd.cantidad) as cantidad_vendida,
-          AVG(pd.precio_unitario) as precio_promedio
-        FROM 
-          pedido_detalle pd
-        INNER JOIN 
-          pedidos p ON pd.idpedido = p.idpedido
-        INNER JOIN 
-          menu m ON pd.idplato = m.idplato
-        WHERE 
-          p.estado = 'completado'
-          ${startDate != null ? "AND p.fecha >= '$startDate'::date" : ''}
-          ${endDate != null ? "AND p.fecha <= '$endDate'::date + interval '1 day'" : ''}
-          ${categoria == 'comida' ? "AND LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')" : ''}
-          ${categoria == 'bebida' ? "AND m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')" : ''}
-        GROUP BY 
-          pd.idplato
-      )
-      SELECT 
-        m.idplato,
-        m.nombre,
-        m.categoria,
-        m.precio,
-        COALESCE(vp.cantidad_vendida, 0) as cantidad_vendida,
-        COALESCE(vp.precio_promedio, m.precio) as precio_promedio,
-        m.imagen_url
-      FROM 
-        menu m
-      LEFT JOIN 
-        ventas_platos vp ON m.idplato = vp.idplato
-      WHERE 
-        ${categoria == 'comida'
-          ? "LOWER(m.categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes')"
-          : categoria == 'bebida'
-          ? "m.categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos')"
-          : '1=1'}
-        AND COALESCE(vp.cantidad_vendida, 0) > 0
-      ORDER BY 
-        vp.cantidad_vendida DESC NULLS LAST
-      LIMIT $limit
-      ''';
-
-      print('📊 Ejecutando consulta SQL: $sql');
-
-      // Obtener la URL base del servidor
-      final baseUrl = await _getBaseUrl();
-
-      // Realizar la consulta a través del endpoint de consulta directa
-      final response = await http.post(
-        Uri.parse('$baseUrl/db/query'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'query': sql}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['result'] != null) {
-          final List<Map<String, dynamic>> dishes =
-              List<Map<String, dynamic>>.from(data['result']);
-          print('✅ Se obtuvieron ${dishes.length} platos populares');
-
-          // Procesar las URLs de las imágenes
-          final processedDishes = await _processDishesWithFullUrls(dishes);
-          return processedDishes;
-        }
-      }
 
       print(
-        '❌ Error al obtener platos populares: ${response.statusCode} - ${response.body}',
+        '✅ [OPTIMIZADO] PopularDishesService: ${result.length} platos obtenidos',
       );
-      return [];
+
+      if (result.isNotEmpty) {
+        print('📊 [OPTIMIZADO] Top 3 resultados:');
+        result.take(3).forEach((plato) {
+          final nombre = plato['nombre'] ?? 'Sin nombre';
+          final vendidos = plato['cantidad_vendida'] ?? 0;
+          final categoria = plato['categoria'] ?? 'Sin categoría';
+          print('   • $nombre ($categoria): $vendidos vendidos');
+        });
+      }
+
+      return result;
     } catch (e) {
-      print('⚠️ Error al obtener platos populares: $e');
+      print('⚠️ [OPTIMIZADO] PopularDishesService: Error - $e');
       return [];
     }
   }

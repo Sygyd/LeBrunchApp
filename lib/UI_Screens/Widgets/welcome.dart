@@ -4,7 +4,6 @@ import '/UI_Screens/Widgets/welcome_button.dart';
 import '/UI_Screens/Auth_Screens/auth_modals.dart';
 import '../../Api_services/cart_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -16,110 +15,118 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen>
     with SingleTickerProviderStateMixin {
   bool _isInitialized = false;
+  bool _imagesPreloaded = false;
 
-  // Variables para la animación
-  double _backgroundPosition1 = 0;
-  double _backgroundPosition2 = -200; // Comenzar fuera de la pantalla
-  late AnimationController _controller;
-  late Timer _animationTimer;
+  // Variables para la animación optimizada
+  late AnimationController _animationController;
+  late Animation<double> _backgroundAnimation;
 
   @override
   void initState() {
     super.initState();
 
-    // Inicializar animación
-    _controller = AnimationController(
+    // Inicializar animación inmediatamente (síncrono)
+    _initializeAnimation();
+
+    // Hacer precarga e inicialización en background (asíncrono)
+    _initializeScreen();
+  }
+
+  void _initializeAnimation() {
+    // Animación más lenta y suave
+    _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 16), // Actualizar a 60fps
+      duration: const Duration(seconds: 15), // Animación mucho más lenta
     );
 
-    // Iniciar timer para actualizar la posición sin depender de MediaQuery en initState
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+    // Animación lineal continua
+    _backgroundAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.linear),
+    );
 
-      setState(() {
-        // Mover ambas imágenes hacia abajo (velocidad constante)
-        _backgroundPosition1 +=
-            0.7; // Ajusta este valor para cambiar la velocidad
-        _backgroundPosition2 += 0.7;
+    // Repetir la animación infinitamente
+    _animationController.repeat();
+  }
 
-        // Usamos un valor fijo para la altura de la pantalla durante el primer frame
-        // y luego será corregido en los siguientes frames cuando el contexto esté disponible
-        double estimatedScreenHeight = 800.0; // Valor estimado conservador
+  Future<void> _initializeScreen() async {
+    // Precargar imágenes en background
+    _preloadImages();
 
-        try {
-          // Intentar obtener la altura real si el contexto está listo
-          if (context != null) {
-            estimatedScreenHeight = MediaQuery.of(context).size.height;
-          }
-        } catch (e) {
-          // Si MediaQuery falla, seguimos usando el valor estimado
-        }
-
-        // Resetear la primera imagen cuando sale completamente de la pantalla
-        if (_backgroundPosition1 >= estimatedScreenHeight) {
-          _backgroundPosition1 = _backgroundPosition2 - estimatedScreenHeight;
-        }
-
-        // Resetear la segunda imagen cuando sale completamente de la pantalla
-        if (_backgroundPosition2 >= estimatedScreenHeight) {
-          _backgroundPosition2 = _backgroundPosition1 - estimatedScreenHeight;
-        }
-      });
-    });
-
-    // Limpiar carrito
+    // Limpiar carrito en background
     _cleanAllCarts();
+  }
+
+  Future<void> _preloadImages() async {
+    // Pequeño delay para permitir que el primer frame se renderice
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    try {
+      // Precargar imágenes críticas
+      await precacheImage(
+        const AssetImage('assets/images/fondolb.jpg'),
+        context,
+      );
+      await precacheImage(
+        const AssetImage('assets/logos/logo_lebrunch.png'),
+        context,
+      );
+
+      if (mounted) {
+        setState(() {
+          _imagesPreloaded = true;
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error precargando imágenes: $e');
+      // Continuar sin precargar si hay error
+      if (mounted) {
+        setState(() {
+          _imagesPreloaded = true;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
-    _animationTimer.cancel();
-    _controller.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
-  // Método para limpiar todos los carritos guardados
+  // Método optimizado para limpiar carritos (sin bloquear UI)
   Future<void> _cleanAllCarts() async {
     if (_isInitialized) return;
 
     try {
-      // 1. Eliminar todos los carritos guardados en SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final allKeys = prefs.getKeys().toList();
-      int contadorEliminados = 0;
+      // Ejecutar en microtask para no bloquear la UI
+      Future.microtask(() async {
+        final prefs = await SharedPreferences.getInstance();
+        final allKeys = prefs.getKeys().toList();
+        int contadorEliminados = 0;
 
-      // Eliminar específicamente las claves relacionadas con carritos
-      for (final key in allKeys) {
-        if (key.startsWith('cart_')) {
-          await prefs.remove(key);
-          contadorEliminados++;
+        for (final key in allKeys) {
+          if (key.startsWith('cart_')) {
+            await prefs.remove(key);
+            contadorEliminados++;
+          }
         }
-      }
 
-      print(
-        '🧹 WelcomeScreen: Se han eliminado $contadorEliminados carritos de SharedPreferences',
-      );
+        final cartService = CartService();
+        await cartService.clearAllCarts();
+        await cartService.setUserId('guest');
 
-      // 2. Reiniciar el servicio de carrito
-      final cartService = CartService();
-      await cartService.clearAllCarts();
+        print(
+          '✅ WelcomeScreen: Carritos limpiados ($contadorEliminados eliminados)',
+        );
 
-      // 3. Establecer el modo invitado
-      await cartService.setUserId('guest');
-
-      print(
-        '✅ WelcomeScreen: CartService completamente limpio e inicializado como invitado',
-      );
-
-      setState(() {
-        _isInitialized = true;
+        if (mounted) {
+          setState(() {
+            _isInitialized = true;
+          });
+        }
       });
     } catch (e) {
-      print('❌ Error al limpiar carritos en WelcomeScreen: $e');
+      print('❌ Error al limpiar carritos: $e');
     }
   }
 
@@ -128,81 +135,140 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
+      backgroundColor: Colors.white, // Fondo blanco siempre
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Fondo con animación sencilla
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 16),
-            curve: Curves.linear,
-            top: _backgroundPosition1,
-            left: 0,
-            right: 0,
-            height:
-                screenHeight +
-                50, // Imagen ligeramente más grande que la pantalla
-            child: Image.asset('assets/images/fondolb.jpg', fit: BoxFit.cover),
+          // Fondo animado optimizado
+          AnimatedBuilder(
+            animation: _backgroundAnimation,
+            builder: (context, child) {
+              // Calcular posición de la animación de manera más eficiente
+              final double offset1 =
+                  (_backgroundAnimation.value * screenHeight) % screenHeight;
+              final double offset2 = offset1 - screenHeight;
+
+              return Stack(
+                children: [
+                  // Contenedor blanco de fondo siempre visible
+                  Positioned.fill(child: Container(color: Colors.white)),
+
+                  // Primera imagen de fondo
+                  Positioned(
+                    top: offset1,
+                    left: 0,
+                    right: 0,
+                    height: screenHeight + 100, // Buffer extra para suavidad
+                    child:
+                        _imagesPreloaded
+                            ? Image.asset(
+                              'assets/images/fondolb.jpg',
+                              fit: BoxFit.cover,
+                              // Cache para mejor rendimiento
+                              cacheHeight: (screenHeight * 1.5).toInt(),
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.white, // Fondo blanco en error
+                                );
+                              },
+                            )
+                            : Container(
+                              color:
+                                  Colors.white, // Fondo blanco mientras carga
+                            ),
+                  ),
+
+                  // Segunda imagen para transición suave
+                  Positioned(
+                    top: offset2,
+                    left: 0,
+                    right: 0,
+                    height: screenHeight + 100,
+                    child:
+                        _imagesPreloaded
+                            ? Image.asset(
+                              'assets/images/fondolb.jpg',
+                              fit: BoxFit.cover,
+                              cacheHeight: (screenHeight * 1.5).toInt(),
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.white, // Fondo blanco en error
+                                );
+                              },
+                            )
+                            : Container(
+                              color:
+                                  Colors.white, // Fondo blanco mientras carga
+                            ),
+                  ),
+                ],
+              );
+            },
           ),
 
-          // Segunda imagen de fondo (para transición continua)
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 16),
-            curve: Curves.linear,
-            top: _backgroundPosition2,
-            left: 0,
-            right: 0,
-            height:
-                screenHeight +
-                50, // Imagen ligeramente más grande que la pantalla
-            child: Image.asset('assets/images/fondolb.jpg', fit: BoxFit.cover),
-          ),
-
-          // Contenido
+          // Contenido principal (SIN OVERLAY)
           SafeArea(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Header con texto elegante
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 0,
+                const SizedBox(height: 20), // Espaciado superior
+                // Contenido central con logo y texto
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo con cache y error handling
+                      _imagesPreloaded
+                          ? Image.asset(
+                            'assets/logos/logo_lebrunch.png',
+                            height: screenHeight * 0.22,
+                            fit: BoxFit.contain,
+                            cacheHeight: (screenHeight * 0.3).toInt(),
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.restaurant,
+                                size: screenHeight * 0.15,
+                                color: const Color(0xFF3ea69b),
+                              );
+                            },
+                          )
+                          : Container(
+                            height: screenHeight * 0.22,
+                            color: Colors.white,
+                            child: Center(
+                              child: Icon(
+                                Icons.restaurant,
+                                size: screenHeight * 0.15,
+                                color: const Color(0xFF3ea69b),
+                              ),
+                            ),
+                          ),
+                      SizedBox(height: screenHeight * 0.05),
+
+                      // Título "Bienvenido"
+                      const TextWithBorder(
+                        text: 'Bienvenido',
+                        fontSize: 45,
+                        fontWeight: FontWeight.w600,
+                        borderWidth: 3.0,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Subtítulo
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24),
+                        child: TextWithBorder(
+                          text: 'Horneamos, Cocinamos y Disfrutamos',
+                          fontSize: 22,
+                          fontWeight: FontWeight.normal,
+                          borderWidth: 2.0,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                // Contenido central con logo y texto
-                Column(
-                  children: [
-                    // Imagen con tamaño proporcional a la pantalla
-                    Image.asset(
-                      'assets/logos/logo_lebrunch.png',
-                      height: screenHeight * 0.22,
-                      fit: BoxFit.contain,
-                    ),
-                    SizedBox(height: screenHeight * 0.05),
 
-                    // Título "Bienvenido"
-                    TextWithBorder(
-                      text: 'Bienvenido',
-                      fontSize: 45,
-                      fontWeight: FontWeight.w600,
-                      borderWidth: 3.0,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Subtítulo
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: TextWithBorder(
-                        text: 'Horneamos, Cocinamos y Disfrutamos',
-                        fontSize: 22,
-                        fontWeight: FontWeight.normal,
-                        borderWidth: 2.0,
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Botones de acceso horizontales
+                // Botones de acceso
                 Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Row(
