@@ -268,8 +268,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         _buildFeatureCard(
           context,
+          'Manual de Usuario',
+          'Guía del sistema',
+          Icons.menu_book,
+          const Color(0xFF4ECDC4),
+          () => Navigator.pushNamed(context, '/user-manual'),
+        ),
+        _buildFeatureCard(
+          context,
           'Papelera',
-          'Restaurar elementos',
+          'Restaurar items',
           Icons.restore_from_trash,
           const Color(0xFFE57373),
           () => Navigator.pushNamed(context, '/admin-deleted-items'),
@@ -344,42 +352,88 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      shadowColor: color.withOpacity(0.3),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                backgroundColor: color.withOpacity(0.2),
-                radius: 30,
-                child: Icon(icon, color: color, size: 36),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'MADE TOMMY',
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (displaySubtitle.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  displaySubtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shadowColor: color.withOpacity(0.2),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.1), width: 1),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            splashColor: color.withOpacity(0.1),
+            highlightColor: color.withOpacity(0.05),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: color.withOpacity(0.2),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Icon(icon, color: color, size: 32),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ],
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'MADE TOMMY',
+                      fontSize: 12,
+                      color: Colors.grey[800],
+                      height: 1.2,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (displaySubtitle.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        displaySubtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: color.withOpacity(0.8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -921,7 +921,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             ),
           ),
 
-          // Overlay oscuro cuando el menú está expandido
+          // Backdrop semi-transparente cuando está expandido
           if (_isExpanded)
             Positioned.fill(
               child: GestureDetector(
@@ -930,13 +930,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     _isExpanded = false;
                   });
                 },
-                child: AnimatedOpacity(
-                  opacity:
-                      _isExpanded
-                          ? 0.3
-                          : 0, // Menos opacidad para mejor visibilidad
-                  duration: const Duration(milliseconds: 250),
-                  child: Container(color: Colors.black),
+                child: Container(
+                  // CORRECCIÓN: Eliminado AnimatedOpacity problemático
+                  color: Colors.black.withOpacity(0.3), // Opacidad fija
                 ),
               ),
             ),
@@ -956,90 +952,40 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         children: [
           // Botones de opciones (solo visible cuando está expandido)
           if (_isExpanded) // Solo renderizar cuando está expandido
-            AnimatedOpacity(
-              opacity: 1.0,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Administrador
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 1500),
-                    curve: Curves.easeOutCubic,
-                    // Delay para el primer botón
-                    builder: (context, value, child) {
-                      return Transform.translate(
-                        offset: Offset(0, 30 * (1 - value)),
-                        child: Opacity(
-                          opacity: value,
-                          child: _buildActionButton(
-                            icon: Icons.admin_panel_settings,
-                            color: const Color(0xFF9C27B0),
-                            tooltip: 'Agregar Administrador',
-                            onPressed:
-                                () => _showAddUserModal(preselectedRole: 0),
-                            label: 'Administrador',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  // Cocinero
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 1500),
-                    curve: Curves.easeOutCubic,
-                    // Delay para el segundo botón
-                    builder: (context, value, child) {
-                      return Transform.translate(
-                        offset: Offset(0, 30 * (1 - value)),
-                        child: Opacity(
-                          opacity: value,
-                          child: _buildActionButton(
-                            icon: Icons.restaurant,
-                            color: const Color(0xFFE57373),
-                            tooltip: 'Agregar Cocinero',
-                            onPressed:
-                                () => _showAddUserModal(preselectedRole: 2),
-                            label: 'Cocinero',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  // Barista
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 1500),
-                    curve: Curves.easeOutCubic,
-                    // Delay para el tercer botón
-                    builder: (context, value, child) {
-                      return Transform.translate(
-                        offset: Offset(0, 30 * (1 - value)),
-                        child: Opacity(
-                          opacity: value,
-                          child: _buildActionButton(
-                            icon: Icons.coffee,
-                            color: const Color(0xFF4DD0E1),
-                            tooltip: 'Agregar Barista',
-                            onPressed:
-                                () => _showAddUserModal(preselectedRole: 3),
-                            label: 'Barista',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(
-                    height: 20,
-                  ), // Más espacio para evitar la bottom nav bar
-                ],
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Administrador
+                _buildActionButton(
+                  icon: Icons.admin_panel_settings,
+                  color: const Color(0xFF9C27B0),
+                  tooltip: 'Agregar Administrador',
+                  onPressed: () => _showAddUserModal(preselectedRole: 0),
+                  label: 'Administrador',
+                ),
+                const SizedBox(height: 12),
+                // Cocinero
+                _buildActionButton(
+                  icon: Icons.restaurant,
+                  color: const Color(0xFFE57373),
+                  tooltip: 'Agregar Cocinero',
+                  onPressed: () => _showAddUserModal(preselectedRole: 2),
+                  label: 'Cocinero',
+                ),
+                const SizedBox(height: 12),
+                // Barista
+                _buildActionButton(
+                  icon: Icons.coffee,
+                  color: const Color(0xFF4DD0E1),
+                  tooltip: 'Agregar Barista',
+                  onPressed: () => _showAddUserModal(preselectedRole: 3),
+                  label: 'Barista',
+                ),
+                const SizedBox(
+                  height: 20,
+                ), // Más espacio para evitar la bottom nav bar
+              ],
             ),
 
           // Botón principal (siempre visible y en posición fija)
@@ -1084,15 +1030,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     width: 56,
                     height: 56,
                     alignment: Alignment.center,
-                    child: AnimatedRotation(
-                      turns:
-                          _isExpanded
-                              ? 0.125
-                              : 0.0, // 45 grados al expandir (convierte + en x)
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(Icons.add, color: Colors.white, size: 28),
-                    ),
+                    child: Icon(Icons.add, color: Colors.white, size: 28),
                   ),
                 ),
               ),

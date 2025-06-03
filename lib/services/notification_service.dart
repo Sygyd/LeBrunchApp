@@ -80,6 +80,7 @@ class NotificationService {
   static Future<void> showPdfDownloadedNotification({
     required String fileName,
     required String filePath,
+    String? customTitle,
   }) async {
     try {
       final AndroidNotificationDetails
@@ -103,7 +104,7 @@ class NotificationService {
 
       await _notifications.show(
         DateTime.now().millisecondsSinceEpoch.remainder(100000),
-        '📄 Reporte descargado',
+        customTitle ?? '📄 Reporte descargado',
         'Toca para abrir: $fileName',
         platformChannelSpecifics,
         payload: filePath,
@@ -112,6 +113,52 @@ class NotificationService {
       print('✅ Notificación mostrada para: $fileName');
     } catch (e) {
       print('❌ Error al mostrar notificación: $e');
+    }
+  }
+
+  static Future<void> showManualDownloadedNotification({
+    required String fileName,
+    required String filePath,
+  }) async {
+    try {
+      final AndroidNotificationDetails androidDetails =
+          AndroidNotificationDetails(
+            'manual_downloads',
+            'Descargas de Manual',
+            channelDescription:
+                'Notificaciones para descargas del manual de usuario',
+            importance: Importance.high,
+            priority: Priority.high,
+            showWhen: true,
+            icon: '@mipmap/ic_launcher',
+            largeIcon: const DrawableResourceAndroidBitmap(
+              '@mipmap/ic_launcher',
+            ),
+            color: const Color.fromARGB(
+              255,
+              78,
+              205,
+              196,
+            ), // Color turquesa del manual
+            playSound: true,
+            enableVibration: true,
+          );
+
+      final NotificationDetails platformChannelSpecifics = NotificationDetails(
+        android: androidDetails,
+      );
+
+      await _notifications.show(
+        DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        '📖 Manual de Usuario descargado',
+        'Toca para abrir: $fileName',
+        platformChannelSpecifics,
+        payload: filePath,
+      );
+
+      print('✅ Notificación de manual mostrada para: $fileName');
+    } catch (e) {
+      print('❌ Error al mostrar notificación de manual: $e');
     }
   }
 

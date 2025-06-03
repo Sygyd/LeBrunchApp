@@ -59,6 +59,8 @@ class _LoginModalContentState extends State<_LoginModalContent> {
 
   @override
   void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
     _emailFocus.dispose();
     _passwordFocus.dispose();
     super.dispose();
@@ -966,6 +968,12 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
 
   @override
   void dispose() {
+    _nombreController.dispose();
+    _apellidoController.dispose();
+    _cedulaController.dispose();
+    _emailController.dispose();
+    _contrasenaController.dispose();
+    _confirmContrasenaController.dispose();
     _nombreFocus.dispose();
     _apellidoFocus.dispose();
     _cedulaFocus.dispose();

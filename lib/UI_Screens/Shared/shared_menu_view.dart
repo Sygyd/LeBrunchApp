@@ -359,8 +359,7 @@ class _MenuViewState extends State<MenuView> {
             Expanded(
               child: GestureDetector(
                 onTap: () => _toggleMenuType(false),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                child: Container(
                   decoration: BoxDecoration(
                     color:
                         !_showDrinks
@@ -402,8 +401,7 @@ class _MenuViewState extends State<MenuView> {
             Expanded(
               child: GestureDetector(
                 onTap: () => _toggleMenuType(true),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                child: Container(
                   decoration: BoxDecoration(
                     color:
                         _showDrinks

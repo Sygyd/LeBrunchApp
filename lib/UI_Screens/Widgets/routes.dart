@@ -14,6 +14,8 @@ import '../Admin_Screens/PopularDishesScreen.dart';
 import '../Admin_Screens/menu_screen.dart';
 import '../Admin_Screens/Users/AdminUsersScreen.dart';
 import '../Admin_Screens/DeletedItemsScreen.dart';
+import '../Admin_Screens/UserManualScreen.dart';
+import '../Admin_Screens/PdfViewerScreen.dart';
 import 'splash_screen.dart';
 import 'welcome.dart';
 import 'custom_bottom_navigation_bar.dart';
@@ -163,6 +165,21 @@ class AppRoutes {
       case '/admin/deleted-items':
       case '/admin-deleted-items':
         return MaterialPageRoute(builder: (_) => const DeletedItemsScreen());
+
+      // Ruta para el manual de usuario
+      case '/user-manual':
+        return MaterialPageRoute(builder: (_) => const UserManualScreen());
+
+      // Ruta para el visor de PDF simplificado
+      case '/pdf-viewer':
+        return MaterialPageRoute(
+          builder:
+              (_) => PdfViewerScreen(
+                pdfPath: args['pdfPath'] ?? '',
+                title: args['title'] ?? 'Manual de Usuario',
+                initialPage: args['initialPage'],
+              ),
+        );
 
       default:
         // Si la ruta no existe, redirigir a la pantalla de inicio

@@ -99,9 +99,8 @@ class CategoryCarousel extends StatelessWidget {
                           Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Fondo circular animado
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
+                              // Fondo circular estático (sin animación)
+                              Container(
                                 width: 68,
                                 height: 68,
                                 decoration: BoxDecoration(

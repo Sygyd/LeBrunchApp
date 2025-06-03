@@ -82,6 +82,15 @@ class _AddDishModalState extends State<AddDishModal> {
     }
   }
 
+  // CORRECCIÓN CRÍTICA: Añadir dispose de todos los TextEditingController
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _priceController.dispose();
+    _ingredientsController.dispose();
+    super.dispose();
+  }
+
   // Función para determinar si una categoría corresponde a bebidas
   bool _isDrinkCategory(String category) {
     return _drinkCategories.contains(category);

@@ -936,514 +936,502 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
       elevation: 3,
       color: theme.colorScheme.surface,
       shadowColor: theme.colorScheme.primary.withOpacity(0.3),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Encabezado con botón limpiar - Mejorado
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Filtros por categoría:',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Encabezado con botón limpiar - Mejorado
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Filtros por categoría:',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
-                  if (_selectedMainType != null ||
-                      _selectedCategories.isNotEmpty)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.error.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
+                ),
+                if (_selectedMainType != null || _selectedCategories.isNotEmpty)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.colorScheme.error,
+                        width: 1,
+                      ),
+                    ),
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _selectedMainType = null;
+                          _selectedCategories.clear();
+                        });
+                        _loadPopularDishes(isInitialLoad: false);
+                      },
+                      icon: Icon(
+                        Icons.clear,
+                        size: 18,
+                        color: theme.colorScheme.error,
+                      ),
+                      label: Text(
+                        'Limpiar',
+                        style: theme.textTheme.labelLarge?.copyWith(
                           color: theme.colorScheme.error,
-                          width: 1,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      child: TextButton.icon(
-                        onPressed: () {
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ✨ Filtros principales (Comida/Bebida) - Mejorados visualmente
+            Text(
+              'Tipos principales:',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Filtro de Comida - Mejorado
+                Expanded(
+                  child: Container(
+                    height: 56,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient:
+                          _selectedMainType == 'comida'
+                              ? LinearGradient(
+                                colors: [
+                                  Colors.orange.shade600,
+                                  Colors.orange.shade500,
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                              : null,
+                      color:
+                          _selectedMainType == 'comida'
+                              ? null
+                              : Colors.orange.shade50,
+                      border: Border.all(
+                        color: Colors.orange.shade600,
+                        width: _selectedMainType == 'comida' ? 2 : 1,
+                      ),
+                      boxShadow:
+                          _selectedMainType == 'comida'
+                              ? [
+                                BoxShadow(
+                                  color: Colors.orange.shade600.withOpacity(
+                                    0.3,
+                                  ),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                              : null,
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
                           setState(() {
-                            _selectedMainType = null;
-                            _selectedCategories.clear();
+                            if (_selectedMainType == 'comida') {
+                              _selectedMainType = null;
+                            } else {
+                              _selectedMainType = 'comida';
+                              _selectedCategories.clear();
+                            }
                           });
                           _loadPopularDishes(isInitialLoad: false);
                         },
-                        icon: Icon(
-                          Icons.clear,
-                          size: 18,
-                          color: theme.colorScheme.error,
-                        ),
-                        label: Text(
-                          'Limpiar',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.error,
-                            fontWeight: FontWeight.bold,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.restaurant,
+                                size: 20,
+                                color:
+                                    _selectedMainType == 'comida'
+                                        ? Colors.white
+                                        : Colors.orange.shade800,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Comida (${_categoriesByType['comida']!.length})',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color:
+                                        _selectedMainType == 'comida'
+                                            ? Colors.white
+                                            : Colors.orange.shade800,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: theme.colorScheme.error,
                         ),
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // ✨ Filtros principales (Comida/Bebida) - Mejorados visualmente
-              Text(
-                'Tipos principales:',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  // Filtro de Comida - Mejorado
-                  Expanded(
-                    child: Container(
-                      height: 56,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient:
-                            _selectedMainType == 'comida'
-                                ? LinearGradient(
-                                  colors: [
-                                    Colors.orange.shade600,
-                                    Colors.orange.shade500,
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                                : null,
-                        color:
-                            _selectedMainType == 'comida'
-                                ? null
-                                : Colors.orange.shade50,
-                        border: Border.all(
-                          color: Colors.orange.shade600,
-                          width: _selectedMainType == 'comida' ? 2 : 1,
-                        ),
-                        boxShadow:
-                            _selectedMainType == 'comida'
-                                ? [
-                                  BoxShadow(
-                                    color: Colors.orange.shade600.withOpacity(
-                                      0.3,
-                                    ),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ]
-                                : null,
+                const SizedBox(width: 12),
+                // Filtro de Bebida - Mejorado
+                Expanded(
+                  child: Container(
+                    height: 56,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient:
+                          _selectedMainType == 'bebida'
+                              ? LinearGradient(
+                                colors: [
+                                  Colors.blue.shade600,
+                                  Colors.blue.shade500,
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                              : null,
+                      color:
+                          _selectedMainType == 'bebida'
+                              ? null
+                              : Colors.blue.shade50,
+                      border: Border.all(
+                        color: Colors.blue.shade600,
+                        width: _selectedMainType == 'bebida' ? 2 : 1,
                       ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            setState(() {
-                              if (_selectedMainType == 'comida') {
-                                _selectedMainType = null;
-                              } else {
-                                _selectedMainType = 'comida';
-                                _selectedCategories.clear();
-                              }
-                            });
-                            _loadPopularDishes(isInitialLoad: false);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.restaurant,
-                                  size: 20,
-                                  color:
-                                      _selectedMainType == 'comida'
-                                          ? Colors.white
-                                          : Colors.orange.shade800,
+                      boxShadow:
+                          _selectedMainType == 'bebida'
+                              ? [
+                                BoxShadow(
+                                  color: Colors.blue.shade600.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                  offset: const Offset(0, 2),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Comida (${_categoriesByType['comida']!.length})',
-                                    style: theme.textTheme.labelLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color:
-                                          _selectedMainType == 'comida'
-                                              ? Colors.white
-                                              : Colors.orange.shade800,
-                                    ),
-                                    textAlign: TextAlign.center,
+                              ]
+                              : null,
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          setState(() {
+                            if (_selectedMainType == 'bebida') {
+                              _selectedMainType = null;
+                            } else {
+                              _selectedMainType = 'bebida';
+                              _selectedCategories.clear();
+                            }
+                          });
+                          _loadPopularDishes(isInitialLoad: false);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.local_cafe,
+                                size: 20,
+                                color:
+                                    _selectedMainType == 'bebida'
+                                        ? Colors.white
+                                        : Colors.blue.shade800,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Bebida (${_categoriesByType['bebida']!.length})',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color:
+                                        _selectedMainType == 'bebida'
+                                            ? Colors.white
+                                            : Colors.blue.shade800,
                                   ),
+                                  textAlign: TextAlign.center,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Filtro de Bebida - Mejorado
-                  Expanded(
-                    child: Container(
-                      height: 56,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient:
-                            _selectedMainType == 'bebida'
-                                ? LinearGradient(
-                                  colors: [
-                                    Colors.blue.shade600,
-                                    Colors.blue.shade500,
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                                : null,
-                        color:
-                            _selectedMainType == 'bebida'
-                                ? null
-                                : Colors.blue.shade50,
-                        border: Border.all(
-                          color: Colors.blue.shade600,
-                          width: _selectedMainType == 'bebida' ? 2 : 1,
-                        ),
-                        boxShadow:
-                            _selectedMainType == 'bebida'
-                                ? [
-                                  BoxShadow(
-                                    color: Colors.blue.shade600.withOpacity(
-                                      0.3,
-                                    ),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ]
-                                : null,
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            setState(() {
-                              if (_selectedMainType == 'bebida') {
-                                _selectedMainType = null;
-                              } else {
-                                _selectedMainType = 'bebida';
-                                _selectedCategories.clear();
-                              }
-                            });
-                            _loadPopularDishes(isInitialLoad: false);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.local_cafe,
-                                  size: 20,
-                                  color:
-                                      _selectedMainType == 'bebida'
-                                          ? Colors.white
-                                          : Colors.blue.shade800,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Bebida (${_categoriesByType['bebida']!.length})',
-                                    style: theme.textTheme.labelLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color:
-                                          _selectedMainType == 'bebida'
-                                              ? Colors.white
-                                              : Colors.blue.shade800,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
 
-              // ✨ Indicador de subcategorías disponibles - Más visible
-              if (_selectedMainType != null && _selectedCategories.isEmpty) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
+            // ✨ Indicador de subcategorías disponibles - Más visible
+            if (_selectedMainType != null && _selectedCategories.isEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      (_selectedMainType == 'comida'
+                              ? Colors.orange
+                              : Colors.blue)
+                          .shade100,
+                      (_selectedMainType == 'comida'
+                              ? Colors.orange
+                              : Colors.blue)
+                          .shade50,
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
                         (_selectedMainType == 'comida'
                                 ? Colors.orange
                                 : Colors.blue)
-                            .shade100,
-                        (_selectedMainType == 'comida'
-                                ? Colors.orange
-                                : Colors.blue)
-                            .shade50,
-                      ],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
+                            .shade600,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.arrow_downward,
+                      size: 16,
                       color:
                           (_selectedMainType == 'comida'
                                   ? Colors.orange
                                   : Colors.blue)
-                              .shade600,
-                      width: 1,
+                              .shade700,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.arrow_downward,
-                        size: 16,
-                        color:
-                            (_selectedMainType == 'comida'
-                                    ? Colors.orange
-                                    : Colors.blue)
-                                .shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Elige una categoría específica de ${_selectedMainType} para filtrar más:',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color:
-                                (_selectedMainType == 'comida'
-                                        ? Colors.orange
-                                        : Colors.blue)
-                                    .shade800,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Elige una categoría específica de ${_selectedMainType} para filtrar más:',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color:
+                              (_selectedMainType == 'comida'
+                                      ? Colors.orange
+                                      : Colors.blue)
+                                  .shade800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-
-              // ✨ Subcategorías de Comida - Mejoradas visualmente
-              if (_selectedMainType == 'comida' &&
-                  _categoriesByType['comida']!.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Text(
-                  'Categorías específicas de comida:',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: Colors.orange.shade800,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeInOut,
-                  child: Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
-                    children:
-                        _categoriesByType['comida']!.map<Widget>((category) {
-                          final categoryName = category['name'] as String;
-                          final isSelected = _selectedCategories.containsKey(
-                            categoryName,
-                          );
-                          return Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              gradient:
-                                  isSelected
-                                      ? LinearGradient(
-                                        colors: [
-                                          Colors.orange.shade600,
-                                          Colors.orange.shade500,
-                                        ],
-                                      )
-                                      : null,
-                              color: isSelected ? null : Colors.orange.shade50,
-                              border: Border.all(
-                                color: Colors.orange.shade600,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow:
-                                  isSelected
-                                      ? [
-                                        BoxShadow(
-                                          color: Colors.orange.shade600
-                                              .withOpacity(0.3),
-                                          blurRadius: 4,
-                                          spreadRadius: 1,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ]
-                                      : null,
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedCategories.remove(categoryName);
-                                    } else {
-                                      _selectedCategories.clear();
-                                      _selectedCategories[categoryName] = true;
-                                    }
-                                  });
-                                  _loadPopularDishes(isInitialLoad: false);
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 10,
-                                  ),
-                                  child: Text(
-                                    categoryName,
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color:
-                                              isSelected
-                                                  ? Colors.white
-                                                  : Colors.orange.shade800,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                  ),
-                ),
-              ],
-
-              // ✨ Subcategorías de Bebida - Mejoradas visualmente
-              if (_selectedMainType == 'bebida' &&
-                  _categoriesByType['bebida']!.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Text(
-                  'Categorías específicas de bebida:',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: Colors.blue.shade800,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeInOut,
-                  child: Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
-                    children:
-                        _categoriesByType['bebida']!.map<Widget>((category) {
-                          final categoryName = category['name'] as String;
-                          final isSelected = _selectedCategories.containsKey(
-                            categoryName,
-                          );
-                          return Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              gradient:
-                                  isSelected
-                                      ? LinearGradient(
-                                        colors: [
-                                          Colors.blue.shade600,
-                                          Colors.blue.shade500,
-                                        ],
-                                      )
-                                      : null,
-                              color: isSelected ? null : Colors.blue.shade50,
-                              border: Border.all(
-                                color: Colors.blue.shade600,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow:
-                                  isSelected
-                                      ? [
-                                        BoxShadow(
-                                          color: Colors.blue.shade600
-                                              .withOpacity(0.3),
-                                          blurRadius: 4,
-                                          spreadRadius: 1,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ]
-                                      : null,
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedCategories.remove(categoryName);
-                                    } else {
-                                      _selectedCategories.clear();
-                                      _selectedCategories[categoryName] = true;
-                                    }
-                                  });
-                                  _loadPopularDishes(isInitialLoad: false);
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 10,
-                                  ),
-                                  child: Text(
-                                    categoryName,
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color:
-                                              isSelected
-                                                  ? Colors.white
-                                                  : Colors.blue.shade800,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                  ),
-                ),
-              ],
+              ),
             ],
-          ),
+
+            // ✨ Subcategorías de Comida - Sin animaciones
+            if (_selectedMainType == 'comida' &&
+                _categoriesByType['comida']!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Categorías específicas de comida:',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: Colors.orange.shade800,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children:
+                      _categoriesByType['comida']!.map<Widget>((category) {
+                        final categoryName = category['name'] as String;
+                        final isSelected = _selectedCategories.containsKey(
+                          categoryName,
+                        );
+                        return Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient:
+                                isSelected
+                                    ? LinearGradient(
+                                      colors: [
+                                        Colors.orange.shade600,
+                                        Colors.orange.shade500,
+                                      ],
+                                    )
+                                    : null,
+                            color: isSelected ? null : Colors.orange.shade50,
+                            border: Border.all(
+                              color: Colors.orange.shade600,
+                              width: isSelected ? 2 : 1,
+                            ),
+                            boxShadow:
+                                isSelected
+                                    ? [
+                                      BoxShadow(
+                                        color: Colors.orange.shade600
+                                            .withOpacity(0.3),
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                    : null,
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedCategories.remove(categoryName);
+                                  } else {
+                                    _selectedCategories.clear();
+                                    _selectedCategories[categoryName] = true;
+                                  }
+                                });
+                                _loadPopularDishes(isInitialLoad: false);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                child: Text(
+                                  categoryName,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color:
+                                        isSelected
+                                            ? Colors.white
+                                            : Colors.orange.shade800,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                ),
+              ),
+            ],
+
+            // ✨ Subcategorías de Bebida - Sin animaciones
+            if (_selectedMainType == 'bebida' &&
+                _categoriesByType['bebida']!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Categorías específicas de bebida:',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: Colors.blue.shade800,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children:
+                      _categoriesByType['bebida']!.map<Widget>((category) {
+                        final categoryName = category['name'] as String;
+                        final isSelected = _selectedCategories.containsKey(
+                          categoryName,
+                        );
+                        return Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient:
+                                isSelected
+                                    ? LinearGradient(
+                                      colors: [
+                                        Colors.blue.shade600,
+                                        Colors.blue.shade500,
+                                      ],
+                                    )
+                                    : null,
+                            color: isSelected ? null : Colors.blue.shade50,
+                            border: Border.all(
+                              color: Colors.blue.shade600,
+                              width: isSelected ? 2 : 1,
+                            ),
+                            boxShadow:
+                                isSelected
+                                    ? [
+                                      BoxShadow(
+                                        color: Colors.blue.shade600.withOpacity(
+                                          0.3,
+                                        ),
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                    : null,
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedCategories.remove(categoryName);
+                                  } else {
+                                    _selectedCategories.clear();
+                                    _selectedCategories[categoryName] = true;
+                                  }
+                                });
+                                _loadPopularDishes(isInitialLoad: false);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                child: Text(
+                                  categoryName,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color:
+                                        isSelected
+                                            ? Colors.white
+                                            : Colors.blue.shade800,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

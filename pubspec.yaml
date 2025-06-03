@@ -42,6 +42,8 @@ dependencies:
   # Notifications and file opening
   flutter_local_notifications: ^17.2.2
   open_file: ^3.3.2
+  pdfx: ^2.6.0
+  printing: ^5.12.0
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +58,7 @@ flutter:
     - assets/images/fondo-flores-2.png
     - assets/logos/
     - assets/fonts/
+    - docs/
     - .env
   fonts:
     - family: LightHouse

@@ -356,8 +356,7 @@ Escribe `/help` para más info.''',
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(3, (index) {
-        return AnimatedContainer(
-          duration: Duration(milliseconds: 600 + (index * 200)),
+        return Container(
           margin: const EdgeInsets.symmetric(horizontal: 1),
           height: 4,
           width: 4,

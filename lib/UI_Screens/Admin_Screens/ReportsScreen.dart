@@ -1900,7 +1900,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _summaryData['ticketPromedioPorDia'] as List<dynamic>? ?? [];
 
       // Cargar el logo desde assets
-      final logoData = await rootBundle.load('assets/logos/logo_lebrunch.png');
+      final logoData = await rootBundle.load('assets/logos/image006.png');
       final logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
 
       // Agregar contenido al PDF
