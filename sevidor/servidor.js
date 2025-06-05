@@ -15,8 +15,8 @@ process.env.TZ = 'America/Caracas';
 console.log(`🕒 Zona horaria configurada: ${process.env.TZ} - Hora actual: ${new Date().toLocaleString()}`);
 
 // Configuración del servidor
-const ip = '192.168.1.121';
-const port = 3000;
+const ip = process.env.SERVER_IP || '0.0.0.0'; // Escuchar en todas las interfaces
+const port = process.env.PORT || 3000;
 // NO usar puerto 5678 bajo ninguna circunstancia
 
 // Añadir inicialización de GoogleGenerativeAI con rotación de claves

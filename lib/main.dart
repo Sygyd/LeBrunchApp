@@ -16,8 +16,12 @@ Future<void> main() async {
   // Asegurar que los servicios de Flutter estén inicializados
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Cargar variables de entorno
-  await dotenv.load(fileName: ".env");
+  // Cargar variables de entorno (opcional)
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    print('⚠️ Archivo .env no encontrado, usando configuración por defecto');
+  }
 
   // Inicializar el servicio de notificaciones
   await NotificationService.initialize();
