@@ -12,6 +12,7 @@ import '../../models/chat_message.dart';
 import '../Widgets/chat_message_bubble.dart';
 import '../Widgets/custom_modal.dart';
 import '../Widgets/audio_recorder_widget.dart';
+import '../Widgets/telegram_audio_button.dart';
 import '../../services/user_preferences_service.dart';
 import '../Widgets/background_scaffold.dart';
 import '../Widgets/chat_config_modal_content.dart';
@@ -42,6 +43,7 @@ class _AdminChatScreenState extends State<AdminChatScreen>
   bool _isConnected = false;
   bool _debugMode = false;
   bool _audioInitialized = false;
+  bool _hasText = false; // Nueva variable para trackear si hay texto
 
   // Timers y controladores
   Timer? _typingTimer;
@@ -63,6 +65,16 @@ class _AdminChatScreenState extends State<AdminChatScreen>
 
     _focusNode.addListener(() {
       if (mounted) setState(() {});
+    });
+
+    // Listener para detectar cuando hay texto en el campo
+    _messageController.addListener(() {
+      final hasText = _messageController.text.trim().isNotEmpty;
+      if (_hasText != hasText && mounted) {
+        setState(() {
+          _hasText = hasText;
+        });
+      }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -658,41 +670,40 @@ Escribe `/help` para más info.''',
                     ),
                   ),
                   const SizedBox(width: 6),
-                  // Botón de audio
-                  Container(
-                    decoration: BoxDecoration(
-                      color:
-                          _audioInitialized
-                              ? Theme.of(context).colorScheme.secondary
-                              : Colors.grey[400],
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.mic_rounded,
-                        color:
-                            _audioInitialized
-                                ? Theme.of(context).colorScheme.onSecondary
-                                : Colors.grey[600],
-                      ),
-                      onPressed:
-                          _audioInitialized ? _showAudioRecorderModal : null,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  // Botón de envío
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.send_rounded,
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                      onPressed: _sendMessage,
-                    ),
+                  // Botón dinámico: Audio o Envío con transición suave
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (
+                      Widget child,
+                      Animation<double> animation,
+                    ) {
+                      return ScaleTransition(scale: animation, child: child);
+                    },
+                    child:
+                        _hasText
+                            ? Container(
+                              key: const ValueKey('send_button'),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.send_rounded,
+                                  color:
+                                      Theme.of(context).colorScheme.onPrimary,
+                                ),
+                                onPressed: _sendMessage,
+                              ),
+                            )
+                            : TelegramAudioButton(
+                              key: const ValueKey('audio_button'),
+                              sessionId: _sessionId,
+                              isEnabled: _audioInitialized,
+                              onAudioRecorded: _handleAudioMessage,
+                              primaryColor:
+                                  Theme.of(context).colorScheme.secondary,
+                            ),
                   ),
                 ],
               ),

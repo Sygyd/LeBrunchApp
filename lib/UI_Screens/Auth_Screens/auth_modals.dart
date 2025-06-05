@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '/models/user.dart';
-import '/Api_services/usuarios/register_service.dart';
 import '/UI_Screens/Widgets/custom_modal.dart';
 import '/Api_services/password_reset_service.dart';
 import 'dart:convert';
@@ -42,7 +41,6 @@ class AuthModals {
   }
 }
 
-// LOGIN MODAL (versión simplificada)
 class _LoginModalContent extends StatefulWidget {
   @override
   State<_LoginModalContent> createState() => _LoginModalContentState();

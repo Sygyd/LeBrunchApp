@@ -19,15 +19,6 @@ import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'package:permission_handler/permission_handler.dart';
-import '../Widgets/custom_modal.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import '../../services/notification_service.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});

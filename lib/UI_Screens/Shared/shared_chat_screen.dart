@@ -12,6 +12,7 @@ import '../../models/chat_message.dart';
 import '../Widgets/chat_message_bubble.dart';
 import '../Widgets/custom_modal.dart';
 import '../Widgets/audio_recorder_widget.dart';
+import '../Widgets/telegram_audio_button.dart';
 import '../Client_Screens/CartScreen.dart';
 import '../../services/user_preferences_service.dart';
 import '../Widgets/background_scaffold.dart';
@@ -53,6 +54,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
   bool _debugMode = false;
   bool _showAudioRecorder = false;
   bool _audioInitialized = false;
+  bool _hasText = false; // Nueva variable para trackear si hay texto
 
   // Timers y controladores
   Timer? _typingTimer;
@@ -83,6 +85,16 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
     _focusNode.addListener(() {
       if (mounted) setState(() {});
+    });
+
+    // Listener para detectar cuando hay texto en el campo
+    _messageController.addListener(() {
+      final hasText = _messageController.text.trim().isNotEmpty;
+      if (_hasText != hasText && mounted) {
+        setState(() {
+          _hasText = hasText;
+        });
+      }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1028,49 +1040,47 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Botón de audio
-                  Material(
-                    color:
-                        _audioInitialized
-                            ? Theme.of(context).colorScheme.secondary
-                            : Colors.grey[400],
-                    borderRadius: BorderRadius.circular(25),
-                    child: InkWell(
-                      onTap: _audioInitialized ? _showAudioRecorderModal : null,
-                      borderRadius: BorderRadius.circular(25),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Icon(
-                          Icons.mic_rounded,
-                          color:
-                              _audioInitialized
-                                  ? Theme.of(context).colorScheme.onSecondary
-                                  : Colors.grey[600],
-                          size: 22,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Botón de envío
-                  Material(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(25),
-                    child: InkWell(
-                      onTap: () {
-                        print('🎯 ONTAP: Botón de envío presionado');
-                        _handleSendMessage();
-                      },
-                      borderRadius: BorderRadius.circular(25),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Icon(
-                          Icons.send_rounded,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          size: 22,
-                        ),
-                      ),
-                    ),
+                  // Botón dinámico: Audio o Envío con transición suave
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (
+                      Widget child,
+                      Animation<double> animation,
+                    ) {
+                      return ScaleTransition(scale: animation, child: child);
+                    },
+                    child:
+                        _hasText
+                            ? Material(
+                              key: const ValueKey('send_button'),
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(25),
+                              child: InkWell(
+                                onTap: () {
+                                  print('🎯 ONTAP: Botón de envío presionado');
+                                  _handleSendMessage();
+                                },
+                                borderRadius: BorderRadius.circular(25),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Icon(
+                                    Icons.send_rounded,
+                                    color:
+                                        Theme.of(context).colorScheme.onPrimary,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            )
+                            : TelegramAudioButton(
+                              key: const ValueKey('audio_button'),
+                              sessionId: _sessionId,
+                              isEnabled: _audioInitialized,
+                              onAudioRecorded: _handleAudioMessage,
+                              onAudioProcessed: _handleCompleteAudioResponse,
+                              primaryColor:
+                                  Theme.of(context).colorScheme.secondary,
+                            ),
                   ),
                 ],
               ),
