@@ -1,14 +1,33 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'network_config_service.dart';
 
 class MCPService {
   static final MCPService _instance = MCPService._internal();
   factory MCPService() => _instance;
   MCPService._internal();
 
-  final String _baseUrl =
-      'http://${dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121')}:${dotenv.get('NODE_SERVER_PORT', fallback: '3000')}';
+  // Usar un getter en lugar de variable final para evitar NotInitializedError
+  String get _baseUrl => _buildBaseUrl();
+
+  // Método para construir la URL base usando NetworkConfigService
+  String _buildBaseUrl() {
+    try {
+      final networkConfig = NetworkConfigService();
+      return networkConfig.baseUrl;
+    } catch (e) {
+      print('⚠️ Error al acceder a NetworkConfigService en MCPService: $e');
+      // Fallback a dotenv y luego a valores por defecto
+      try {
+        final ip = dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121');
+        final port = dotenv.get('NODE_SERVER_PORT', fallback: '3000');
+        return 'http://$ip:$port';
+      } catch (dotenvError) {
+        return 'http://192.168.1.121:3000';
+      }
+    }
+  }
 
   /// Obtiene el estado actual del sistema MCP
   Future<Map<String, dynamic>?> getMCPStatus() async {

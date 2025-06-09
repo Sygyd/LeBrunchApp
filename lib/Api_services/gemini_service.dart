@@ -11,23 +11,8 @@ import 'gemini_api_client.dart';
 
 /// Servicio para comunicarse con Google Gemini AI (a través del servidor Node.js)
 class GeminiService extends ChangeNotifier {
-  // Lista de claves API de Gemini LEÍDAS DESDE .ENV
-  final List<String> _apiKeys = [
-    dotenv.get(
-      'GEMINI_API_KEY_1',
-      fallback: 'TU_FALLBACK_KEY_1_SI_NO_ESTA_EN_ENV',
-    ),
-    dotenv.get(
-      'GEMINI_API_KEY_2',
-      fallback: 'TU_FALLBACK_KEY_2_SI_NO_ESTA_EN_ENV',
-    ),
-    dotenv.get(
-      'GEMINI_API_KEY_3',
-      fallback: 'TU_FALLBACK_KEY_3_SI_NO_ESTA_EN_ENV',
-    ),
-    // Asegúrate de que GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc., existan en tu archivo .env
-    // O proporciona fallbacks válidos si podrían no estar.
-  ];
+  // Lista de claves API de Gemini (se inicializará después de cargar dotenv)
+  late final List<String> _apiKeys;
 
   int _currentApiKeyIndex =
       0; // Se mantiene por si se usa en el futuro para rotación
@@ -49,17 +34,10 @@ class GeminiService extends ChangeNotifier {
   bool get isCheckingConnection => _isCheckingConnection;
 
   // Constructor
-  GeminiService()
-    : _geminiApiClient = GeminiApiClient(
-        dotenv.get(
-          'GEMINI_API_KEY_1',
-          fallback: 'FALLBACK_KEY_PARA_CLIENT_INIT',
-        ),
-      )
-  // Inicializa GeminiApiClient con la primera clave del .env o un fallback.
-  // Este fallback es solo para la inicialización del ApiClient,
-  // la lista _apiKeys se usa si implementas rotación o llamadas directas.
+  GeminiService() : _geminiApiClient = GeminiApiClient('TEMP_INIT_KEY')
+  // Inicializa GeminiApiClient con una clave temporal, se actualizará después
   {
+    _initializeApiKeys(); // Inicializar las claves API de forma segura
     _initializeConnectivityCheck(); // Inicia la verificación de conectividad
     _startCleanupTimer(); // Si _pendingMessageLocks y _processedMessageIds se usan
   }
@@ -81,9 +59,32 @@ class GeminiService extends ChangeNotifier {
     // Por ahora, solo se limpia pendingMessageLocks.
   }
 
+  // Método para inicializar las claves API de forma segura
+  void _initializeApiKeys() {
+    try {
+      _apiKeys = [
+        dotenv.get('GEMINI_API_KEY_1', fallback: 'FALLBACK_KEY_1'),
+        dotenv.get('GEMINI_API_KEY_2', fallback: 'FALLBACK_KEY_2'),
+        dotenv.get('GEMINI_API_KEY_3', fallback: 'FALLBACK_KEY_3'),
+      ];
+
+      // Actualizar el cliente con la primera clave válida
+      if (_apiKeys.isNotEmpty && _apiKeys[0] != 'FALLBACK_KEY_1') {
+        _geminiApiClient.updateApiKey(_apiKeys[0]);
+      }
+    } catch (e) {
+      print('⚠️ Error al inicializar API keys desde .env: $e');
+      // Usar fallbacks si dotenv no está disponible
+      _apiKeys = ['FALLBACK_KEY_1', 'FALLBACK_KEY_2', 'FALLBACK_KEY_3'];
+    }
+  }
+
   // Método para inicializar la verificación de conectividad (se llama desde el constructor)
   void _initializeConnectivityCheck() {
-    checkServerConnection(); // Llamar al método de verificación al inicio, ASEGÚRATE QUE checkServerConnection SEA PÚBLICO
+    // Usar Future.delayed para que la inicialización de dotenv tenga tiempo de completarse
+    Future.delayed(const Duration(milliseconds: 100), () {
+      checkServerConnection(); // Llamar al método de verificación al inicio
+    });
   }
 
   /// Nuevo método para enviar mensajes a Brunchy a través del servidor Node.js.

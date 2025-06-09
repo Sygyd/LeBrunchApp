@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../network_config_service.dart';
 
 class GetDrinksService {
   Future<List<Map<String, dynamic>>> getDrinks() async {
     try {
       final response = await http.get(
-        Uri.parse('http://192.168.1.121:3000/menu'),
+        Uri.parse('${NetworkConfigService().baseUrl}/menu'),
       );
 
       if (response.statusCode == 200) {

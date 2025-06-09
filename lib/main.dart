@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'theme/theme.dart';
 import 'dart:async';
+import 'dart:io';
 import 'Api_services/gemini_service.dart';
+import 'Api_services/network_config_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'UI_Screens/Widgets/routes.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -17,11 +19,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Cargar variables de entorno (opcional)
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    print('⚠️ Archivo .env no encontrado, usando configuración por defecto');
-  }
+  await _initializeDotenv();
+
+  // Inicializar configuración de red centralizada
+  final networkConfig = NetworkConfigService();
+  await networkConfig.initialize();
+  print('🌐 Red configurada: ${networkConfig.baseUrl}');
 
   // Inicializar el servicio de notificaciones
   await NotificationService.initialize();
@@ -108,5 +111,71 @@ class MainApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
     );
+  }
+}
+
+Future<void> _initializeDotenv() async {
+  try {
+    await dotenv.load(fileName: ".env");
+    print('✅ Archivo .env cargado correctamente');
+  } catch (e) {
+    print(
+      '⚠️ Archivo .env no encontrado, usando configuración por defecto: $e',
+    );
+    // Inicializar dotenv con valores por defecto
+    try {
+      // Crear un mapa con valores por defecto
+      const defaultEnvValues = {
+        'NODE_SERVER_IP': '192.168.1.121',
+        'NODE_SERVER_PORT': '3000',
+        'GEMINI_API_KEY_1': 'FALLBACK_KEY_1',
+        'GEMINI_API_KEY_2': 'FALLBACK_KEY_2',
+        'GEMINI_API_KEY_3': 'FALLBACK_KEY_3',
+      };
+
+      // Cargar desde un string con los valores por defecto
+      await dotenv.load(
+        fileName: ".env.defaults",
+        mergeWith: defaultEnvValues,
+        isOptional: true,
+      );
+
+      // Si aún falla, establecer manualmente
+      for (final entry in defaultEnvValues.entries) {
+        if (!dotenv.env.containsKey(entry.key)) {
+          dotenv.env[entry.key] = entry.value;
+        }
+      }
+
+      print('✅ Configuración por defecto establecida');
+    } catch (fallbackError) {
+      print('⚠️ Error estableciendo valores por defecto: $fallbackError');
+      // Como último recurso, crear el archivo .env
+      await _createDefaultEnvFile();
+    }
+  }
+}
+
+Future<void> _createDefaultEnvFile() async {
+  try {
+    // Crear el archivo .env con valores por defecto
+    const defaultEnvContent = '''
+NODE_SERVER_IP=192.168.1.121
+NODE_SERVER_PORT=3000
+GEMINI_API_KEY_1=FALLBACK_KEY_1
+GEMINI_API_KEY_2=FALLBACK_KEY_2
+GEMINI_API_KEY_3=FALLBACK_KEY_3
+''';
+
+    final envFile = File('.env');
+    await envFile.writeAsString(defaultEnvContent);
+
+    // Intentar cargar el archivo recién creado
+    await dotenv.load(fileName: ".env");
+    print('✅ Archivo .env creado y cargado correctamente');
+  } catch (e) {
+    print('❌ Error crítico al crear archivo .env: $e');
+    print('⚠️ La aplicación continuará sin archivo .env');
+    // Si todo falla, al menos la app no crashea
   }
 }

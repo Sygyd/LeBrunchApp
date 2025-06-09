@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path/path.dart' as path;
+import 'network_config_service.dart';
 
 /// Cliente para comunicarse directamente con la API de Gemini
 /// y con compatibilidad con el MCP del servidor Node.js
@@ -27,10 +28,23 @@ class GeminiApiClient {
     'gemini-1.0-pro',
   ];
 
+  // Método estático para construir la URL del servidor de forma segura
+  static String _buildServerUrl() {
+    try {
+      final ip = dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121');
+      final port = dotenv.get('NODE_SERVER_PORT', fallback: '3000');
+      return 'http://$ip:$port';
+    } catch (e) {
+      print('⚠️ Error al acceder a dotenv en GeminiApiClient: $e');
+      // Usar valores por defecto si dotenv no está disponible
+      return 'http://192.168.1.121:3000';
+    }
+  }
+
   // Constructor
-  GeminiApiClient(this._apiKey)
-    : _serverUrl =
-          'http://${dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121')}:${dotenv.get('NODE_SERVER_PORT', fallback: '3000')}';
+  GeminiApiClient(this._apiKey) : _serverUrl = _buildServerUrl();
+
+  // Método estático para construir la URL del servidor usando NetworkConfigService
 
   // Actualizar la clave API
   void updateApiKey(String newApiKey) {

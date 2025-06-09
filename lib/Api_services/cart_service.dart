@@ -6,6 +6,8 @@ import 'dart:async';
 import '../services/cart_event_bus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
+import 'network_config_service.dart';
+import 'network_config_service.dart';
 
 class CartService extends ChangeNotifier {
   List<CartItem> _items = [];
@@ -22,6 +24,9 @@ class CartService extends ChangeNotifier {
 
   // Variables para gestionar observadores especializados
   final List<Function()> _priorityListeners = [];
+
+  // Servicio de configuración de red
+  final NetworkConfigService _networkConfig = NetworkConfigService();
 
   // Instancia singleton
   static final CartService _instance = CartService._internal();
@@ -78,8 +83,9 @@ class CartService extends ChangeNotifier {
     try {
       print('🔍 CartService: Buscando en menú: "$itemName"');
 
+      final networkConfig = NetworkConfigService();
       final response = await http.get(
-        Uri.parse('http://192.168.1.121:3000/menu'),
+        Uri.parse('${networkConfig.baseUrl}/menu'),
         headers: {'Content-Type': 'application/json'},
       );
 
