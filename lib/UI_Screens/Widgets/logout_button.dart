@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../../Api_services/gemini_service.dart';
 import '../../Api_services/cart_service.dart';
 import '../../services/user_preferences_service.dart';
+import '../../Api_services/network_config_service.dart';
 
 class LogoutButton extends StatelessWidget {
   const LogoutButton({super.key});
@@ -79,7 +80,7 @@ class LogoutButton extends StatelessWidget {
         try {
           final response = await http
               .post(
-                Uri.parse('http://192.168.1.121:3000/logout'),
+                Uri.parse('${NetworkConfigService().baseUrl}/logout'),
                 headers: {"Content-Type": "application/json"},
               )
               .timeout(const Duration(seconds: 5));

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../Widgets/background_scaffold.dart';
+import '../../Api_services/network_config_service.dart';
 
 /// Widget compartido para mostrar el historial de pedidos
 /// Puede ser utilizado por administradores, cocineros y baristas
@@ -1388,12 +1389,12 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
       final serverIp =
           prefs.getString('serverIp') ??
           dotenv.env['NODE_SERVER_IP'] ??
-          '192.168.1.121';
+          NetworkConfigService().serverIp;
       final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
       return 'http://$serverIp:$serverPort';
     } catch (e) {
       // Si falla, usamos la dirección IP predeterminada
-      return 'http://192.168.1.121:3000';
+      return NetworkConfigService().baseUrl;
     }
   }
 

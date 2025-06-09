@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/cart_item.dart';
+import '../network_config_service.dart';
 
 class CreateOrderService {
-  final String baseUrl = 'http://192.168.1.121:3000';
+  final String baseUrl = NetworkConfigService().baseUrl;
 
   /// Crear un nuevo pedido en la base de datos
   Future<Map<String, dynamic>> createOrder(List<CartItem> items) async {

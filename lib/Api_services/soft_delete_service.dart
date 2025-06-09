@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'network_config_service.dart';
 
 /// Servicio para manejar operaciones de soft delete
 /// Proporciona funcionalidades para restaurar elementos eliminados
@@ -13,7 +14,7 @@ class SoftDeleteService {
     final serverIp =
         prefs.getString('serverIp') ??
         dotenv.env['NODE_SERVER_IP'] ??
-        '192.168.1.121';
+        NetworkConfigService().serverIp;
     final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
     final baseUrl = 'http://$serverIp:$serverPort';
     print('🌐 SoftDeleteService - URL base del servidor: $baseUrl');

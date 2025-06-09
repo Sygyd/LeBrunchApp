@@ -211,6 +211,63 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     }
   }
 
+  // NUEVO: Forzar sincronización manual
+  Future<void> _forceSyncWithServer() async {
+    setState(() => _isLoading = true);
+    try {
+      final success = await _globalConfig.forceSyncWithServer();
+      if (success) {
+        await _loadCurrentSettings();
+        // Verificar estado actual de sincronización
+        final syncStatus = await _globalConfig.getSyncStatus();
+
+        if (mounted) {
+          String message = '✅ Sincronización completada';
+          if (syncStatus != null) {
+            final serverConfig = syncStatus['serverConfig'];
+            final synchronized = serverConfig?['synchronized'] ?? false;
+            final currentModel = serverConfig?['model'] ?? 'desconocido';
+            final brunchyModel = serverConfig?['brunchyModel'] ?? 'desconocido';
+
+            message += '\n🤖 Modelo actual: $currentModel';
+            if (!synchronized) {
+              message +=
+                  '\n⚠️ Modelos desincronizados: $currentModel vs $brunchyModel';
+            }
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Error en sincronización manual'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error en sincronización: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -677,8 +734,8 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _isLoading ? null : _loadFromServer,
-                icon: const Icon(Icons.sync),
-                label: const Text('Sincronizar'),
+                icon: const Icon(Icons.cloud_download),
+                label: const Text('Cargar'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -688,6 +745,26 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        // NUEVO: Botón de sincronización forzada
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isLoading ? null : _forceSyncWithServer,
+            icon: const Icon(Icons.sync_alt),
+            label: const Text('🔄 Forzar Sincronización Completa'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.secondary,
+                width: 2,
+              ),
+            ),
+          ),
         ),
       ],
     );

@@ -1037,7 +1037,7 @@ class CartService extends ChangeNotifier {
         'nombre': 'Americano',
         'precio': 1.50,
         'categoria': 'Expresos',
-        'imagen_url': 'http://192.168.1.121:3000/uploads/1746239040636.jpg',
+        'imagen_url': '${NetworkConfigService().baseUrl}/uploads/1746239040636.jpg',
         'disponibilidad': true,
         'tipo': 'bebida',
       };

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../Api_services/network_config_service.dart';
 import '/models/user.dart';
 import '/UI_Screens/Widgets/custom_modal.dart';
 import '/Api_services/password_reset_service.dart';
@@ -9,7 +10,7 @@ import 'dart:convert';
 import '/Api_services/cart_service.dart';
 
 // Constantes para la configuración
-const String apiBaseUrl = 'http://192.168.1.121:3000';
+final String apiBaseUrl = NetworkConfigService().baseUrl;
 const Duration animationDuration = Duration(milliseconds: 300);
 
 class AuthModals {

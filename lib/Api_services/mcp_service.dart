@@ -20,11 +20,11 @@ class MCPService {
       print('⚠️ Error al acceder a NetworkConfigService en MCPService: $e');
       // Fallback a dotenv y luego a valores por defecto
       try {
-        final ip = dotenv.get('NODE_SERVER_IP', fallback: '192.168.1.121');
+        final ip = dotenv.get('NODE_SERVER_IP', fallback: NetworkConfigService().serverIp);
         final port = dotenv.get('NODE_SERVER_PORT', fallback: '3000');
         return 'http://$ip:$port';
       } catch (dotenvError) {
-        return 'http://192.168.1.121:3000';
+        return NetworkConfigService().baseUrl;
       }
     }
   }

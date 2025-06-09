@@ -185,7 +185,7 @@ class BrunchyMCP {
       'gemini-1.5-pro': 'gemini-1.5-pro',
       'gemini-1.0-pro': 'gemini-1.0-pro'
     };
-    this.currentModel = 'gemini-1.5-flash'; // Modelo por defecto (más estable)
+    this.currentModel = 'gemini-2.0-flash'; // Modelo por defecto - sincronizado con frontend
     this.baseSystemPrompt = `
     Eres 'Brunchy', un mesero virtual súper amigable y expresivo del restaurante Le Brunch. 😊
     
@@ -913,7 +913,7 @@ ${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
 // Configuración global del asistente (controlada por el admin)
 let globalAssistantConfig = {
   serverIp: '192.168.1.121',
-  model: 'gemini-1.5-flash',
+  model: 'gemini-2.0-flash', // Cambiado para coincidir con frontend
   enableReports: true,
   enablePopularDishes: true,
   enableMenuManagement: true,
@@ -924,6 +924,11 @@ let globalAssistantConfig = {
 
 // Instanciar BrunchyMCP y cargar el menú al iniciar el servidor
 const brunchy = new BrunchyMCP();
+
+// IMPORTANTE: Sincronizar el modelo de BrunchyMCP con la configuración global
+brunchy.setModel(globalAssistantConfig.model);
+console.log(`🔄 Modelo sincronizado: BrunchyMCP usa ${brunchy.currentModel} (desde globalAssistantConfig)`);
+
 brunchy.loadMenu().catch(err => console.error("Error inicial crítico al cargar menú para Brunchy:", err));
 
 // Opcional: Recargar el menú periódicamente
@@ -1929,5 +1934,53 @@ app.listen(port, ip, () => {
 
 // Las rutas de /login_register, /menu, /pedidos se manejan a través de los routers importados.
 // Asegúrate que esos archivos no definan rutas duplicadas que puedan causar conflictos.
+
+// NUEVO: Endpoint para sincronización inicial del frontend
+app.get('/config/sync', (req, res) => {
+  try {
+    console.log('🔄 Solicitud de sincronización inicial del frontend');
+    
+    const currentBrunchyModel = brunchy.currentModel;
+    const globalConfigModel = globalAssistantConfig.model;
+    
+    // Verificar que ambos estén sincronizados
+    if (currentBrunchyModel !== globalConfigModel) {
+      console.warn(`⚠️ Desincronización detectada: BrunchyMCP(${currentBrunchyModel}) vs Global(${globalConfigModel})`);
+      brunchy.setModel(globalConfigModel);
+      console.log(`🔄 BrunchyMCP resincronizado a: ${globalConfigModel}`);
+    }
+    
+    const syncData = {
+      serverConfig: {
+        ...globalAssistantConfig,
+        brunchyModel: brunchy.currentModel,
+        synchronized: currentBrunchyModel === globalConfigModel
+      },
+      modelInfo: brunchy.getModelInfo(),
+      keyManagerStatus: {
+        totalKeys: keyManager.apiKeys.length,
+        currentKeyIndex: keyManager.currentKeyIndex + 1
+      },
+      serverTime: new Date().toISOString(),
+      version: '1.4.1'
+    };
+    
+    console.log('✅ Datos de sincronización enviados al frontend');
+    res.json({
+      success: true,
+      message: 'Sincronización completada',
+      data: syncData,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error en sincronización inicial:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en sincronización inicial',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 

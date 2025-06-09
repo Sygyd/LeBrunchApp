@@ -7,6 +7,7 @@ import 'dart:async'; // Importar dart:async para TimeoutException
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/order_status_service.dart'; // Importar el servicio de notificación
+import '../network_config_service.dart';
 
 /// Servicio para la gestión de pedidos (órdenes)
 ///
@@ -42,7 +43,7 @@ class OrdersService {
     final serverIp =
         prefs.getString('serverIp') ??
         dotenv.env['NODE_SERVER_IP'] ??
-        '192.168.1.121';
+        NetworkConfigService().serverIp;
     final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
     return 'http://$serverIp:$serverPort';
   }

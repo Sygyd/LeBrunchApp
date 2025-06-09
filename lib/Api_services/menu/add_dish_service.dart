@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../network_config_service.dart';
 
 class AddDishService {
   // Método para agregar un nuevo plato
@@ -18,7 +20,7 @@ class AddDishService {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://192.168.1.121:3000/menu'),
+        Uri.parse('${NetworkConfigService().baseUrl}/menu'),
       );
 
       // Agregar el token en los headers
@@ -70,7 +72,7 @@ class AddDishService {
       var request = http.MultipartRequest(
         'PUT', // Usamos PUT para actualizar
         Uri.parse(
-          'http://192.168.1.121:3000/menu/$id',
+          '${NetworkConfigService().baseUrl}/menu/$id',
         ), // Incluimos el ID del plato
       );
 
@@ -109,7 +111,7 @@ class AddDishService {
   Future<bool> deleteDish(String id) async {
     try {
       final response = await http.delete(
-        Uri.parse('http://192.168.1.121:3000/menu/$id'),
+        Uri.parse('${NetworkConfigService().baseUrl}/menu/$id'),
       );
 
       if (response.statusCode == 200) {

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '/UI_Screens/Widgets/background_scaffold.dart';
 import '../../Api_services/menu/get_dishes_service.dart';
 import 'package:intl/intl.dart';
+import '../../Api_services/network_config_service.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   final String userName;
@@ -132,7 +133,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   // Método para obtener la URL del servidor
   Future<String> getServerUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverIp = prefs.getString('serverIp') ?? '192.168.1.121';
+    final serverIp = prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
     return 'http://$serverIp:3000';
   }
 

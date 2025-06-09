@@ -40,7 +40,8 @@ router.get("/menu", async (req, res) => {
 // Agregar un nuevo plato al menú
 router.post("/menu", upload.single("imagen"), async (req, res) => {
   const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
-  const imagen_url = req.file ? `http://192.168.1.121:3000/uploads/${req.file.filename}` : null; // Usa la IP de tu máquina
+  const config = require('./config');
+  const imagen_url = req.file ? `${config.getServerUrl()}/uploads/${req.file.filename}` : null;
 
   try {
     const result = await pool.query(
@@ -74,8 +75,9 @@ router.get('/menu/:id', async (req, res) => {
 router.put("/menu/:id", upload.single("imagen"), async (req, res) => {
   const { id } = req.params;
   const { nombre, categoria, precio, disponibilidad, ingredientes } = req.body;
+  const config = require('./config');
   const imagen_url = req.file
-    ? `http://192.168.1.121:3000/uploads/${req.file.filename}`
+    ? `${config.getServerUrl()}/uploads/${req.file.filename}`
     : null;
 
   try {

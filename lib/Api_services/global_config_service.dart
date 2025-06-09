@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'network_config_service.dart';
 
 class GlobalConfigService {
   static final GlobalConfigService _instance = GlobalConfigService._internal();
@@ -8,7 +9,7 @@ class GlobalConfigService {
   GlobalConfigService._internal();
 
   // Configuración por defecto
-  String _serverIp = "192.168.1.121";
+  String _serverIp = NetworkConfigService().serverIp;
   String _currentModel = "gemini-2.0-flash";
   bool _enableReports = true;
   bool _enablePopularDishes = true;
@@ -29,7 +30,9 @@ class GlobalConfigService {
   Future<void> loadConfig() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _serverIp = prefs.getString('global_server_ip') ?? "192.168.1.121";
+      _serverIp =
+          prefs.getString('global_server_ip') ??
+          NetworkConfigService().serverIp;
       _currentModel =
           prefs.getString('global_gemini_model') ?? "gemini-2.0-flash";
       _enableReports = prefs.getBool('global_enable_reports') ?? true;
@@ -42,10 +45,93 @@ class GlobalConfigService {
       _debugMode = prefs.getBool('global_debug_mode') ?? false;
 
       print(
-        '🔧 GlobalConfig: Configuración cargada - IP: $_serverIp, Modelo: $_currentModel',
+        '🔧 GlobalConfig: Configuración local cargada - IP: $_serverIp, Modelo: $_currentModel',
       );
+
+      // NUEVO: Intentar sincronizar con el servidor automáticamente
+      await _syncWithServer();
     } catch (e) {
       print('❌ Error al cargar configuración global: $e');
+    }
+  }
+
+  // NUEVO: Sincronizar configuración con el servidor
+  Future<void> _syncWithServer() async {
+    try {
+      print('🔄 Iniciando sincronización automática con servidor...');
+      final url = Uri.parse('http://$_serverIp:3000/config/sync');
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final serverData = data['data'];
+          final serverConfig = serverData['serverConfig'];
+
+          // Comparar y actualizar si hay diferencias
+          bool hasChanges = false;
+
+          if (serverConfig['model'] != null &&
+              serverConfig['model'] != _currentModel) {
+            print(
+              '🔄 Sincronizando modelo: $_currentModel → ${serverConfig['model']}',
+            );
+            _currentModel = serverConfig['model'];
+            hasChanges = true;
+          }
+
+          if (serverConfig['enableReports'] != null &&
+              serverConfig['enableReports'] != _enableReports) {
+            _enableReports = serverConfig['enableReports'];
+            hasChanges = true;
+          }
+
+          if (serverConfig['enablePopularDishes'] != null &&
+              serverConfig['enablePopularDishes'] != _enablePopularDishes) {
+            _enablePopularDishes = serverConfig['enablePopularDishes'];
+            hasChanges = true;
+          }
+
+          if (serverConfig['enableMenuManagement'] != null &&
+              serverConfig['enableMenuManagement'] != _enableMenuManagement) {
+            _enableMenuManagement = serverConfig['enableMenuManagement'];
+            hasChanges = true;
+          }
+
+          if (serverConfig['showSystemMessages'] != null &&
+              serverConfig['showSystemMessages'] != _showSystemMessages) {
+            _showSystemMessages = serverConfig['showSystemMessages'];
+            hasChanges = true;
+          }
+
+          if (serverConfig['debugMode'] != null &&
+              serverConfig['debugMode'] != _debugMode) {
+            _debugMode = serverConfig['debugMode'];
+            hasChanges = true;
+          }
+
+          if (hasChanges) {
+            await saveConfig();
+            print('✅ Configuración sincronizada automáticamente con servidor');
+          } else {
+            print('✅ Configuración ya está sincronizada con servidor');
+          }
+
+          // Mostrar información de sincronización
+          final brunchyModel = serverConfig['brunchyModel'];
+          final synchronized = serverConfig['synchronized'] ?? false;
+          print(
+            '🤖 Estado servidor: Modelo global(${serverConfig['model']}) | BrunchyMCP($brunchyModel) | Sync: $synchronized',
+          );
+        }
+      } else {
+        print(
+          '⚠️ No se pudo sincronizar con servidor (${response.statusCode}), usando configuración local',
+        );
+      }
+    } catch (e) {
+      print('⚠️ Error en sincronización automática (usando config local): $e');
+      // No lanzar error para no bloquear la app
     }
   }
 
@@ -258,7 +344,7 @@ class GlobalConfigService {
         return null;
       }
     } catch (e) {
-      print('❌ Error de conexión al obtener estado: $e');
+      print('❌ Error de conexión al obtener estado del servidor: $e');
       return null;
     }
   }
@@ -356,5 +442,38 @@ class GlobalConfigService {
         config['enableMenuManagement'] ?? _enableMenuManagement;
     _showSystemMessages = config['showSystemMessages'] ?? _showSystemMessages;
     _debugMode = config['debugMode'] ?? _debugMode;
+  }
+
+  // NUEVO: Forzar sincronización manual (para uso del admin)
+  Future<bool> forceSyncWithServer() async {
+    try {
+      print('🔄 Forzando sincronización manual con servidor...');
+      await _syncWithServer();
+      return true;
+    } catch (e) {
+      print('❌ Error en sincronización manual: $e');
+      return false;
+    }
+  }
+
+  // NUEVO: Verificar estado de sincronización
+  Future<Map<String, dynamic>?> getSyncStatus() async {
+    try {
+      final url = Uri.parse('http://$_serverIp:3000/config/sync');
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['data'];
+      } else {
+        print(
+          '❌ Error al obtener estado de sincronización: ${response.statusCode}',
+        );
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error de conexión al obtener estado de sincronización: $e');
+      return null;
+    }
   }
 }

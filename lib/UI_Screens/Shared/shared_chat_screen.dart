@@ -17,6 +17,7 @@ import '../Client_Screens/CartScreen.dart';
 import '../../services/user_preferences_service.dart';
 import '../Widgets/background_scaffold.dart';
 import '../Widgets/chat_config_modal_content.dart';
+import '../../Api_services/network_config_service.dart';
 
 class SharedChatScreen extends StatefulWidget {
   final bool isAdmin;
@@ -61,7 +62,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
   Timer? _cartSyncTimer;
 
   // Variables para personalización de administrador
-  String _serverIp = "192.168.1.121";
+  String _serverIp = NetworkConfigService().serverIp;
   String _currentModelName = "gemini-2.0-flash";
   bool _showSystemMessages = true;
 
@@ -170,7 +171,7 @@ class _SharedChatScreenState extends State<SharedChatScreen>
         _showConnectionStatusInAppBar =
             prefs.getBool('show_connection_status') ?? true;
         if (widget.isAdmin) {
-          _serverIp = prefs.getString('server_ip') ?? "192.168.1.121";
+          _serverIp = prefs.getString('server_ip') ?? NetworkConfigService().serverIp;
           _currentModelName =
               prefs.getString('gemini_model_name') ?? "gemini-1.5-flash";
         }

@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'network_config_service.dart';
 
 class PasswordResetService {
-  static const String baseUrl = 'http://192.168.1.121:3000';
+  static final String baseUrl = NetworkConfigService().baseUrl;
 
   /// Verificar credenciales del usuario (email + cédula)
   static Future<Map<String, dynamic>> verifyCredentials({

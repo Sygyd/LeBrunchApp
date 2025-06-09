@@ -4,6 +4,7 @@ import '../../Api_services/pedidos/orders_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../Api_services/network_config_service.dart';
 import 'dart:async';
 
 /// Pantalla de inicio compartida que puede ser usada tanto por Cocinero como por Barista
@@ -88,7 +89,7 @@ class _SharedHomeScreenState extends State<SharedHomeScreen> {
       final serverIp =
           prefs.getString('serverIp') ??
           dotenv.env['NODE_SERVER_IP'] ??
-          '192.168.1.121';
+          NetworkConfigService().serverIp;
       final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
       final baseUrl = 'http://$serverIp:$serverPort';
 
@@ -178,7 +179,7 @@ class _SharedHomeScreenState extends State<SharedHomeScreen> {
       final serverIp =
           prefs.getString('serverIp') ??
           dotenv.env['NODE_SERVER_IP'] ??
-          '192.168.1.121';
+          NetworkConfigService().serverIp;
       final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
       final baseUrl = 'http://$serverIp:$serverPort';
 

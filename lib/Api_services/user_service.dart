@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'network_config_service.dart';
 
 class UserService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -11,7 +12,7 @@ class UserService {
     final prefs = await SharedPreferences.getInstance();
 
     // Usar siempre esta IP fija
-    const String fixedIp = '192.168.1.121';
+    final String fixedIp = NetworkConfigService().serverIp;
 
     // Guardar en ambas claves para futura consistencia
     await prefs.setString('server_ip', fixedIp);

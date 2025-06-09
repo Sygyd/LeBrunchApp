@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '/models/user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../network_config_service.dart';
 
 class RegisterService {
-  static const String _baseUrl = 'http://192.168.1.121:3000';
+  static final String _baseUrl = NetworkConfigService().baseUrl;
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../network_config_service.dart';
 
 class MenuService {
   // Método para obtener la URL base del servidor
@@ -11,7 +12,7 @@ class MenuService {
     final serverIp =
         prefs.getString('serverIp') ??
         dotenv.env['NODE_SERVER_IP'] ??
-        '192.168.1.121';
+        NetworkConfigService().serverIp;
     final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
     final baseUrl = 'http://$serverIp:$serverPort';
     print('🌐 URL base del servidor: $baseUrl');

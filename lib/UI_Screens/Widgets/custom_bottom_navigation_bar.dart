@@ -24,6 +24,7 @@ import 'text_with_border.dart';
 import 'package:http/http.dart' as http;
 import '../../Api_services/cart_service.dart';
 import '../../services/cart_event_bus.dart';
+import '../../Api_services/network_config_service.dart';
 import 'background_scaffold.dart';
 
 // PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
@@ -1202,7 +1203,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
     // Obtener información básica del usuario desde SharedPreferences
     final userId = prefs.getInt('user_id');
-    final serverIp = prefs.getString('serverIp') ?? '192.168.1.121';
+    final serverIp = prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
     final serverPort = '3000';
 
     // Valores por defecto mientras se cargan los datos
@@ -1635,7 +1636,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
       // 1. Llamar al endpoint de logout en el backend
       final response = await http.post(
-        Uri.parse('http://192.168.1.121:3000/logout'),
+        Uri.parse('${NetworkConfigService().baseUrl}/logout'),
         headers: {"Content-Type": "application/json"},
       );
 
