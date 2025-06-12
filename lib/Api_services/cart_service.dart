@@ -85,7 +85,7 @@ class CartService extends ChangeNotifier {
 
       final networkConfig = NetworkConfigService();
       final response = await http.get(
-        Uri.parse('${networkConfig.baseUrl}/menu'),
+        Uri.parse('${networkConfig.baseUrl}/menu-with-corrected-urls'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -1037,7 +1037,8 @@ class CartService extends ChangeNotifier {
         'nombre': 'Americano',
         'precio': 1.50,
         'categoria': 'Expresos',
-        'imagen_url': '${NetworkConfigService().baseUrl}/uploads/1746239040636.jpg',
+        'imagen_url':
+            '${NetworkConfigService().baseUrl}/uploads/1746239040636.jpg',
         'disponibilidad': true,
         'tipo': 'bebida',
       };

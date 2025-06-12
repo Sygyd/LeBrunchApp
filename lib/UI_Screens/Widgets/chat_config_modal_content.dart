@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../Api_services/global_config_service.dart';
+import '../../Api_services/network_config_service.dart';
+import '../../Api_services/menu/menu_service.dart';
+import 'network_diagnostic_widget.dart';
 
 class ChatConfigModalContent extends StatefulWidget {
   final VoidCallback? onConfigSaved;
@@ -13,6 +16,8 @@ class ChatConfigModalContent extends StatefulWidget {
 
 class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   final GlobalConfigService _globalConfig = GlobalConfigService();
+  final NetworkConfigService _networkConfig = NetworkConfigService();
+  final MenuService _menuService = MenuService();
 
   // Controladores para las configuraciones
   final TextEditingController _serverIpController = TextEditingController();
@@ -26,6 +31,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   String _currentModel = "gemini-2.0-flash";
   bool _isLoading = false;
   bool _isConnected = false;
+  bool _initialSetupComplete = false;
 
   // Información del sistema
   Map<String, dynamic>? _serverStatus;
@@ -33,8 +39,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   @override
   void initState() {
     super.initState();
-    _loadCurrentSettings();
-    _checkServerStatus();
+    _performInitialSetup();
   }
 
   @override
@@ -43,11 +48,134 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     super.dispose();
   }
 
+  // NUEVO: Setup inicial robusto que espera por auto-discovery
+  Future<void> _performInitialSetup() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      print('🔧 Modal: Iniciando setup inicial robusto...');
+
+      // PASO 1: Asegurar que NetworkConfigService esté completamente inicializado (OPTIMIZADO)
+      print('⏳ Modal: Verificando NetworkConfigService...');
+      await _ensureNetworkConfigReady();
+
+      // PASO 2: Cargar configuración usando la IP correcta
+      print('📋 Modal: Cargando configuración con IP actualizada...');
+      await _loadCurrentSettings();
+
+      // PASO 3: Verificar conexión de forma optimizada y en paralelo
+      print('🔌 Modal: Verificando estado de conexión...');
+      _checkServerStatusOptimized(); // No esperar a que termine
+
+      setState(() => _initialSetupComplete = true);
+      print('✅ Modal: Setup inicial completado');
+    } catch (e) {
+      print('❌ Modal: Error en setup inicial: $e');
+      // Continuar con configuración básica aunque falle
+      await _loadCurrentSettings();
+      setState(() => _initialSetupComplete = true);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // OPTIMIZADO: Versión más rápida que no bloquea la UI
+  Future<void> _ensureNetworkConfigReady() async {
+    const maxWaitTime = 3; // Reducido de 8 a 3 segundos
+    const checkInterval = 200; // Reducido de 500 a 200 milisegundos
+    int attempts = 0;
+    int maxAttempts = (maxWaitTime * 1000) ~/ checkInterval;
+
+    while (attempts < maxAttempts) {
+      try {
+        // Verificar si NetworkConfigService tiene una IP configurada
+        final networkIp = _networkConfig.serverIp;
+
+        if (networkIp.isNotEmpty && !_isObsoleteIp(networkIp)) {
+          print('✅ Modal: NetworkConfigService listo con IP: $networkIp');
+          return;
+        }
+
+        // Si no está listo, esperar un poco menos
+        attempts++;
+        await Future.delayed(const Duration(milliseconds: checkInterval));
+      } catch (e) {
+        print('⚠️ Modal: Error verificando NetworkConfigService: $e');
+        break;
+      }
+    }
+
+    print('⏰ Modal: Timeout optimizado, continuando...');
+  }
+
+  // NUEVO: Verificación de estado optimizada que no bloquea la UI
+  Future<void> _checkServerStatusOptimized() async {
+    try {
+      // Verificar conexión rápida primero
+      final isConnected = await _globalConfig.testConnection();
+
+      setState(() {
+        _isConnected = isConnected;
+      });
+
+      // Si está conectado, obtener detalles en segundo plano
+      if (isConnected) {
+        _getServerStatusInBackground();
+      }
+    } catch (e) {
+      print('❌ Modal: Error en verificación optimizada: $e');
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // NUEVO: Obtener estado del servidor en segundo plano
+  Future<void> _getServerStatusInBackground() async {
+    try {
+      final status = await _globalConfig.getServerStatus();
+      if (mounted) {
+        setState(() {
+          _serverStatus = status;
+        });
+      }
+    } catch (e) {
+      print('❌ Modal: Error obteniendo estado en segundo plano: $e');
+    }
+  }
+
+  // NUEVO: Detectar IPs obsoletas
+  bool _isObsoleteIp(String ip) {
+    const obsoleteIPs = ['192.168.1.121', '192.168.1.136'];
+    return obsoleteIPs.contains(ip);
+  }
+
   Future<void> _loadCurrentSettings() async {
     try {
+      // MEJORADO: Cargar configuración pero usar IP del NetworkConfigService si está disponible
       await _globalConfig.loadConfig();
+
+      // Usar IP del NetworkConfigService si está disponible y es más actualizada
+      String ipToUse = _globalConfig.serverIp;
+      final networkIp = _networkConfig.serverIp;
+
+      if (networkIp.isNotEmpty && !_isObsoleteIp(networkIp)) {
+        if (_isObsoleteIp(ipToUse) || ipToUse != networkIp) {
+          print(
+            '🔄 Modal: Usando IP del NetworkConfigService: $networkIp (vs GlobalConfig: $ipToUse)',
+          );
+          ipToUse = networkIp;
+
+          // Actualizar GlobalConfigService con la IP correcta
+          await _globalConfig.updateServerConfig(serverIp: networkIp);
+        }
+      }
+
       setState(() {
-        _serverIpController.text = _globalConfig.serverIp;
+        _serverIpController.text = ipToUse;
         _currentModel = _globalConfig.currentModel;
         _enableReports = _globalConfig.enableReports;
         _enablePopularDishes = _globalConfig.enablePopularDishes;
@@ -55,24 +183,41 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         _showSystemMessages = _globalConfig.showSystemMessages;
         _debugMode = _globalConfig.debugMode;
       });
-      print('🔧 Modal: Configuración cargada desde GlobalConfigService');
+      print('🔧 Modal: Configuración cargada - IP: $ipToUse');
     } catch (e) {
-      print('❌ Error al cargar configuraciones: $e');
+      print('❌ Modal: Error al cargar configuraciones: $e');
     }
   }
 
   Future<void> _checkServerStatus() async {
+    if (!_initialSetupComplete) return; // No verificar durante setup inicial
+
     setState(() => _isLoading = true);
     try {
+      // Verificación rápida primero
       final isConnected = await _globalConfig.testConnection();
-      final status = await _globalConfig.getServerStatus();
 
       setState(() {
         _isConnected = isConnected;
-        _serverStatus = status;
       });
 
-      if (!isConnected && mounted) {
+      // Solo obtener detalles del servidor si está conectado
+      if (isConnected) {
+        final status = await _globalConfig.getServerStatus();
+        if (mounted) {
+          setState(() {
+            _serverStatus = status;
+          });
+        }
+      } else {
+        // Limpiar status si no está conectado
+        setState(() {
+          _serverStatus = null;
+        });
+      }
+
+      // CAMBIADO: Solo mostrar mensaje si el modal ya está completamente inicializado
+      if (!isConnected && mounted && _initialSetupComplete) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('⚠️ No se pudo conectar con el servidor'),
@@ -81,7 +226,11 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         );
       }
     } catch (e) {
-      print('❌ Error al verificar estado del servidor: $e');
+      print('❌ Modal: Error al verificar estado del servidor: $e');
+      setState(() {
+        _isConnected = false;
+        _serverStatus = null;
+      });
     } finally {
       setState(() => _isLoading = false);
     }
@@ -165,6 +314,40 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error al probar conexión: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // NUEVO: Método para corregir URLs de imágenes
+  Future<void> _fixImageUrls() async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await _menuService.fixImageUrls();
+
+      if (mounted) {
+        final urlsCorregidas = result['urlsCorregidas'] ?? 0;
+        final urlsNoNecesitaban = result['urlsNoNecesitanCorreccion'] ?? 0;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✅ URLs corregidas: $urlsCorregidas | Sin cambios: $urlsNoNecesitaban',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al corregir URLs: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -312,6 +495,25 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   }
 
   Widget _buildSystemStatusCard() {
+    // Determinar el estado visual basado en el progreso de inicialización
+    Color statusColor;
+    IconData statusIcon;
+    String statusText;
+
+    if (!_initialSetupComplete) {
+      statusColor = Colors.orange;
+      statusIcon = Icons.sync;
+      statusText = 'Verificando...';
+    } else if (_isConnected) {
+      statusColor = Colors.green;
+      statusIcon = Icons.wifi;
+      statusText = 'Conectado';
+    } else {
+      statusColor = Colors.red;
+      statusIcon = Icons.wifi_off;
+      statusText = 'Desconectado';
+    }
+
     return Card(
       elevation: 4,
       child: Padding(
@@ -350,27 +552,20 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        _isConnected
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.red.withOpacity(0.1),
+                    color: statusColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        _isConnected ? Icons.wifi : Icons.wifi_off,
-                        size: 12,
-                        color: _isConnected ? Colors.green : Colors.red,
-                      ),
+                      Icon(statusIcon, size: 12, color: statusColor),
                       const SizedBox(width: 4),
                       Text(
-                        _isConnected ? 'Conectado' : 'Desconectado',
+                        statusText,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: _isConnected ? Colors.green : Colors.red,
+                          color: statusColor,
                         ),
                       ),
                     ],
@@ -401,7 +596,9 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                   '#${_serverStatus!['keyRotation']['currentKeyIndex']}',
                 ),
               ],
-            ] else
+            ] else if (!_initialSetupComplete)
+              const Text('Inicializando conexión con el servidor...')
+            else
               const Text('No se pudo cargar el estado del sistema...'),
           ],
         ),
@@ -449,7 +646,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               controller: _serverIpController,
               decoration: const InputDecoration(
                 labelText: 'IP del Servidor',
-                hintText: '192.168.1.121',
+                hintText: '192.168.1.240',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.computer),
               ),
@@ -747,26 +944,66 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
           ],
         ),
         const SizedBox(height: 12),
-        // NUEVO: Botón de sincronización forzada
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : _forceSyncWithServer,
+                icon: const Icon(Icons.sync_alt),
+                label: const Text('Sincronizar'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.secondary,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openNetworkDiagnostic,
+                icon: const Icon(Icons.network_check),
+                label: const Text('Diagnóstico'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  side: BorderSide(color: Colors.blue, width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // NUEVO: Botón para corregir URLs de imágenes
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: _isLoading ? null : _forceSyncWithServer,
-            icon: const Icon(Icons.sync_alt),
-            label: const Text('🔄 Forzar Sincronización Completa'),
+            onPressed: _isLoading ? null : _fixImageUrls,
+            icon: const Icon(Icons.image_search),
+            label: const Text('Corregir URLs de Imágenes'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.secondary,
-                width: 2,
-              ),
+              side: BorderSide(color: Colors.orange, width: 2),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  void _openNetworkDiagnostic() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const NetworkDiagnosticWidget()),
     );
   }
 }

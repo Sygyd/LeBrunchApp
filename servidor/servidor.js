@@ -15,8 +15,10 @@ process.env.TZ = 'America/Caracas';
 console.log(`🕒 Zona horaria configurada: ${process.env.TZ} - Hora actual: ${new Date().toLocaleString()}`);
 
 // Configuración del servidor
+const config = require('./config');
 const ip = process.env.SERVER_IP || '0.0.0.0'; // Escuchar en todas las interfaces
 const port = process.env.PORT || 3000;
+const realServerIP = config.host; // IP real detectada para mostrar
 // NO usar puerto 5678 bajo ninguna circunstancia
 
 // Añadir inicialización de GoogleGenerativeAI con rotación de claves
@@ -912,7 +914,7 @@ ${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
 
 // Configuración global del asistente (controlada por el admin)
 let globalAssistantConfig = {
-  serverIp: '192.168.1.121',
+  serverIp: config.host, // Usar la IP detectada automáticamente
   model: 'gemini-2.0-flash', // Cambiado para coincidir con frontend
   enableReports: true,
   enablePopularDishes: true,
@@ -928,6 +930,7 @@ const brunchy = new BrunchyMCP();
 // IMPORTANTE: Sincronizar el modelo de BrunchyMCP con la configuración global
 brunchy.setModel(globalAssistantConfig.model);
 console.log(`🔄 Modelo sincronizado: BrunchyMCP usa ${brunchy.currentModel} (desde globalAssistantConfig)`);
+console.log(`🌐 Configuración global inicializada con IP detectada: ${globalAssistantConfig.serverIp}`);
 
 brunchy.loadMenu().catch(err => console.error("Error inicial crítico al cargar menú para Brunchy:", err));
 
@@ -1923,13 +1926,23 @@ app.use(pedidosRoutes);
 // app.use(authRoutes); // Comentado: user.js solo exporta funciones, no un router
 
 // Iniciar el servidor
+console.log('🔄 Intentando iniciar servidor...');
+console.log(`🔍 Variables: ip=${ip}, port=${port}, realServerIP=${realServerIP}`);
 app.listen(port, ip, () => {
   console.log(`🚀 Servidor Brunchy MCP v1.4.1 corriendo en http://${ip}:${port}`);
-  console.log(`💬 Endpoint de chat principal disponible en http://${ip}:${port}/chat`);
+  console.log(`🌐 IP de escucha: ${ip}:${port} (todas las interfaces)`);
+  console.log(`📍 IP real detectada: ${realServerIP}:${port}`);
+  console.log(`🔗 URL completa del servidor: http://${realServerIP}:${port}`);
+  console.log(`💬 Endpoint de chat principal disponible en http://${realServerIP}:${port}/chat`);
   console.log(`🤖 Modelo de Gemini por defecto: ${brunchy.currentModel} (estable)`);
-  console.log(`🔧 Configuración de modelo disponible en http://${ip}:${port}/mcp/model`);
+  console.log(`🔧 Configuración de modelo disponible en http://${realServerIP}:${port}/mcp/model`);
   console.log(`🔑 Sistema de rotación de claves mejorado con ${keyManager.apiKeys.length} claves API`);
   console.log('✅ Sistema BrunchyMCP activo con manejo robusto de errores y rotación automática.');
+}).on('error', (err) => {
+  console.error('❌ Error al iniciar el servidor:', err);
+  console.error(`❌ Detalles del error: ${err.message}`);
+  console.error(`❌ Código de error: ${err.code}`);
+  process.exit(1);
 });
 
 // Las rutas de /login_register, /menu, /pedidos se manejan a través de los routers importados.
@@ -1980,6 +1993,232 @@ app.get('/config/sync', (req, res) => {
       error: error.message,
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// Endpoint para obtener la configuración del servidor (incluyendo IP real)
+app.get('/server-config', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      config: {
+        serverIP: realServerIP,
+        port: port,
+        fullURL: `http://${realServerIP}:${port}`,
+        listenIP: ip,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener configuración del servidor:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener configuración del servidor'
+    });
+  }
+});
+
+// NUEVO: Endpoint mejorado para auto-descubrimiento de red
+app.get('/discover', (req, res) => {
+  try {
+    const discoveryInfo = {
+      server: {
+        name: 'Le Brunch Server',
+        version: '1.4.1',
+        type: 'brunch-app-server',
+        ip: realServerIP,
+        port: port,
+        baseUrl: `http://${realServerIP}:${port}`,
+        capabilities: [
+          'chat',
+          'menu-management', 
+          'order-management',
+          'user-management',
+          'audio-processing'
+        ]
+      },
+      network: {
+        listenIP: ip,
+        detectedIP: realServerIP,
+        ports: {
+          api: port,
+          status: port
+        }
+      },
+      status: {
+        online: true,
+        healthy: true,
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+      },
+      database: {
+        connected: true,
+        type: 'PostgreSQL'
+      }
+    };
+
+    // Agregar headers para descubrimiento
+    res.setHeader('X-Server-Type', 'le-brunch-app');
+    res.setHeader('X-Server-Version', '1.4.1');
+    res.setHeader('X-Discovery-Protocol', 'http');
+    
+    res.json(discoveryInfo);
+  } catch (error) {
+    console.error('❌ Error en endpoint de descubrimiento:', error);
+    res.status(500).json({
+      error: 'Error en descubrimiento de servidor',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// NUEVO: Endpoint para corregir las URLs de imágenes en la base de datos
+app.post('/admin/fix-image-urls', async (req, res) => {
+  try {
+    console.log('🔧 Iniciando corrección de URLs de imágenes...');
+    
+    // Obtener la URL actual del servidor
+    const currentServerUrl = config.getServerUrl();
+    console.log(`🌐 URL actual del servidor: ${currentServerUrl}`);
+    
+    // Obtener todos los platos con imagen_url
+    const platos = await pool.query(
+      'SELECT idplato, imagen_url FROM menu WHERE imagen_url IS NOT NULL AND imagen_url != \'\''
+    );
+    
+    let corregidos = 0;
+    let noNecesitanCorreccion = 0;
+    
+    for (const plato of platos.rows) {
+      const urlOriginal = plato.imagen_url;
+      
+      // Si la URL ya es correcta o es relativa, no hacer nada
+      if (urlOriginal.startsWith(currentServerUrl) || !urlOriginal.startsWith('http')) {
+        noNecesitanCorreccion++;
+        continue;
+      }
+      
+      // Extraer solo la parte del archivo de la URL
+      const match = urlOriginal.match(/\/uploads\/(.+)$/);
+      if (match) {
+        const filename = match[1];
+        const nuevaUrl = `${currentServerUrl}/uploads/${filename}`;
+        
+        await pool.query(
+          'UPDATE menu SET imagen_url = $1 WHERE idplato = $2',
+          [nuevaUrl, plato.idplato]
+        );
+        
+        console.log(`✅ Corregido: ${urlOriginal} → ${nuevaUrl}`);
+        corregidos++;
+      }
+    }
+    
+    console.log(`🎯 Corrección completada: ${corregidos} URLs corregidas, ${noNecesitanCorreccion} no necesitaban corrección`);
+    
+    res.json({
+      success: true,
+      message: 'URLs de imágenes corregidas exitosamente',
+      urlsCorregidas: corregidos,
+      urlsNoNecesitanCorreccion: noNecesitanCorreccion,
+      serverUrl: currentServerUrl,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al corregir URLs de imágenes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al corregir URLs de imágenes',
+      details: error.message
+    });
+  }
+});
+
+// NUEVO: Endpoint para obtener menú con URLs de imágenes corregidas dinámicamente
+app.get('/menu-with-corrected-urls', async (req, res) => {
+  try {
+    const { disponibilidad } = req.query;
+    
+    let query = "SELECT * FROM menu WHERE isDelete = FALSE";
+    const queryParams = [];
+    
+    if (disponibilidad !== undefined) {
+      const isAvailable = disponibilidad === 'true';
+      query += " AND disponibilidad = $1";
+      queryParams.push(isAvailable);
+    }
+    
+    query += " ORDER BY nombre";
+    
+    const result = await pool.query(query, queryParams);
+    const currentServerUrl = config.getServerUrl();
+    
+    // Corregir URLs dinámicamente
+    const platosCorregidos = result.rows.map(plato => {
+      let imagenUrlCorregida = plato.imagen_url;
+      
+      if (imagenUrlCorregida) {
+        // Si la URL no contiene el servidor actual
+        if (imagenUrlCorregida.startsWith('http') && !imagenUrlCorregida.startsWith(currentServerUrl)) {
+          // Extraer solo el nombre del archivo
+          const match = imagenUrlCorregida.match(/\/uploads\/(.+)$/);
+          if (match) {
+            imagenUrlCorregida = `${currentServerUrl}/uploads/${match[1]}`;
+          }
+        } else if (!imagenUrlCorregida.startsWith('http')) {
+          // Si es una URL relativa, convertirla a absoluta
+          imagenUrlCorregida = imagenUrlCorregida.startsWith('/') 
+            ? `${currentServerUrl}${imagenUrlCorregida}`
+            : `${currentServerUrl}/${imagenUrlCorregida}`;
+        }
+      }
+      
+      return {
+        ...plato,
+        imagen_url: imagenUrlCorregida
+      };
+    });
+    
+    res.json(platosCorregidos);
+  } catch (error) {
+    console.error('❌ Error al obtener menú con URLs corregidas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// NUEVO: Endpoint para obtener menú completo con URLs corregidas dinámicamente
+app.get('/menu-completo-corrected', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT idplato, nombre, categoria, precio, disponibilidad, ingredientes, imagen_url, tipo FROM menu WHERE disponibilidad = TRUE AND isDelete = FALSE');
+    const currentServerUrl = config.getServerUrl();
+    
+    const platosCorregidos = result.rows.map(plato => {
+      let imagenUrlCorregida = plato.imagen_url;
+      
+      if (imagenUrlCorregida) {
+        if (imagenUrlCorregida.startsWith('http') && !imagenUrlCorregida.startsWith(currentServerUrl)) {
+          const match = imagenUrlCorregida.match(/\/uploads\/(.+)$/);
+          if (match) {
+            imagenUrlCorregida = `${currentServerUrl}/uploads/${match[1]}`;
+          }
+        } else if (!imagenUrlCorregida.startsWith('http')) {
+          imagenUrlCorregida = imagenUrlCorregida.startsWith('/') 
+            ? `${currentServerUrl}${imagenUrlCorregida}`
+            : `${currentServerUrl}/${imagenUrlCorregida}`;
+        }
+      }
+      
+      return {
+        ...plato,
+        imagen_url: imagenUrlCorregida
+      };
+    });
+    
+    res.json(platosCorregidos);
+  } catch (error) {
+    console.error('❌ Error al obtener el menú completo con URLs corregidas:', error);
+    res.status(500).json({ error: 'Error interno del servidor al obtener el menú.' });
   }
 });
 

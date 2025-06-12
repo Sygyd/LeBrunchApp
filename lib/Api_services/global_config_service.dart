@@ -9,13 +9,17 @@ class GlobalConfigService {
   GlobalConfigService._internal();
 
   // Configuración por defecto
-  String _serverIp = NetworkConfigService().serverIp;
+  String _serverIp =
+      '192.168.1.240'; // Valor por defecto, se actualizará con auto-discovery
   String _currentModel = "gemini-2.0-flash";
   bool _enableReports = true;
   bool _enablePopularDishes = true;
   bool _enableMenuManagement = true;
   bool _showSystemMessages = true;
   bool _debugMode = false;
+
+  // Variable para asegurar que NetworkConfigService esté listo
+  bool _networkServiceReady = false;
 
   // Getters
   String get serverIp => _serverIp;
@@ -26,13 +30,116 @@ class GlobalConfigService {
   bool get showSystemMessages => _showSystemMessages;
   bool get debugMode => _debugMode;
 
+  // NUEVO: Asegurar que NetworkConfigService esté listo antes de operaciones críticas
+  Future<void> _ensureNetworkServiceReady() async {
+    try {
+      const maxWaitTime = 2; // Reducido de tiempo de espera
+      const checkInterval = 200; // Intervalo más frecuente
+      int attempts = 0;
+      int maxAttempts = (maxWaitTime * 1000) ~/ checkInterval;
+
+      while (attempts < maxAttempts) {
+        final networkService = NetworkConfigService();
+        final networkIp = networkService.serverIp;
+
+        // Si ya tenemos una IP válida de NetworkConfigService, usarla
+        if (networkIp.isNotEmpty &&
+            !['192.168.1.121', '192.168.1.136'].contains(networkIp)) {
+          // Solo actualizar si la IP es diferente a la actual
+          if (_serverIp != networkIp) {
+            print(
+              '🔄 GlobalConfig: Actualizando IP desde NetworkConfigService: $_serverIp → $networkIp',
+            );
+            _serverIp = networkIp;
+          }
+          return;
+        }
+
+        attempts++;
+        // Esperar menos tiempo para no bloquear la UI
+        await Future.delayed(const Duration(milliseconds: checkInterval));
+      }
+
+      print(
+        '⏰ GlobalConfig: NetworkConfigService no listo después de ${maxWaitTime}s, continuando con IP actual: $_serverIp',
+      );
+    } catch (e) {
+      print('❌ Error verificando NetworkConfigService: $e');
+      // Continuar con la IP actual si hay error
+    }
+  }
+
   // Cargar configuración desde SharedPreferences
   Future<void> loadConfig() async {
     try {
+      // CRUCIAL: Asegurar que NetworkConfigService esté listo antes de continuar
+      await _ensureNetworkServiceReady();
+
       final prefs = await SharedPreferences.getInstance();
-      _serverIp =
-          prefs.getString('global_server_ip') ??
-          NetworkConfigService().serverIp;
+
+      // CAMBIO IMPORTANTE: Obtener IP actual del NetworkConfigService que ya tiene auto-discovery
+      final networkService = NetworkConfigService();
+      final currentNetworkIp = networkService.serverIp;
+
+      // Lista de IPs obsoletas que no debemos probar
+      const obsoleteIPs = ['192.168.1.121', '192.168.1.136'];
+
+      // Solo usar IP guardada si coincide con la IP detectada actual o si es más nueva
+      final savedIp = prefs.getString('global_server_ip');
+
+      // NUEVA LÓGICA OPTIMIZADA: Evitar tests innecesarios
+      if (savedIp != null &&
+          savedIp.isNotEmpty &&
+          savedIp != currentNetworkIp) {
+        // CAMBIO CLAVE: Si la IP guardada es obsoleta, limpiarla y usar la actual directamente
+        if (obsoleteIPs.contains(savedIp)) {
+          print(
+            '🧹 GlobalConfig: IP guardada obsoleta detectada ($savedIp), limpiando y usando auto-discovery',
+          );
+          await prefs.remove('global_server_ip');
+          _serverIp = currentNetworkIp;
+          await prefs.setString('global_server_ip', currentNetworkIp);
+          print(
+            '🔄 GlobalConfig: Usando IP detectada por auto-discovery: $currentNetworkIp',
+          );
+        } else {
+          // Solo probar IPs si no son obsoletas
+          print(
+            '🔍 GlobalConfig: Comparando IP guardada ($savedIp) vs detectada ($currentNetworkIp)',
+          );
+
+          // Test rápido en paralelo pero solo para IPs no obsoletas
+          final results = await Future.wait([
+            _testIpConnection(savedIp),
+            _testIpConnection(currentNetworkIp),
+          ]);
+
+          final savedIpWorks = results[0];
+          final currentIpWorks = results[1];
+
+          // Usar IP guardada solo si funciona y la actual no
+          if (savedIpWorks && !currentIpWorks) {
+            _serverIp = savedIp;
+            print('🔄 GlobalConfig: Usando IP guardada que funciona: $savedIp');
+          } else {
+            _serverIp = currentNetworkIp;
+            print(
+              '🔄 GlobalConfig: Usando IP detectada por auto-discovery: $currentNetworkIp',
+            );
+            // Actualizar IP guardada con la detectada
+            await prefs.setString('global_server_ip', currentNetworkIp);
+          }
+        }
+      } else {
+        // Usar directamente la IP detectada por auto-discovery
+        _serverIp = currentNetworkIp;
+        print(
+          '🔄 GlobalConfig: Usando IP detectada por auto-discovery: $currentNetworkIp',
+        );
+        // Guardar la IP detectada
+        await prefs.setString('global_server_ip', currentNetworkIp);
+      }
+
       _currentModel =
           prefs.getString('global_gemini_model') ?? "gemini-2.0-flash";
       _enableReports = prefs.getBool('global_enable_reports') ?? true;
@@ -48,25 +155,71 @@ class GlobalConfigService {
         '🔧 GlobalConfig: Configuración local cargada - IP: $_serverIp, Modelo: $_currentModel',
       );
 
-      // NUEVO: Intentar sincronizar con el servidor automáticamente
-      await _syncWithServer();
+      // NUEVO: Intentar sincronizar con el servidor automáticamente (solo si NetworkService está listo)
+      if (_networkServiceReady) {
+        await _syncWithServer();
+      } else {
+        print(
+          '⚠️ GlobalConfig: Saltando sincronización automática - NetworkService no está listo',
+        );
+      }
     } catch (e) {
       print('❌ Error al cargar configuración global: $e');
     }
   }
 
-  // NUEVO: Sincronizar configuración con el servidor
+  // Método optimizado para probar conexión a una IP específica con timeout más corto
+  Future<bool> _testIpConnection(String ip) async {
+    try {
+      final url = Uri.parse('http://$ip:3000/status');
+      final response = await http
+          .get(url)
+          .timeout(const Duration(seconds: 2)); // Reducido de 3 a 2 segundos
+      return response.statusCode == 200;
+    } catch (e) {
+      print('❌ Error al probar conexión: $e');
+      return false;
+    }
+  }
+
+  // NUEVO: Sincronizar configuración con el servidor (OPTIMIZADO)
   Future<void> _syncWithServer() async {
     try {
       print('🔄 Iniciando sincronización automática con servidor...');
+
+      // Lista de IPs obsoletas que no debemos usar para sincronización
+      const obsoleteIPs = ['192.168.1.121', '192.168.1.136'];
+
+      // Verificar que tengamos una IP válida antes de intentar conectar
+      if (_serverIp.isEmpty || obsoleteIPs.contains(_serverIp)) {
+        print(
+          '⚠️ GlobalConfig: IP no válida o obsoleta para sincronización ($_serverIp), saltando sincronización',
+        );
+        return;
+      }
+
       final url = Uri.parse('http://$_serverIp:3000/config/sync');
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
+      final response = await http
+          .get(url)
+          .timeout(const Duration(seconds: 3)); // Reducido timeout
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final serverData = data['data'];
           final serverConfig = serverData['serverConfig'];
+
+          // NUEVO: Verificar si el servidor está devolviendo una IP obsoleta y corregirla automáticamente
+          if (serverConfig['serverIp'] != null &&
+              obsoleteIPs.contains(serverConfig['serverIp'])) {
+            print(
+              '🔧 GlobalConfig: Servidor devuelve IP obsoleta (${serverConfig['serverIp']}), corrigiendo automáticamente...',
+            );
+
+            // Enviar corrección al servidor
+            await _updateServerGlobalConfig({'serverIp': _serverIp});
+            print('✅ GlobalConfig: IP del servidor corregida a $_serverIp');
+          }
 
           // Comparar y actualizar si hay diferencias
           bool hasChanges = false;
@@ -272,6 +425,9 @@ class GlobalConfigService {
   // Cargar configuración desde el servidor
   Future<bool> loadConfigFromServer() async {
     try {
+      // Asegurar que NetworkConfigService esté listo antes de hacer conexiones
+      await _ensureNetworkServiceReady();
+
       final url = Uri.parse('http://$_serverIp:3000/config/global');
       final response = await http.get(url);
 
@@ -310,6 +466,9 @@ class GlobalConfigService {
   // Cambiar modelo en el servidor
   Future<bool> _changeServerModel(String model) async {
     try {
+      // Asegurar que NetworkConfigService esté listo antes de hacer conexiones
+      await _ensureNetworkServiceReady();
+
       final url = Uri.parse('http://$_serverIp:3000/mcp/model');
       final response = await http.post(
         url,
@@ -334,6 +493,9 @@ class GlobalConfigService {
   // Obtener estado del servidor
   Future<Map<String, dynamic>?> getServerStatus() async {
     try {
+      // Asegurar que NetworkConfigService esté listo antes de hacer conexiones
+      await _ensureNetworkServiceReady();
+
       final url = Uri.parse('http://$_serverIp:3000/mcp/status');
       final response = await http.get(url);
 
@@ -369,15 +531,59 @@ class GlobalConfigService {
 
   // Probar conexión con el servidor
   Future<bool> testConnection([String? testIp]) async {
-    try {
-      final ipToTest = testIp ?? _serverIp;
-      final url = Uri.parse('http://$ipToTest:3000/status');
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
-      return response.statusCode == 200;
-    } catch (e) {
-      print('❌ Error al probar conexión: $e');
-      return false;
+    // Si no se especifica IP de prueba, asegurar que NetworkConfigService esté listo
+    if (testIp == null) {
+      await _ensureNetworkServiceReady();
     }
+
+    final ipToTest = testIp ?? _serverIp;
+
+    try {
+      final url = Uri.parse('http://$ipToTest:3000/status');
+      final response = await http
+          .get(url)
+          .timeout(const Duration(seconds: 3)); // Reducido de 5 a 3 segundos
+
+      if (response.statusCode == 200) {
+        return true;
+      }
+    } catch (e) {
+      print('❌ Error al probar conexión con IP $ipToTest: $e');
+
+      // NUEVO: Si falla y no se especificó IP, intentar con la IP detectada por NetworkConfigService
+      if (testIp == null) {
+        final networkService = NetworkConfigService();
+        final networkIp = networkService.serverIp;
+
+        if (networkIp.isNotEmpty && networkIp != _serverIp) {
+          print(
+            '🔄 GlobalConfig: Intentando conexión con IP de auto-discovery: $networkIp',
+          );
+          try {
+            final fallbackUrl = Uri.parse('http://$networkIp:3000/status');
+            final fallbackResponse = await http
+                .get(fallbackUrl)
+                .timeout(
+                  const Duration(seconds: 2),
+                ); // Timeout más corto para fallback
+
+            if (fallbackResponse.statusCode == 200) {
+              print(
+                '✅ GlobalConfig: Conexión exitosa con IP de auto-discovery, actualizando...',
+              );
+              _serverIp = networkIp;
+              // No bloquear la UI esperando a que se guarde
+              saveConfig(); // Sin await
+              return true;
+            }
+          } catch (fallbackError) {
+            print('❌ Error con IP de auto-discovery: $fallbackError');
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   // Probar conexión específica usando el endpoint del servidor

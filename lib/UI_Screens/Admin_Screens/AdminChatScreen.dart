@@ -145,6 +145,25 @@ class _AdminChatScreenState extends State<AdminChatScreen>
     }
   }
 
+  /// NUEVO: Verifica la conexión SILENCIOSAMENTE sin agregar mensajes al chat
+  Future<void> _checkServerConnectionSilently() async {
+    try {
+      final isConnected = await _globalConfig.testConnection();
+
+      if (mounted) {
+        setState(() {
+          _isConnected = isConnected;
+        });
+      }
+
+      print(
+        '🔌 AdminChat: Conexión verificada silenciosamente - Estado: ${isConnected ? "Conectado" : "Desconectado"}',
+      );
+    } catch (e) {
+      print('❌ AdminChat: Error en verificación silenciosa de conexión: $e');
+    }
+  }
+
   /// Carga el historial de mensajes del admin
   Future<void> _loadMessageHistory() async {
     try {
@@ -482,17 +501,29 @@ Escribe `/help` para más info.''',
                 title: 'Configuración Global del Asistente',
                 content: ChatConfigModalContent(
                   onConfigSaved: () async {
-                    // Recargar configuración global
-                    await _globalConfig.loadConfig();
-                    // Recargar configuraciones locales
-                    await _loadSettings();
-                    // Verificar conexión
-                    await _checkServerConnection();
-                    // Mostrar mensaje de confirmación
-                    if (mounted) {
-                      _addSystemMessage(
-                        "✅ Configuración actualizada desde el modal",
+                    // MEJORADO: Recargar configuraciones SILENCIOSAMENTE sin activar el chat
+                    print(
+                      '🔧 AdminChat: Recargando configuraciones tras cierre de modal...',
+                    );
+
+                    try {
+                      // Recargar configuración global silenciosamente
+                      await _globalConfig.loadConfig();
+
+                      // Recargar configuraciones locales
+                      await _loadSettings();
+
+                      // Verificar conexión SILENCIOSAMENTE (sin agregar mensajes al chat)
+                      await _checkServerConnectionSilently();
+
+                      print(
+                        '✅ AdminChat: Configuraciones recargadas silenciosamente',
                       );
+                    } catch (e) {
+                      print(
+                        '❌ AdminChat: Error al recargar configuraciones: $e',
+                      );
+                      // Solo mostrar error si es crítico, sin activar el chat
                     }
                   },
                 ),

@@ -1,0 +1,35 @@
+# Este es un EJEMPLO de cómo debería verse tu archivo .env en la CARPETA SERVIDOR
+# Copia tu archivo .env real aquí para que pueda validarlo
+
+# ========================================
+# SERVIDOR
+# ========================================
+
+SERVER_IP=
+PORT=3000
+
+# ========================================
+# BASE DE DATOS POSTGRESQL (ACTUALIZADO desde tu db.js)
+# ========================================
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=monito
+
+# ========================================
+# GOOGLE GEMINI API
+# ========================================
+
+# Claves API de Gemini (reemplaza con tus claves reales)
+GEMINI_API_KEY_1=tu_clave_api_gemini_real_1
+GEMINI_API_KEY_2=tu_clave_api_gemini_real_2
+GEMINI_API_KEY_3=tu_clave_api_gemini_real_3
+
+# ========================================
+# CONFIGURACIÓN
+# ========================================
+
+NODE_ENV=development
+TZ=America/Caracas 

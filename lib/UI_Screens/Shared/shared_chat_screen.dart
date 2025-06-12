@@ -171,7 +171,8 @@ class _SharedChatScreenState extends State<SharedChatScreen>
         _showConnectionStatusInAppBar =
             prefs.getBool('show_connection_status') ?? true;
         if (widget.isAdmin) {
-          _serverIp = prefs.getString('server_ip') ?? NetworkConfigService().serverIp;
+          _serverIp =
+              prefs.getString('server_ip') ?? NetworkConfigService().serverIp;
           _currentModelName =
               prefs.getString('gemini_model_name') ?? "gemini-1.5-flash";
         }
@@ -843,8 +844,14 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                   title: 'Configuración del Asistente',
                   content: ChatConfigModalContent(
                     onConfigSaved: () {
-                      // Recargar configuraciones si es necesario
+                      // MEJORADO: Recargar configuraciones silenciosamente sin activar el chat
+                      print(
+                        '🔧 SharedChat: Recargando configuraciones tras cierre de modal...',
+                      );
                       _loadSettings();
+                      print(
+                        '✅ SharedChat: Configuraciones recargadas silenciosamente',
+                      );
                     },
                   ),
                 );

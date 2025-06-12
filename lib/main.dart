@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 import 'Api_services/gemini_service.dart';
 import 'Api_services/network_config_service.dart';
+import 'Api_services/global_config_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'UI_Screens/Widgets/routes.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,41 +22,184 @@ Future<void> main() async {
   // Cargar variables de entorno (opcional)
   await _initializeDotenv();
 
-  // Inicializar configuración de red centralizada
+  // PASO 0.5: Limpiar configuraciones obsoletas ANTES de inicializar servicios
+  await _cleanObsoleteConfigurations();
+
+  print('🌐 Iniciando configuración de red inteligente...');
+
+  // PASO 1: Inicializar NetworkConfigService PRIMERO y COMPLETAMENTE
   final networkConfig = NetworkConfigService();
-  await networkConfig.initialize();
-  print('🌐 Red configurada: ${networkConfig.baseUrl}');
+  bool networkInitialized = false;
 
-  // Inicializar el servicio de notificaciones
-  await NotificationService.initialize();
+  try {
+    // Inicializar con un timeout más largo para permitir que termine completamente
+    networkInitialized = await networkConfig.initialize().timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        print('⏰ Timeout en inicialización de red, intentando recuperación...');
+        return false;
+      },
+    );
+  } catch (e) {
+    print('❌ Error en inicialización inicial de red: $e');
+    networkInitialized = false;
+  }
 
-  // Inicializar el servicio de Gemini (precarga)
-  final geminiService = GeminiService();
+  if (networkInitialized) {
+    print('✅ Red configurada exitosamente: ${networkConfig.baseUrl}');
 
-  // Verificar conexión con el servidor (en segundo plano)
-  unawaited(
-    geminiService.checkServerConnection().then((isConnected) {
-      print(
-        'Conexión con el servidor: [32m${isConnected ? 'EXITOSA' : 'FALLIDA'}[0m',
+    // Mostrar información adicional del servidor si está disponible
+    if (networkConfig.serverInfo != null) {
+      final serverInfo = networkConfig.serverInfo!;
+      final serverName =
+          serverInfo['server']?['name'] ?? 'Servidor desconocido';
+      final serverVersion = serverInfo['server']?['version'] ?? 'N/A';
+      print('📡 Servidor detectado: $serverName v$serverVersion');
+    }
+  } else {
+    print(
+      '⚠️ Configuración inicial fallida, intentando recuperación inteligente...',
+    );
+
+    try {
+      // Intentar recuperación inteligente como fallback
+      final recoverySuccess = await networkConfig.smartRecovery().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏰ Timeout en recuperación inteligente');
+          return false;
+        },
       );
 
-      if (isConnected) {
-        // Intentar cargar el menú para tenerlo precargado
-        unawaited(
-          geminiService.getFullMenu().then((menu) {
-            if (menu != null) {
-              print('Menú precargado con ${menu.length} platos');
-            } else {
-              print('⚠️ No se pudo precargar el menú');
-            }
-          }),
-        );
+      if (recoverySuccess) {
+        print('🧠 Recuperación inteligente exitosa: ${networkConfig.baseUrl}');
+        networkInitialized = true;
+      } else {
+        print('❌ No se pudo establecer conexión automática');
       }
-    }),
+    } catch (e) {
+      print('❌ Error en recuperación inteligente: $e');
+    }
+  }
+
+  // Siempre configurar con valores por defecto si no hay conexión
+  if (!networkInitialized) {
+    print(
+      '🔧 Red configurada con valores por defecto: ${networkConfig.baseUrl}',
+    );
+    print(
+      '💡 Usa el diagnóstico de red en configuración de chat para conectar automáticamente',
+    );
+  }
+
+  // PASO 2: Verificar que NetworkConfigService esté realmente listo antes de continuar
+  print(
+    '🔍 Verificando que NetworkConfigService esté completamente configurado...',
   );
 
-  // Registrar un callback para borrar el historial del chat al cerrar sesión
+  // Dar tiempo adicional para que se complete la configuración
+  int attempts = 0;
+  while (!networkConfig.isConfigured && attempts < 3) {
+    attempts++;
+    print('⏳ Esperando configuración completa (intento $attempts/3)...');
+    await Future.delayed(Duration(seconds: 1));
+  }
+
+  if (networkConfig.isConfigured) {
+    print('✅ NetworkConfigService está completamente configurado');
+  } else {
+    print(
+      '⚠️ NetworkConfigService no está completamente configurado, continuando de todos modos',
+    );
+  }
+
+  // PASO 3: Inicializar el servicio de notificaciones (no requiere red)
+  await NotificationService.initialize();
+
+  // PASO 3.5: Inicializar GlobalConfigService temprano para sincronización
+  print('⚙️ Inicializando GlobalConfigService...');
+  try {
+    final globalConfig = await Future.delayed(Duration.zero, () {
+      final service = GlobalConfigService();
+      return service;
+    });
+
+    // Cargar configuración de forma no bloqueante
+    unawaited(
+      globalConfig
+          .loadConfig()
+          .then((_) {
+            print('✅ GlobalConfigService inicializado exitosamente');
+          })
+          .catchError((e) {
+            print('⚠️ Error al inicializar GlobalConfigService: $e');
+          }),
+    );
+  } catch (e) {
+    print('❌ Error al crear GlobalConfigService: $e');
+  }
+
+  // PASO 4: Inicializar otros servicios que dependen de la red
+  print('🤖 Inicializando servicios que requieren conectividad...');
+
+  // Inicializar el servicio de Gemini (precarga) pero sin bloquear
+  final geminiService = GeminiService();
+
+  // PASO 5: Siempre verificar conexión con el servidor (mejorado)
+  print('🔌 Verificando conexión con el servidor...');
+
+  // Verificar conexión con el servidor (en segundo plano, sin bloquear la UI)
+  unawaited(
+    geminiService
+        .checkServerConnection()
+        .then((isConnected) {
+          print(
+            'Conexión con el servidor: ${isConnected ? 'EXITOSA' : 'FALLIDA'}',
+          );
+
+          if (isConnected) {
+            // Intentar cargar el menú para tenerlo precargado (en segundo plano)
+            unawaited(
+              geminiService.getFullMenu().then((menu) {
+                if (menu != null) {
+                  print('Menú precargado con ${menu.length} platos');
+                } else {
+                  print('⚠️ No se pudo precargar el menú');
+                }
+              }),
+            );
+          } else {
+            // Si no hay conexión, intentar recovery después de unos segundos
+            print('🔄 Programando reintento de conexión...');
+            unawaited(
+              Future.delayed(const Duration(seconds: 10)).then((_) async {
+                print('🔄 Reintentando conexión automática...');
+                await networkConfig.refreshConfiguration();
+                final retryConnected =
+                    await geminiService.checkServerConnection();
+                print(
+                  'Reintento de conexión: ${retryConnected ? 'EXITOSO' : 'FALLÓ'}',
+                );
+              }),
+            );
+          }
+        })
+        .catchError((e) {
+          print('❌ Error en verificación de conexión: $e');
+          // Programar reintento en caso de error
+          unawaited(
+            Future.delayed(const Duration(seconds: 15)).then((_) async {
+              print('🔄 Reintentando después de error...');
+              await networkConfig.refreshConfiguration();
+            }),
+          );
+        }),
+  );
+
+  // PASO 6: Configurar callback de logout
   setupLogoutCallback();
+
+  print('🚀 Iniciando aplicación...');
 
   // Iniciar la aplicación
   runApp(const MainApp());
@@ -124,9 +268,8 @@ Future<void> _initializeDotenv() async {
     );
     // Inicializar dotenv con valores por defecto
     try {
-      // Crear un mapa con valores por defecto
+      // Crear un mapa con valores por defecto (sin IP hardcodeada)
       const defaultEnvValues = {
-        'NODE_SERVER_IP': '192.168.1.121',
         'NODE_SERVER_PORT': '3000',
         'GEMINI_API_KEY_1': 'FALLBACK_KEY_1',
         'GEMINI_API_KEY_2': 'FALLBACK_KEY_2',
@@ -158,9 +301,8 @@ Future<void> _initializeDotenv() async {
 
 Future<void> _createDefaultEnvFile() async {
   try {
-    // Crear el archivo .env con valores por defecto
+    // Crear el archivo .env con valores por defecto (sin IP hardcodeada)
     const defaultEnvContent = '''
-NODE_SERVER_IP=192.168.1.121
 NODE_SERVER_PORT=3000
 GEMINI_API_KEY_1=FALLBACK_KEY_1
 GEMINI_API_KEY_2=FALLBACK_KEY_2
@@ -177,5 +319,61 @@ GEMINI_API_KEY_3=FALLBACK_KEY_3
     print('❌ Error crítico al crear archivo .env: $e');
     print('⚠️ La aplicación continuará sin archivo .env');
     // Si todo falla, al menos la app no crashea
+  }
+}
+
+// NUEVO: Función para limpiar configuraciones obsoletas al inicio
+Future<void> _cleanObsoleteConfigurations() async {
+  try {
+    print('🧹 Limpiando configuraciones obsoletas al inicio...');
+    final prefs = await SharedPreferences.getInstance();
+
+    // Lista de IPs obsoletas que debemos limpiar
+    const obsoleteIPs = ['192.168.1.121', '192.168.1.136'];
+    bool hasChanges = false;
+
+    // Limpiar configuraciones de NetworkConfigService
+    final networkServerIp = prefs.getString('network_server_ip');
+    if (networkServerIp != null && obsoleteIPs.contains(networkServerIp)) {
+      await prefs.remove('network_server_ip');
+      await prefs.remove('network_server_port');
+      await prefs.remove('network_last_updated');
+      await prefs.remove('network_server_info');
+      print(
+        '🧹 Limpiada configuración obsoleta de NetworkConfigService: $networkServerIp',
+      );
+      hasChanges = true;
+    }
+
+    // Limpiar configuraciones de GlobalConfigService
+    final globalServerIp = prefs.getString('global_server_ip');
+    if (globalServerIp != null && obsoleteIPs.contains(globalServerIp)) {
+      await prefs.remove('global_server_ip');
+      print(
+        '🧹 Limpiada configuración obsoleta de GlobalConfigService: $globalServerIp',
+      );
+      hasChanges = true;
+    }
+
+    // Limpiar configuraciones legacy
+    final legacyServerIp = prefs.getString('serverIp');
+    if (legacyServerIp != null && obsoleteIPs.contains(legacyServerIp)) {
+      await prefs.remove('serverIp');
+      await prefs.remove('serverPort');
+      await prefs.remove('lastDiscoveryCheck');
+      await prefs.remove('lastSuccessfulConnect');
+      print('🧹 Limpiada configuración legacy obsoleta: $legacyServerIp');
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      print(
+        '✅ Configuraciones obsoletas limpiadas, se activará auto-discovery',
+      );
+    } else {
+      print('✅ No se encontraron configuraciones obsoletas');
+    }
+  } catch (error) {
+    print('⚠️ Error al limpiar configuraciones obsoletas: $error');
   }
 }

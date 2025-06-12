@@ -25,6 +25,7 @@ import 'package:http/http.dart' as http;
 import '../../Api_services/cart_service.dart';
 import '../../services/cart_event_bus.dart';
 import '../../Api_services/network_config_service.dart';
+import '../../Api_services/global_config_service.dart'; // NUEVO: Importar GlobalConfigService
 import 'background_scaffold.dart';
 
 // PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
@@ -110,6 +111,11 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   int _cachedCartCount = 0;
   DateTime _lastCartCountCheck = DateTime.now();
 
+  // NUEVO: Sistema de inicialización robusto
+  bool _servicesInitialized = false;
+  Timer? _serviceInitializationTimer;
+  Completer<void>? _initializationCompleter;
+
   @override
   void initState() {
     super.initState();
@@ -117,8 +123,17 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     _pageController = PageController(initialPage: _currentIndex);
     _pageStreamController = StreamController<int>.broadcast();
     _pageStream = _pageStreamController.stream;
+
+    // OPTIMIZADO: Cargar datos de usuario INMEDIATAMENTE para no bloquear UI
     _loadUserData();
     _checkDebugMode();
+
+    // OPTIMIZADO: Inicializar servicios en SEGUNDO PLANO sin bloquear la carga inicial
+    Future.delayed(Duration(milliseconds: 100), () {
+      if (mounted) {
+        _initializeServicesRobustly();
+      }
+    });
 
     // Configurar un temporizador para actualizar el contador del carrito más frecuentemente
     _cartUpdateTimer = Timer.periodic(Duration(milliseconds: 1000), (_) async {
@@ -171,7 +186,17 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
     // NUEVO: Cancelar suscripción a eventos
     _cartEventSubscription?.cancel();
-    print('⚡ BottomNav: Cancelada suscripción a eventos del CartEventBus');
+
+    // NUEVO: Cancelar timers de inicialización
+    _serviceInitializationTimer?.cancel();
+
+    // NUEVO: Completar cualquier inicialización pendiente
+    if (_initializationCompleter != null &&
+        !_initializationCompleter!.isCompleted) {
+      _initializationCompleter!.complete();
+    }
+
+    print('⚡ BottomNav: Limpieza completa - eventos, timers y servicios');
 
     super.dispose();
   }
@@ -233,16 +258,16 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     }
   }
 
-  // Método para cambiar de página de manera más eficiente
+  // Método para cambiar de página de manera más eficiente (SÚPER OPTIMIZADO)
   Future<void> _changePage(int index) async {
     if (index != _currentIndex) {
       try {
-        print('🧭 Navegando a página $index desde $_currentIndex');
+        print('🧭 Navegando a página $index desde $_currentIndex (optimizado)');
 
         // Guardar el índice anterior para referencia
         final fromIndex = _currentIndex;
 
-        // Cambiar la página inmediatamente para mejor respuesta
+        // Cambiar la página INMEDIATAMENTE sin esperar servicios
         setState(() {
           _currentIndex = index;
         });
@@ -255,16 +280,73 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
           _pageController = PageController(initialPage: index);
         }
 
-        // Actualizar contadores pero sin forzar múltiples sincronizaciones
-        final cartService = CartService();
-        await cartService.registerScreenNavigation(fromIndex, index);
+        // Ejecutar tareas NO CRÍTICAS en segundo plano sin bloquear navegación
+        Future.delayed(Duration.zero, () async {
+          if (mounted) {
+            try {
+              // Actualizar contadores pero sin forzar múltiples sincronizaciones
+              final cartService = CartService();
+              await cartService.registerScreenNavigation(fromIndex, index);
 
-        // Una única actualización del contador después de cambiar de página
-        await _updateCartItemCount();
+              // Una única actualización del contador después de cambiar de página
+              await _updateCartItemCount();
+
+              // OPTIMIZADO: Solo verificar servicios si realmente es necesario
+              if (!_servicesInitialized) {
+                await _ensureServicesReady();
+              }
+
+              // OPTIMIZADO: Verificar conectividad de chat solo cuando sea crítico
+              if (index == 2 && _servicesInitialized) {
+                _ensureChatConnectivityAsync();
+              }
+            } catch (e) {
+              print('⚠️ Error en tareas de segundo plano: $e');
+            }
+          }
+        });
+
+        print('✅ Navegación completada inmediatamente');
       } catch (e) {
         print('❌ Error al cambiar página: $e');
       }
     }
+  }
+
+  // NUEVO: Asegurar conectividad específica para el chat de forma asíncrona
+  void _ensureChatConnectivityAsync() {
+    Future.delayed(Duration(milliseconds: 200), () async {
+      if (mounted) {
+        try {
+          print('💬 Verificando conectividad específica para chat (async)...');
+
+          // Verificar que GlobalConfigService esté sincronizado
+          final globalConfigService = GlobalConfigService();
+          await globalConfigService.loadConfig().timeout(Duration(seconds: 1));
+
+          // Verificar conectividad directa al endpoint de chat
+          final networkService = NetworkConfigService();
+          final baseUrl = networkService.baseUrl;
+
+          final response = await http
+              .get(
+                Uri.parse('$baseUrl/config/sync'),
+                headers: {'Content-Type': 'application/json'},
+              )
+              .timeout(Duration(seconds: 2));
+
+          if (response.statusCode == 200) {
+            print('✅ Chat: Conectividad verificada en segundo plano');
+          } else {
+            print(
+              '⚠️ Chat: Respuesta inesperada del servidor: ${response.statusCode}',
+            );
+          }
+        } catch (e) {
+          print('⚠️ Chat: Error en verificación de conectividad: $e');
+        }
+      }
+    });
   }
 
   // Verificar si hay una solicitud para navegar a una pestaña específica
@@ -529,15 +611,23 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         body: PageView(
           controller: _pageController,
           physics: const NeverScrollableScrollPhysics(),
-          onPageChanged: (index) {
+          onPageChanged: (index) async {
             setState(() {
               _currentIndex = index;
             });
+
+            // NUEVO: Asegurar servicios cuando se cambia de página programáticamente
+            await _ensureServicesReady();
 
             // Actualizar contador del carrito cuando cambia la página
             if (_userRole == 1) {
               // Solo para clientes
               _updateCartItemCount();
+            }
+
+            // OPTIMIZADO: Verificación específica para chat en segundo plano
+            if (index == 2) {
+              _ensureChatConnectivityAsync();
             }
           },
           children: _getPagesForRole(_userRole),
@@ -1203,7 +1293,8 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
     // Obtener información básica del usuario desde SharedPreferences
     final userId = prefs.getInt('user_id');
-    final serverIp = prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
+    final serverIp =
+        prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
     final serverPort = '3000';
 
     // Valores por defecto mientras se cargan los datos
@@ -1774,6 +1865,177 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
       });
     } catch (e) {
       print('Error al verificar modo debug: $e');
+    }
+  }
+
+  // NUEVO: Método para inicializar servicios de forma robusta (OPTIMIZADO)
+  Future<void> _initializeServicesRobustly() async {
+    try {
+      if (_servicesInitialized) {
+        print('🔄 Servicios ya inicializados, omitiendo...');
+        return;
+      }
+
+      print(
+        '🚀 BottomNav: Iniciando inicialización optimizada de servicios...',
+      );
+
+      // Crear un Completer para rastrear la inicialización
+      _initializationCompleter = Completer<void>();
+
+      // Configurar un timeout de seguridad MUCHO MÁS CORTO
+      _serviceInitializationTimer = Timer(Duration(seconds: 3), () {
+        if (!_initializationCompleter!.isCompleted) {
+          print(
+            '⏰ BottomNav: Timeout rápido alcanzado, completando inmediatamente',
+          );
+          _servicesInitialized = true;
+          _initializationCompleter!.complete();
+        }
+      });
+
+      // 1. Inicializar NetworkConfigService de forma no bloqueante
+      print('📡 BottomNav: Inicializando NetworkConfigService (async)...');
+      final networkService = NetworkConfigService();
+
+      // Solo un intento rápido
+      try {
+        await networkService.initialize().timeout(Duration(seconds: 1));
+        print('✅ BottomNav: NetworkConfigService inicializado rápidamente');
+      } catch (e) {
+        print(
+          '⚠️ BottomNav: NetworkConfigService falló, continuando sin él: $e',
+        );
+      }
+
+      // 2. Inicializar GlobalConfigService de forma no bloqueante
+      print('🌐 BottomNav: Inicializando GlobalConfigService (async)...');
+      final globalConfigService = GlobalConfigService();
+
+      // Solo un intento rápido
+      try {
+        await globalConfigService.loadConfig().timeout(Duration(seconds: 1));
+        print('✅ BottomNav: GlobalConfigService inicializado rápidamente');
+      } catch (e) {
+        print(
+          '⚠️ BottomNav: GlobalConfigService falló, continuando sin él: $e',
+        );
+      }
+
+      // 3. NO verificar conectividad aquí para no ralentizar
+      print(
+        '🚀 BottomNav: Saltando verificación de conectividad para mayor velocidad',
+      );
+
+      // Marcar como inicializado inmediatamente
+      _servicesInitialized = true;
+
+      print('🎯 BottomNav: Inicialización optimizada completada rápidamente');
+
+      // Cancelar el timer ya que completamos
+      _serviceInitializationTimer?.cancel();
+
+      // Completar la inicialización
+      if (!_initializationCompleter!.isCompleted) {
+        _initializationCompleter!.complete();
+      }
+
+      // NUEVO: Ejecutar verificaciones adicionales en segundo plano SIN bloquear UI
+      _runBackgroundVerification();
+    } catch (e) {
+      print('❌ BottomNav: Error en inicialización optimizada: $e');
+      _servicesInitialized =
+          true; // Marcar como inicializado para evitar bloqueos
+
+      if (!_initializationCompleter!.isCompleted) {
+        _initializationCompleter!.complete();
+      }
+    }
+  }
+
+  // NUEVO: Ejecutar verificaciones en segundo plano sin bloquear UI
+  void _runBackgroundVerification() {
+    // Ejecutar en un Future independiente que no bloquea el UI
+    Future.delayed(Duration(milliseconds: 500), () async {
+      print('🔍 BottomNav: Ejecutando verificaciones en segundo plano...');
+
+      try {
+        // Verificar conectividad en segundo plano
+        bool connectivityOk = await _verifyBasicConnectivity();
+        print(
+          '🔗 BottomNav: Verificación de conectividad en background: ${connectivityOk ? '✅' : '❌'}',
+        );
+      } catch (e) {
+        print('⚠️ BottomNav: Verificación en background falló: $e');
+      }
+    });
+  }
+
+  // NUEVO: Verificar conectividad básica (OPTIMIZADO)
+  Future<bool> _verifyBasicConnectivity() async {
+    try {
+      final networkService = NetworkConfigService();
+      final baseUrl = networkService.baseUrl;
+
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/status'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(Duration(seconds: 2)); // Reducido de 5 a 2 segundos
+
+      if (response.statusCode == 200) {
+        print('✅ BottomNav: Conectividad verificada correctamente');
+        return true;
+      } else {
+        print(
+          '⚠️ BottomNav: Respuesta inesperada del servidor: ${response.statusCode}',
+        );
+        return false;
+      }
+    } catch (e) {
+      print('⚠️ BottomNav: Error al verificar conectividad: $e');
+      return false;
+    }
+  }
+
+  // NUEVO: Asegurar servicios antes de navegación (SÚPER OPTIMIZADO)
+  Future<void> _ensureServicesReady() async {
+    // OPTIMIZACIÓN: Si los servicios están inicializados, no hacer nada
+    if (_servicesInitialized) {
+      return;
+    }
+
+    // Si hay una inicialización en progreso, esperar MÁXIMO 500ms
+    if (_initializationCompleter != null &&
+        !_initializationCompleter!.isCompleted) {
+      print('⏳ BottomNav: Esperando inicialización (timeout rápido)...');
+      try {
+        await _initializationCompleter!.future.timeout(
+          Duration(milliseconds: 500),
+        );
+      } catch (e) {
+        print(
+          '⚠️ BottomNav: Timeout en espera de inicialización, continuando...',
+        );
+        _servicesInitialized = true;
+      }
+      return;
+    }
+
+    // Solo re-inicializar si realmente es necesario (con timeout corto)
+    if (!_servicesInitialized) {
+      print(
+        '🔄 BottomNav: Servicios no inicializados, inicialización rápida...',
+      );
+      try {
+        await _initializeServicesRobustly().timeout(Duration(seconds: 1));
+      } catch (e) {
+        print(
+          '⚠️ BottomNav: Inicialización rápida falló, marcando como completa: $e',
+        );
+        _servicesInitialized = true;
+      }
     }
   }
 }

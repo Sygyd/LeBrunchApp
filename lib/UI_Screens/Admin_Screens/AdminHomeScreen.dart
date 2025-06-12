@@ -48,7 +48,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
       // Obtener platos disponibles
       final availableDishesResponse = await http.get(
-        Uri.parse('$baseUrl/menu?disponibilidad=true'),
+        Uri.parse('$baseUrl/menu-with-corrected-urls?disponibilidad=true'),
       );
 
       if (availableDishesResponse.statusCode == 200) {
@@ -133,7 +133,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   // Método para obtener la URL del servidor
   Future<String> getServerUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverIp = prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
+    final serverIp =
+        prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
     return 'http://$serverIp:3000';
   }
 

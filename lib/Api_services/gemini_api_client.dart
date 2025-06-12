@@ -2,24 +2,20 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path/path.dart' as path;
 import 'network_config_service.dart';
 
 /// Cliente para comunicarse directamente con la API de Gemini
 /// y con compatibilidad con el MCP del servidor Node.js
 class GeminiApiClient {
-  // URL base de la API de Gemini (no usada directamente si siempre vamos al servidor)
-  // static const String baseUrl = "https://generativelanguage.googleapis.com";
-
   // Cliente HTTP normal
   final http.Client _client = http.Client();
 
   // Clave API actual (puede ser usada para otras funciones, pero no para el chat con Brunchy)
   String _apiKey;
 
-  // Servidor de Node.js para comunicación principal
-  final String _serverUrl;
+  // Instancia de NetworkConfigService para obtener configuración dinámica
+  final NetworkConfigService _networkConfig = NetworkConfigService();
 
   // Modelos de Gemini ordenados por preferencia (no usados directamente si siempre vamos al servidor)
   static const List<String> _models = [
@@ -28,23 +24,53 @@ class GeminiApiClient {
     'gemini-1.0-pro',
   ];
 
-  // Método estático para construir la URL del servidor de forma segura
-  static String _buildServerUrl() {
-    try {
-      final ip = dotenv.get('NODE_SERVER_IP', fallback: NetworkConfigService().serverIp);
-      final port = dotenv.get('NODE_SERVER_PORT', fallback: '3000');
-      return 'http://$ip:$port';
-    } catch (e) {
-      print('⚠️ Error al acceder a dotenv en GeminiApiClient: $e');
-      // Usar valores por defecto si dotenv no está disponible
-      return NetworkConfigService().baseUrl;
+  // Método para obtener la URL del servidor usando NetworkConfigService
+  Future<String> _getServerUrl() async {
+    // MEJORADO: Asegurar que la configuración esté inicializada con reintentos
+    int attempts = 0;
+    const maxAttempts = 3;
+
+    while (!_networkConfig.isConfigured && attempts < maxAttempts) {
+      attempts++;
+      print(
+        '🔄 GeminiApiClient: Inicializando NetworkConfigService (intento $attempts/$maxAttempts)...',
+      );
+
+      try {
+        final success = await _networkConfig.initialize().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            print('⏰ GeminiApiClient: Timeout en inicialización de red');
+            return false;
+          },
+        );
+
+        if (success && _networkConfig.isConfigured) {
+          break;
+        }
+
+        if (attempts < maxAttempts) {
+          await Future.delayed(Duration(seconds: attempts));
+        }
+      } catch (e) {
+        print(
+          '❌ GeminiApiClient: Error en inicialización (intento $attempts): $e',
+        );
+        if (attempts < maxAttempts) {
+          await Future.delayed(Duration(seconds: attempts));
+        }
+      }
     }
+
+    final serverUrl = _networkConfig.baseUrl;
+    print(
+      '🌐 GeminiApiClient - URL del servidor: $serverUrl (configurado: ${_networkConfig.isConfigured})',
+    );
+    return serverUrl;
   }
 
   // Constructor
-  GeminiApiClient(this._apiKey) : _serverUrl = _buildServerUrl();
-
-  // Método estático para construir la URL del servidor usando NetworkConfigService
+  GeminiApiClient(this._apiKey);
 
   // Actualizar la clave API
   void updateApiKey(String newApiKey) {
@@ -103,11 +129,13 @@ class GeminiApiClient {
     int timeout = 15,
   }) async {
     try {
+      final serverUrl = await _getServerUrl();
+
       print('🚀 GeminiApiClient: INICIANDO _callServerChat');
       print('📨 GeminiApiClient: Mensaje: "$message"');
       print('🆔 GeminiApiClient: SessionId: "$sessionId"');
       print('👤 GeminiApiClient: ClientId: ${clientId ?? "No proporcionado"}');
-      print('🌐 GeminiApiClient: URL del servidor: $_serverUrl/chat');
+      print('🌐 GeminiApiClient: URL del servidor: $serverUrl/chat');
 
       final Map<String, dynamic> requestBodyMap = {
         'message': message,
@@ -125,7 +153,7 @@ class GeminiApiClient {
 
       final response = await _client
           .post(
-            Uri.parse('$_serverUrl/chat'),
+            Uri.parse('$serverUrl/chat'),
             headers: {'Content-Type': 'application/json'},
             body: requestBody,
           )
@@ -173,12 +201,14 @@ class GeminiApiClient {
   // Método para obtener el menú completo del servidor Node.js
   Future<List<dynamic>?> getFullMenuFromServer() async {
     try {
+      final serverUrl = await _getServerUrl();
+
       print(
-        'Solicitando menú completo al servidor Node.js ($_serverUrl/menu-completo)...',
+        'Solicitando menú completo al servidor Node.js ($serverUrl/menu-completo-corrected)...',
       );
       final response = await _client
           .get(
-            Uri.parse('$_serverUrl/menu-completo'),
+            Uri.parse('$serverUrl/menu-completo-corrected'),
             headers: {'Content-Type': 'application/json'},
           )
           .timeout(
@@ -249,10 +279,12 @@ class GeminiApiClient {
         };
       }
 
+      final serverUrl = await _getServerUrl();
+
       // Crear la solicitud multipart
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$_serverUrl/audio/process'),
+        Uri.parse('$serverUrl/audio/process'),
       );
 
       // Agregar headers
@@ -273,7 +305,7 @@ class GeminiApiClient {
       request.files.add(audioFile);
 
       print('📤 GeminiApiClient: Enviando audio a Gemini...');
-      print('🌐 GeminiApiClient: URL: $_serverUrl/audio/process');
+      print('🌐 GeminiApiClient: URL: $serverUrl/audio/process');
 
       // Enviar la solicitud
       final response = await request.send().timeout(

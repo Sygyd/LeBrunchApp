@@ -1,36 +1,107 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../network_config_service.dart';
 
 class MenuService {
-  // Método para obtener la URL base del servidor
+  final NetworkConfigService _networkConfig = NetworkConfigService();
+
+  // Método para obtener la URL base del servidor usando NetworkConfigService
   Future<String> _getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverIp =
-        prefs.getString('serverIp') ??
-        dotenv.env['NODE_SERVER_IP'] ??
-        NetworkConfigService().serverIp;
-    final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-    final baseUrl = 'http://$serverIp:$serverPort';
-    print('🌐 URL base del servidor: $baseUrl');
+    // Asegurar que la configuración esté inicializada
+    if (!_networkConfig.isConfigured) {
+      await _networkConfig.initialize();
+    }
+
+    final baseUrl = _networkConfig.baseUrl;
+    print('🌐 MenuService - URL base del servidor: $baseUrl');
     return baseUrl;
   }
 
+  // NUEVO: Método para corregir las URLs de imágenes en el servidor
+  Future<Map<String, dynamic>> fixImageUrls() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      print('🔧 MenuService: Corrigiendo URLs de imágenes...');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/fix-image-urls'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('✅ URLs de imágenes corregidas exitosamente');
+        return data;
+      } else {
+        print('❌ Error al corregir URLs: ${response.statusCode}');
+        throw Exception('Error del servidor: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error en fixImageUrls: $e');
+      throw Exception('Error al corregir URLs de imágenes: $e');
+    }
+  }
+
+  // ACTUALIZADO: Método que usa el endpoint con URLs corregidas dinámicamente
   Future<List<Map<String, dynamic>>> getDishes() async {
     try {
       final baseUrl = await _getBaseUrl();
-      final response = await http.get(Uri.parse('$baseUrl/menu'));
+
+      // Usar el endpoint que corrige URLs dinámicamente
+      final response = await http.get(
+        Uri.parse('$baseUrl/menu-with-corrected-urls'),
+      );
 
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
-        return List<Map<String, dynamic>>.from(data);
+        final dishes = List<Map<String, dynamic>>.from(data);
+
+        print('🍽️ Platos obtenidos con URLs corregidas: ${dishes.length}');
+
+        // Log de algunas URLs para debug
+        if (dishes.isNotEmpty) {
+          for (int i = 0; i < (dishes.length < 3 ? dishes.length : 3); i++) {
+            final dish = dishes[i];
+            print('   📸 ${dish['nombre']}: ${dish['imagen_url']}');
+          }
+        }
+
+        return dishes;
       } else {
         throw Exception('Error al obtener platos: ${response.statusCode}');
       }
     } catch (e) {
+      print('❌ Error al obtener platos: $e');
+      throw Exception('Error de conexión: $e');
+    }
+  }
+
+  // NUEVO: Método para obtener menú completo con URLs corregidas
+  Future<List<Map<String, dynamic>>> getMenuCompleto() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+
+      // Usar el endpoint que corrige URLs dinámicamente
+      final response = await http.get(
+        Uri.parse('$baseUrl/menu-completo-corrected'),
+      );
+
+      if (response.statusCode == 200) {
+        List<dynamic> data = json.decode(response.body);
+        final dishes = List<Map<String, dynamic>>.from(data);
+
+        print(
+          '🍽️ Menú completo obtenido con URLs corregidas: ${dishes.length}',
+        );
+        return dishes;
+      } else {
+        throw Exception(
+          'Error al obtener menú completo: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      print('❌ Error al obtener menú completo: $e');
       throw Exception('Error de conexión: $e');
     }
   }
@@ -61,6 +132,7 @@ class MenuService {
       var response = await request.send();
 
       if (response.statusCode == 201) {
+        print('✅ Plato agregado exitosamente');
         return true;
       } else {
         throw Exception(
@@ -68,6 +140,7 @@ class MenuService {
         );
       }
     } catch (e) {
+      print('❌ Error al agregar plato: $e');
       throw Exception('Error al agregar plato: $e');
     }
   }

@@ -4,24 +4,36 @@ const os = require('os');
 // Función para obtener la IP local automáticamente
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
+  const candidates = [];
   
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       // Buscar IPv4 que no sea localhost
       if (iface.family === 'IPv4' && !iface.internal) {
-        // Priorizar IPs privadas (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-        if (iface.address.startsWith('192.168.') || 
-            iface.address.startsWith('10.') ||
-            (iface.address.startsWith('172.') && 
-             parseInt(iface.address.split('.')[1]) >= 16 && 
-             parseInt(iface.address.split('.')[1]) <= 31)) {
-          return iface.address;
+        // Recopilar todas las IPs privadas
+        if (iface.address.startsWith('192.168.')) {
+          candidates.push({ ip: iface.address, priority: 1, interface: name }); // Prioridad alta
+        } else if (iface.address.startsWith('10.')) {
+          candidates.push({ ip: iface.address, priority: 2, interface: name }); // Prioridad media
+        } else if (iface.address.startsWith('172.') && 
+                   parseInt(iface.address.split('.')[1]) >= 16 && 
+                   parseInt(iface.address.split('.')[1]) <= 31) {
+          candidates.push({ ip: iface.address, priority: 3, interface: name }); // Prioridad baja
         }
       }
     }
   }
   
+  // Ordenar por prioridad y seleccionar la mejor
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => a.priority - b.priority);
+    console.log(`🔍 IPs detectadas:`, candidates.map(c => `${c.ip} (${c.interface}, prioridad ${c.priority})`));
+    console.log(`✅ Seleccionada: ${candidates[0].ip} (${candidates[0].interface})`);
+    return candidates[0].ip;
+  }
+  
   // Fallback a localhost si no encuentra IP privada
+  console.log('⚠️ No se encontraron IPs privadas, usando localhost');
   return '127.0.0.1';
 }
 

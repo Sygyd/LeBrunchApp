@@ -128,7 +128,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           _isLoading = false;
         });
         _showErrorModal(
-          'Error al cargar usuarios. Comprueba que el servidor esté activo (192.168.1.121:3000)',
+          'Error al cargar usuarios. Comprueba que el servidor esté activo y la configuración de red.',
         );
       }
     }

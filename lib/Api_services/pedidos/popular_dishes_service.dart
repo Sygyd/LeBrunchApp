@@ -6,16 +6,17 @@ import 'package:intl/intl.dart';
 import '../network_config_service.dart';
 
 class PopularDishesService {
-  // Método para obtener la URL base del servidor
+  final NetworkConfigService _networkConfig = NetworkConfigService();
+
+  // Método para obtener la URL base del servidor usando NetworkConfigService
   Future<String> _getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverIp =
-        prefs.getString('serverIp') ??
-        dotenv.env['NODE_SERVER_IP'] ??
-        NetworkConfigService().serverIp;
-    final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-    final baseUrl = 'http://$serverIp:$serverPort';
-    print('🌐 URL base del servidor: $baseUrl');
+    // Asegurar que la configuración esté inicializada
+    if (!_networkConfig.isConfigured) {
+      await _networkConfig.initialize();
+    }
+
+    final baseUrl = _networkConfig.baseUrl;
+    print('🌐 PopularDishesService - URL base del servidor: $baseUrl');
     return baseUrl;
   }
 
@@ -119,8 +120,10 @@ class PopularDishesService {
     try {
       final baseUrl = await _getBaseUrl();
 
-      // Obtener todos los platos del menú
-      final response = await http.get(Uri.parse('$baseUrl/menu'));
+      // Obtener todos los platos del menú con URLs corregidas
+      final response = await http.get(
+        Uri.parse('$baseUrl/menu-with-corrected-urls'),
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> menuItems = json.decode(response.body);
@@ -160,11 +163,33 @@ class PopularDishesService {
   // Método para asegurar que la URL de la imagen esté completa
   Future<String> _ensureFullImageUrl(String? imageUrl) async {
     if (imageUrl == null || imageUrl.isEmpty) return '';
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))
-      return imageUrl;
 
+    // Si ya es una URL completa, verificar si es de nuestro servidor actual
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      final baseUrl = await _getBaseUrl();
+
+      // Si no es de nuestro servidor actual, corregir la URL
+      if (!imageUrl.startsWith(baseUrl)) {
+        // Extraer solo el nombre del archivo
+        final match = RegExp(r'/uploads/(.+)$').firstMatch(imageUrl);
+        if (match != null && match.group(1) != null) {
+          final filename = match.group(1)!;
+          final correctedUrl = '$baseUrl/uploads/$filename';
+          print('🔧 URL corregida: $imageUrl → $correctedUrl');
+          return correctedUrl;
+        }
+      }
+
+      return imageUrl;
+    }
+
+    // Si es una URL relativa, convertirla a absoluta
     final baseUrl = await _getBaseUrl();
-    return '$baseUrl/$imageUrl';
+    final fullUrl =
+        imageUrl.startsWith('/') ? '$baseUrl$imageUrl' : '$baseUrl/$imageUrl';
+
+    print('🔗 URL convertida a absoluta: $imageUrl → $fullUrl');
+    return fullUrl;
   }
 
   // Método optimizado para procesar URLs de imágenes
@@ -180,9 +205,25 @@ class PopularDishesService {
       final originalUrl = dish['imagen_url'];
 
       if (originalUrl != null && originalUrl.isNotEmpty) {
-        if (!originalUrl.startsWith('http://') &&
-            !originalUrl.startsWith('https://')) {
-          processedDish['imagen_url'] = '$baseUrl/$originalUrl';
+        if (originalUrl.startsWith('http://') ||
+            originalUrl.startsWith('https://')) {
+          // Si no es de nuestro servidor actual, corregir la URL
+          if (!originalUrl.startsWith(baseUrl)) {
+            final match = RegExp(r'/uploads/(.+)$').firstMatch(originalUrl);
+            if (match != null && match.group(1) != null) {
+              final filename = match.group(1)!;
+              processedDish['imagen_url'] = '$baseUrl/uploads/$filename';
+              print(
+                '🔧 URL procesada: $originalUrl → ${processedDish['imagen_url']}',
+              );
+            }
+          }
+        } else {
+          // URL relativa, convertir a absoluta
+          processedDish['imagen_url'] =
+              originalUrl.startsWith('/')
+                  ? '$baseUrl$originalUrl'
+                  : '$baseUrl/$originalUrl';
         }
       }
 
