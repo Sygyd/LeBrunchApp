@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../config.dart'; // 👈 NUEVA LÍNEA: Usar configuración simple
 
 class NetworkConfigService {
   static final NetworkConfigService _instance =
@@ -12,78 +13,169 @@ class NetworkConfigService {
   factory NetworkConfigService() => _instance;
   NetworkConfigService._internal();
 
+  // 👈 CONFIGURACIÓN PRINCIPAL: Usar config.dart como fuente primaria
+  String get serverIp => AppConfig.serverIp;
+  String get baseUrl => AppConfig.serverUrl;
+
+  // Auto-discovery como respaldo (solo si es necesario)
+  String? _discoveredIp;
+  bool _isInitialized = false;
+
+  // ✅ INICIALIZACIÓN SIMPLE
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    print('🔧 Inicializando NetworkConfigService...');
+    print('📍 IP configurada: ${AppConfig.serverIp}');
+    print('🌐 URL configurada: ${AppConfig.serverUrl}');
+
+    // Probar conexión con la IP configurada
+    final isConfiguredIpWorking = await _testConnection(AppConfig.serverIp);
+
+    if (isConfiguredIpWorking) {
+      print('✅ IP configurada funciona correctamente');
+      _isInitialized = true;
+      return;
+    }
+
+    print('⚠️ IP configurada no responde, intentando auto-discovery...');
+
+    // Solo hacer auto-discovery si la IP configurada no funciona
+    await _performQuickDiscovery();
+    _isInitialized = true;
+  }
+
+  // 🧪 PROBAR CONEXIÓN RÁPIDA
+  Future<bool> _testConnection(String ip) async {
+    try {
+      final response = await http
+          .get(Uri.parse('http://$ip:3000/status'))
+          .timeout(const Duration(seconds: 2));
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 🔍 AUTO-DISCOVERY RÁPIDO (solo como fallback)
+  Future<void> _performQuickDiscovery() async {
+    try {
+      print('🚀 Iniciando auto-discovery rápido...');
+
+      // Obtener rango de IP local del dispositivo
+      final localIp = await _getDeviceLocalIp();
+      if (localIp == null) {
+        print('❌ No se pudo detectar IP local del dispositivo');
+        return;
+      }
+
+      final range = localIp.substring(0, localIp.lastIndexOf('.'));
+      print('📱 Rango local detectado: $range (desde $localIp)');
+
+      // Probar IPs comunes primero
+      final commonIps = [
+        '$range.1',
+        '$range.100',
+        '$range.101',
+        '$range.121',
+        '$range.136',
+      ];
+
+      for (String ip in commonIps) {
+        if (await _testConnection(ip)) {
+          print('✅ Servidor encontrado en: $ip');
+          _discoveredIp = ip;
+          return;
+        }
+      }
+
+      print('❌ No se encontró servidor en auto-discovery');
+    } catch (e) {
+      print('❌ Error en auto-discovery: $e');
+    }
+  }
+
+  // 📱 OBTENER IP LOCAL DEL DISPOSITIVO
+  Future<String?> _getDeviceLocalIp() async {
+    try {
+      final interfaces = await NetworkInterface.list();
+      for (NetworkInterface interface in interfaces) {
+        for (InternetAddress addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            if (addr.address.startsWith('192.168.') ||
+                addr.address.startsWith('10.') ||
+                (addr.address.startsWith('172.') &&
+                    int.parse(addr.address.split('.')[1]) >= 16 &&
+                    int.parse(addr.address.split('.')[1]) <= 31)) {
+              return addr.address;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error obteniendo IP local: $e');
+    }
+    return null;
+  }
+
+  // 📡 OBTENER IP EFECTIVA (configurada o descubierta)
+  String getEffectiveIp() {
+    // Si hay una IP descubierta que funciona, usarla
+    if (_discoveredIp != null) {
+      print('🔄 Usando IP descubierta: $_discoveredIp');
+      return _discoveredIp!;
+    }
+
+    // Sino, usar la configurada
+    return AppConfig.serverIp;
+  }
+
+  // 🌐 OBTENER URL EFECTIVA
+  String getEffectiveUrl() {
+    final effectiveIp = getEffectiveIp();
+    return 'http://$effectiveIp:3000';
+  }
+
+  // 🔄 REDESCUBRIR SERVIDOR (para forzar nuevo discovery)
+  Future<bool> forceRediscovery() async {
+    print('🔄 Forzando redescubrimiento de servidor...');
+    _discoveredIp = null;
+    _isInitialized = false;
+
+    await initialize();
+
+    final effectiveIp = getEffectiveIp();
+    final isWorking = await _testConnection(effectiveIp);
+
+    if (isWorking) {
+      print('✅ Redescubrimiento exitoso: $effectiveIp');
+      return true;
+    } else {
+      print('❌ Redescubrimiento falló');
+      return false;
+    }
+  }
+
+  // 📊 OBTENER ESTADO DEL SERVICIO
+  Map<String, dynamic> getStatus() {
+    return {
+      'configuredIp': AppConfig.serverIp,
+      'discoveredIp': _discoveredIp,
+      'effectiveIp': getEffectiveIp(),
+      'effectiveUrl': getEffectiveUrl(),
+      'isInitialized': _isInitialized,
+    };
+  }
+
   String? _serverIp;
   String? _serverPort;
   bool _isConfigured = false;
   Map<String, dynamic>? _serverInfo;
   DateTime? _lastDiscovery;
 
-  String get serverIp => _serverIp ?? '192.168.1.240';
   String get serverPort => _serverPort ?? '3000';
-  String get baseUrl => 'http://$serverIp:$serverPort';
   bool get isConfigured => _isConfigured;
   Map<String, dynamic>? get serverInfo => _serverInfo;
-
-  Future<bool> initialize() async {
-    print('🔧 Inicializando NetworkConfigService...');
-
-    // PRIMERO: Limpiar configuraciones obsoletas
-    await clearObsoleteConfigurations();
-
-    // 1. Intentar cargar configuración desde cache
-    if (await _loadFromCache()) {
-      print('📱 Configuración cargada desde cache');
-
-      // Verificar que el servidor cached sigue funcionando
-      if (await validateCurrentServer()) {
-        print('✅ Servidor cached validado exitosamente');
-        _isConfigured = true;
-        return true;
-      } else {
-        print('❌ Servidor cached no responde, iniciando auto-discovery...');
-        _isConfigured = false;
-      }
-    }
-
-    // 2. Intentar cargar desde .env
-    if (await _loadFromEnv()) {
-      print('📄 Configuración cargada desde .env');
-
-      // Verificar que el servidor del .env funciona
-      if (await validateCurrentServer()) {
-        await _saveToCache();
-        print('✅ Servidor de .env validado y guardado en cache');
-        _isConfigured = true;
-        return true;
-      } else {
-        print('❌ Servidor de .env no responde, iniciando auto-discovery...');
-        _isConfigured = false;
-      }
-    }
-
-    // 3. Auto-discovery MEJORADO como último recurso
-    print('🔍 Iniciando auto-discovery UNIVERSAL de red...');
-    final discoverySuccess = await _autoDetectServerUniversal();
-
-    if (discoverySuccess) {
-      await _saveToCache();
-      print('✅ Auto-discovery exitoso y configuración guardada');
-      _isConfigured = true;
-      return true;
-    }
-
-    // 4. Fallback pero sigue intentando auto-discovery en segundo plano
-    _serverIp = '192.168.1.240'; // Usar IP más actual como fallback
-    _serverPort = '3000';
-    _isConfigured =
-        true; // CAMBIO IMPORTANTE: Marcar como configurado para que los servicios puedan usarlo
-    print('⚠️ Usando configuración por defecto: $baseUrl');
-
-    // NUEVO: Intentar auto-discovery en segundo plano
-    _startBackgroundDiscovery();
-
-    return true; // CAMBIO: Siempre retornar true para que la app continúe
-  }
 
   Future<bool> _loadFromCache() async {
     try {
@@ -107,7 +199,7 @@ class NetworkConfigService {
         }
 
         // Verificar que el servidor aún responde
-        if (await _testConnection(savedIp, savedPort)) {
+        if (await _testConnection(savedIp)) {
           _serverIp = savedIp;
           _serverPort = savedPort;
           _isConfigured = true;
@@ -160,74 +252,56 @@ class NetworkConfigService {
     return false;
   }
 
-  /// NUEVO: Auto-discovery UNIVERSAL que detecta cualquier rango de IP automáticamente
+  /// OPTIMIZADO: Auto-discovery RÁPIDO y dirigido
   Future<bool> _autoDetectServerUniversal() async {
-    print('🌐 Iniciando búsqueda UNIVERSAL de servidor...');
+    print('🚀 Iniciando búsqueda RÁPIDA de servidor...');
 
     try {
-      // 1. NUEVO: Detectar automáticamente TODOS los rangos de red activos
-      final allActiveRanges = await _detectAllActiveNetworkRanges();
-      print('📡 Rangos de red detectados: ${allActiveRanges.length}');
+      // 1. Obtener el rango de red local primero (más probable)
+      final localRange = await _getLocalIpRange();
+      final portsToCheck = ['3000', '8000']; // Solo puertos más comunes
 
-      for (final range in allActiveRanges) {
-        print('   🔍 Rango activo: $range');
+      // 2. PRIORIDAD ALTA: Buscar en el rango local primero
+      if (localRange != null) {
+        print('🎯 Buscando PRIMERO en rango local: $localRange');
+        final found = await _searchInRangeFast(localRange, portsToCheck);
+        if (found) {
+          print('✅ ¡Servidor encontrado en rango local!');
+          return true;
+        }
       }
 
-      // 2. Generar candidatos de TODOS los rangos detectados + comunes
-      final candidates = await _generateUniversalCandidateIps(allActiveRanges);
-      final portsToCheck = ['3000', '8000', '5000', '4000', '8080', '3001'];
+      // 3. PRIORIDAD MEDIA: Buscar en rangos comunes de hotspot/router
+      final commonRanges = ['192.168.1', '192.168.0', '192.168.43', '10.0.0'];
 
-      print(
-        '🎯 Probando ${candidates.length} IPs con ${portsToCheck.length} puertos...',
-      );
-
-      // 3. Búsqueda paralela optimizada por chunks
-      const chunkSize = 15; // Aumentado ligeramente para ser más rápido
-
-      for (int i = 0; i < candidates.length; i += chunkSize) {
-        final chunk = candidates.skip(i).take(chunkSize).toList();
-        final futures = <Future<Map<String, dynamic>?>>[];
-
-        for (final ip in chunk) {
-          for (final port in portsToCheck) {
-            futures.add(_testConnectionAsync(ip, port));
-          }
-        }
-
-        print(
-          '🔍 Probando chunk ${(i ~/ chunkSize) + 1}/${(candidates.length / chunkSize).ceil()}: ${chunk.length} IPs',
-        );
-
-        // Esperar resultados del chunk actual con timeout
-        final results = await Future.wait(futures).timeout(
-          const Duration(seconds: 8),
-          onTimeout: () {
-            print('⏰ Timeout en chunk, continuando...');
-            return List.filled(futures.length, null);
-          },
-        );
-
-        // Buscar el primer resultado exitoso
-        for (final result in results) {
-          if (result != null) {
-            _serverIp = result['ip'];
-            _serverPort = result['port'];
-            _serverInfo = result['serverInfo'];
-            _isConfigured = true;
-            _lastDiscovery = DateTime.now();
-            print('🎯 ¡SERVIDOR ENCONTRADO! ${_serverIp}:${_serverPort}');
+      for (final range in commonRanges) {
+        if (range != localRange) {
+          // Evitar duplicados
+          print('🔍 Buscando en rango común: $range');
+          final found = await _searchInRangeFast(range, portsToCheck);
+          if (found) {
+            print('✅ ¡Servidor encontrado en rango común!');
             return true;
           }
         }
-
-        // Pequeña pausa entre chunks para no saturar la red
-        await Future.delayed(const Duration(milliseconds: 50));
       }
 
-      print('❌ No se encontró servidor en ningún rango');
+      // 4. PRIORIDAD BAJA: Solo si no encontramos nada, buscar en otros rangos
+      final otherRanges = ['172.20.10', '192.168.2', '10.42.0'];
+
+      for (final range in otherRanges) {
+        print('🔍 Buscando en rango adicional: $range');
+        final found = await _searchInRangeFast(range, portsToCheck);
+        if (found) {
+          print('✅ ¡Servidor encontrado en rango adicional!');
+          return true;
+        }
+      }
+
+      print('❌ No se encontró servidor después de búsqueda dirigida');
       return false;
     } catch (e) {
-      print('❌ Error en auto-discovery universal: $e');
+      print('❌ Error en auto-discovery rápido: $e');
       return false;
     }
   }
@@ -480,7 +554,7 @@ class NetworkConfigService {
       }
 
       // Fallback al endpoint de status básico
-      if (await _testConnection(ip, port)) {
+      if (await _testConnection(ip)) {
         return {'ip': ip, 'port': port, 'serverInfo': null};
       }
     } catch (e) {
@@ -496,7 +570,7 @@ class NetworkConfigService {
             Uri.parse('http://$ip:$port/discover'),
             headers: {'Content-Type': 'application/json'},
           )
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 1)); // Timeout más rápido
 
       if (response.statusCode == 200) {
         try {
@@ -516,21 +590,6 @@ class NetworkConfigService {
       // Error silencioso para no spam en logs
     }
     return false;
-  }
-
-  Future<bool> _testConnection(String ip, String port) async {
-    try {
-      final response = await http
-          .get(
-            Uri.parse('http://$ip:$port/status'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 2));
-
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
   }
 
   Future<void> _saveToCache() async {
@@ -556,20 +615,22 @@ class NetworkConfigService {
   Future<void> _clearSavedConfig() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('network_server_ip');
-      await prefs.remove('network_server_port');
-      await prefs.remove('network_last_updated');
-      await prefs.remove('network_server_info');
+      await prefs.remove('server_ip');
+      await prefs.remove('server_url');
+      await prefs.remove('last_discovery');
+      await prefs.remove('server_info');
+      _serverInfo = null;
+      _lastDiscovery = null;
+      print('🧹 Configuración guardada limpiada');
     } catch (e) {
-      print('❌ Error limpiando configuración: $e');
+      print('⚠️ Error limpiando configuración: $e');
     }
   }
 
   Future<bool> updateServerConfig(String ip, String port) async {
     print('🔄 Actualizando configuración manualmente: $ip:$port');
 
-    if (await _testDiscoveryEndpoint(ip, port) ||
-        await _testConnection(ip, port)) {
+    if (await _testDiscoveryEndpoint(ip, port) || await _testConnection(ip)) {
       _serverIp = ip;
       _serverPort = port;
       _isConfigured = true;
@@ -585,24 +646,25 @@ class NetworkConfigService {
 
   Future<bool> refreshConfiguration() async {
     print('🔄 Refrescando configuración de red...');
-    await _clearSavedConfig();
     _serverInfo = null;
     _lastDiscovery = null;
-    return await initialize();
+    await initialize();
+    return true;
   }
 
-  // NUEVO: Método para continuar auto-discovery en segundo plano
-  void _startBackgroundDiscovery() {
-    Future.delayed(const Duration(seconds: 5), () async {
-      print('🔍 Ejecutando auto-discovery UNIVERSAL en segundo plano...');
+  // OPTIMIZADO: Auto-discovery rápido en segundo plano
+  Future<void> _backgroundDiscovery() async {
+    try {
+      print('🔍 Auto-discovery en segundo plano...');
+
       final success = await _autoDetectServerUniversal();
       if (success) {
         await _saveToCache();
-        print('✅ Auto-discovery en segundo plano exitoso: $baseUrl');
-      } else {
-        print('❌ Auto-discovery en segundo plano falló');
+        print('✅ Servidor actualizado en segundo plano: $baseUrl');
       }
-    });
+    } catch (e) {
+      print('⚠️ Error en auto-discovery de segundo plano: $e');
+    }
   }
 
   String getEndpointUrl(String endpoint) {
@@ -693,19 +755,6 @@ class NetworkConfigService {
     }
   }
 
-  // NUEVO: Método para forzar re-descubrimiento si el servidor cambia
-  Future<bool> forceRediscovery() async {
-    print('🔄 Forzando re-descubrimiento UNIVERSAL de servidor...');
-
-    await _clearSavedConfig();
-    _isConfigured = false;
-    _serverInfo = null;
-    _lastDiscovery = null;
-
-    // Intentar auto-detección universal inmediatamente
-    return await _autoDetectServerUniversal();
-  }
-
   // NUEVO: Verificar si el servidor actual sigue siendo válido
   Future<bool> validateCurrentServer() async {
     if (!_isConfigured || _serverIp == null || _serverPort == null) {
@@ -713,7 +762,7 @@ class NetworkConfigService {
     }
 
     return await _testDiscoveryEndpoint(_serverIp!, _serverPort!) ||
-        await _testConnection(_serverIp!, _serverPort!);
+        await _testConnection(_serverIp!);
   }
 
   // NUEVO: Sistema inteligente de recuperación automática mejorado
@@ -728,50 +777,56 @@ class NetworkConfigService {
 
     print('❌ Servidor actual no responde, iniciando búsqueda...');
 
-    // 2. Intentar búsqueda universal completa
-    print('🔍 Iniciando búsqueda completa universal...');
+    // 2. Intentar búsqueda inteligente completa
+    print('🔍 Iniciando búsqueda completa inteligente...');
     return await _autoDetectServerUniversal();
   }
 
-  // NUEVO: Búsqueda rápida en un rango específico mejorada
-  Future<bool> _searchInRange(String range) async {
-    final portsToCheck = ['3000', '8000', '5000'];
+  // OPTIMIZADO: Búsqueda rápida y dirigida en un rango específico
+  Future<bool> _searchInRangeFast(String range, List<String> ports) async {
+    print('🎯 Búsqueda rápida en $range con puertos: ${ports.join(', ')}');
+
+    // IPs más probables en orden de prioridad
     final priorityIps = [
-      1,
-      2,
-      43,
-      100,
-      101,
-      110,
-      111,
-      200,
-      240,
-      254,
-    ]; // IPs más probables
+      1, // Gateway común
+      100, // IP del servidor conocida
+      101, // Servidor alternativo
+      121, // IP específica conocida
+      136, // IP específica conocida
+      240, // IP específica conocida
+      2, // Segunda IP
+      254, // Última IP
+      43, // Común en hotspots
+      200, // Rango alto
+    ];
 
-    final futures = <Future<Map<String, dynamic>?>>[];
-
+    // Probar IPs prioritarias con timeout corto
     for (final ip in priorityIps) {
-      for (final port in portsToCheck) {
-        futures.add(_testConnectionAsync('$range.$ip', port));
-      }
-    }
+      for (final port in ports) {
+        final fullIp = '$range.$ip';
 
-    final results = await Future.wait(futures);
-
-    for (final result in results) {
-      if (result != null) {
-        _serverIp = result['ip'];
-        _serverPort = result['port'];
-        _serverInfo = result['serverInfo'];
-        _isConfigured = true;
-        _lastDiscovery = DateTime.now();
-        print('🎯 Servidor encontrado en rango: ${_serverIp}:${_serverPort}');
-        return true;
+        try {
+          if (await _testDiscoveryEndpoint(fullIp, port)) {
+            _serverIp = fullIp;
+            _serverPort = port;
+            _isConfigured = true;
+            _lastDiscovery = DateTime.now();
+            print('🎯 ¡Servidor encontrado! $fullIp:$port');
+            return true;
+          }
+        } catch (e) {
+          // Continuar con la siguiente IP
+        }
       }
     }
 
     return false;
+  }
+
+  // LEGACY: Búsqueda en rango (mantenida para compatibilidad)
+  Future<bool> _searchInRange(String range) async {
+    final portsToCheck = ['3000', '8000'];
+    return await _searchInRangeFast(range, portsToCheck);
   }
 
   // NUEVO: Verificar conexión con reintentos inteligentes

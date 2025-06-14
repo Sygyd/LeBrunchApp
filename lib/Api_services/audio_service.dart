@@ -65,9 +65,7 @@ class AudioService {
 
       // Inicializar cliente de Gemini para fallback de audio
       try {
-        _geminiClient ??= GeminiApiClient(
-          'fallback_key',
-        ); // La clave se obtiene del .env en el cliente
+        _geminiClient ??= GeminiApiClient(); // Usar configuración simple
         print('✅ Cliente de Gemini inicializado para procesamiento de audio');
       } catch (e) {
         print('⚠️ No se pudo inicializar cliente de Gemini: $e');

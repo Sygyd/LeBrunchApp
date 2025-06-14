@@ -464,17 +464,28 @@ ${todaySales > 100 ? '¡Qué día tan productivo! 🎉' : '¡Vamos por más vent
 
 🔗 **Conexión:** ${isConnected ? '🟢 Conectado' : '🔴 Desconectado'}''';
 
-    if (serverStatus != null) {
-      final dbConnected = serverStatus['database']?['connected'] == true;
-      final availableDishes = serverStatus['database']?['availableDishes'] ?? 0;
+    if (serverStatus != null && serverStatus['connected'] == true) {
+      final database = serverStatus['database'] ?? {};
+      final dbConnected = database['connected'] == true;
+      final totalDishes = database['totalDishes'] ?? 0;
+      final availableDishes = database['availableDishes'] ?? 0;
+      final version = serverStatus['version'] ?? 'desconocida';
+      final geminiModel = serverStatus['geminiModel'] ?? {};
+      final currentModel = geminiModel['current'] ?? _globalConfig.currentModel;
+      final keyRotation = serverStatus['keyRotation'] ?? {};
+      final totalKeys = keyRotation['totalKeys'] ?? 0;
+      final currentKeyIndex = keyRotation['currentKeyIndex'] ?? 0;
 
       statusText += '''
 
-🗄️ **Base de Datos:** ${dbConnected ? '🟢 Activa' : '🔴 Inactiva'}
-🍽️ **Platos Disponibles:** $availableDishes
-🤖 **Modelo Activo:** ${_globalConfig.currentModel}''';
+🗄️ **Base de Datos:** ${dbConnected ? '🟢 Conectada' : '🔴 Desconectada'}
+🍽️ **Platos Totales:** $totalDishes
+✅ **Platos Disponibles:** $availableDishes
+🤖 **Modelo Activo:** $currentModel
+🔑 **Claves API:** $totalKeys configuradas (usando #$currentKeyIndex)
+📦 **Versión:** $version''';
     } else {
-      statusText += '\n\n❌ No se pudo obtener información del servidor';
+      statusText += '\n\n❌ No se pudo obtener información del servidor MCP';
     }
 
     return {

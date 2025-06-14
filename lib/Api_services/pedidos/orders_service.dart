@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async'; // Importar dart:async para TimeoutException
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/order_status_service.dart'; // Importar el servicio de notificación
 import '../network_config_service.dart';
+import '../../config.dart'; // Importar configuración centralizada
 
 /// Servicio para la gestión de pedidos (órdenes)
 ///
@@ -42,9 +42,9 @@ class OrdersService {
     final prefs = await SharedPreferences.getInstance();
     final serverIp =
         prefs.getString('serverIp') ??
-        dotenv.env['NODE_SERVER_IP'] ??
+        AppConfig.serverIp ??
         NetworkConfigService().serverIp;
-    final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
+    final serverPort = AppConfig.serverPort;
     return 'http://$serverIp:$serverPort';
   }
 

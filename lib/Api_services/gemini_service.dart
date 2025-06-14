@@ -34,8 +34,8 @@ class GeminiService extends ChangeNotifier {
   bool get isCheckingConnection => _isCheckingConnection;
 
   // Constructor
-  GeminiService() : _geminiApiClient = GeminiApiClient('TEMP_INIT_KEY')
-  // Inicializa GeminiApiClient con una clave temporal, se actualizará después
+  GeminiService() : _geminiApiClient = GeminiApiClient()
+  // Inicializa GeminiApiClient usando la configuración simple
   {
     _initializeApiKeys(); // Inicializar las claves API de forma segura
     _initializeConnectivityCheck(); // Inicia la verificación de conectividad
@@ -68,10 +68,8 @@ class GeminiService extends ChangeNotifier {
         dotenv.get('GEMINI_API_KEY_3', fallback: 'FALLBACK_KEY_3'),
       ];
 
-      // Actualizar el cliente con la primera clave válida
-      if (_apiKeys.isNotEmpty && _apiKeys[0] != 'FALLBACK_KEY_1') {
-        _geminiApiClient.updateApiKey(_apiKeys[0]);
-      }
+      // Las claves API ahora se manejan en el servidor
+      print('✅ API keys inicializadas (${_apiKeys.length} claves disponibles)');
     } catch (e) {
       print('⚠️ Error al inicializar API keys desde .env: $e');
       // Usar fallbacks si dotenv no está disponible
@@ -275,10 +273,10 @@ class GeminiService extends ChangeNotifier {
   // Método para la rotación de claves API (solo si _apiKeys se usan para llamadas directas a Gemini)
   void _rotateApiKey() {
     _currentApiKeyIndex = (_currentApiKeyIndex + 1) % _apiKeys.length;
-    _geminiApiClient.updateApiKey(
-      _apiKeys[_currentApiKeyIndex],
-    ); // Actualizar la clave en el cliente
-    print('🔑 Rotando a la API Key: ${_apiKeys[_currentApiKeyIndex]}');
+    // Las claves API ahora se manejan en el servidor
+    print(
+      '🔑 Rotando a la API Key: ${_apiKeys[_currentApiKeyIndex]} (manejado por servidor)',
+    );
   }
 
   /// Limpia el historial de chat y reinicia la sesión

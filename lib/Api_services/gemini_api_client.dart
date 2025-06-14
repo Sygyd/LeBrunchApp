@@ -3,19 +3,13 @@ import 'dart:io';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import 'network_config_service.dart';
+import '../config.dart';
 
 /// Cliente para comunicarse directamente con la API de Gemini
 /// y con compatibilidad con el MCP del servidor Node.js
 class GeminiApiClient {
   // Cliente HTTP normal
   final http.Client _client = http.Client();
-
-  // Clave API actual (puede ser usada para otras funciones, pero no para el chat con Brunchy)
-  String _apiKey;
-
-  // Instancia de NetworkConfigService para obtener configuración dinámica
-  final NetworkConfigService _networkConfig = NetworkConfigService();
 
   // Modelos de Gemini ordenados por preferencia (no usados directamente si siempre vamos al servidor)
   static const List<String> _models = [
@@ -24,57 +18,22 @@ class GeminiApiClient {
     'gemini-1.0-pro',
   ];
 
-  // Método para obtener la URL del servidor usando NetworkConfigService
-  Future<String> _getServerUrl() async {
-    // MEJORADO: Asegurar que la configuración esté inicializada con reintentos
-    int attempts = 0;
-    const maxAttempts = 3;
+  // ✅ SUPER SIMPLE: Usar configuración directa
+  String get serverUrl => AppConfig.serverUrl;
 
-    while (!_networkConfig.isConfigured && attempts < maxAttempts) {
-      attempts++;
-      print(
-        '🔄 GeminiApiClient: Inicializando NetworkConfigService (intento $attempts/$maxAttempts)...',
-      );
+  static final GeminiApiClient _instance = GeminiApiClient._internal();
+  factory GeminiApiClient() => _instance;
+  GeminiApiClient._internal();
 
-      try {
-        final success = await _networkConfig.initialize().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            print('⏰ GeminiApiClient: Timeout en inicialización de red');
-            return false;
-          },
-        );
+  // ✅ CONFIGURACIÓN SIMPLE
+  bool get isConfigured => true; // Siempre configurado con IP estática
 
-        if (success && _networkConfig.isConfigured) {
-          break;
-        }
-
-        if (attempts < maxAttempts) {
-          await Future.delayed(Duration(seconds: attempts));
-        }
-      } catch (e) {
-        print(
-          '❌ GeminiApiClient: Error en inicialización (intento $attempts): $e',
-        );
-        if (attempts < maxAttempts) {
-          await Future.delayed(Duration(seconds: attempts));
-        }
-      }
-    }
-
-    final serverUrl = _networkConfig.baseUrl;
+  // 🌐 OBTENER URL DEL SERVIDOR
+  String getServerUrl() {
     print(
-      '🌐 GeminiApiClient - URL del servidor: $serverUrl (configurado: ${_networkConfig.isConfigured})',
+      '🌐 GeminiApiClient - URL del servidor: ${AppConfig.serverUrl} (configurado: $isConfigured)',
     );
-    return serverUrl;
-  }
-
-  // Constructor
-  GeminiApiClient(this._apiKey);
-
-  // Actualizar la clave API
-  void updateApiKey(String newApiKey) {
-    _apiKey = newApiKey;
+    return AppConfig.serverUrl;
   }
 
   /// Envía un mensaje de chat al servidor Node.js para que sea procesado por BrunchyMCP.
@@ -129,7 +88,7 @@ class GeminiApiClient {
     int timeout = 15,
   }) async {
     try {
-      final serverUrl = await _getServerUrl();
+      final serverUrl = getServerUrl();
 
       print('🚀 GeminiApiClient: INICIANDO _callServerChat');
       print('📨 GeminiApiClient: Mensaje: "$message"');
@@ -201,7 +160,7 @@ class GeminiApiClient {
   // Método para obtener el menú completo del servidor Node.js
   Future<List<dynamic>?> getFullMenuFromServer() async {
     try {
-      final serverUrl = await _getServerUrl();
+      final serverUrl = getServerUrl();
 
       print(
         'Solicitando menú completo al servidor Node.js ($serverUrl/menu-completo-corrected)...',
@@ -279,7 +238,7 @@ class GeminiApiClient {
         };
       }
 
-      final serverUrl = await _getServerUrl();
+      final serverUrl = getServerUrl();
 
       // Crear la solicitud multipart
       final request = http.MultipartRequest(

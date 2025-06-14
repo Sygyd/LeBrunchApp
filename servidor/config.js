@@ -16,7 +16,7 @@ function getLocalIP() {
         } else if (iface.address.startsWith('10.')) {
           candidates.push({ ip: iface.address, priority: 2, interface: name }); // Prioridad media
         } else if (iface.address.startsWith('172.') && 
-                   parseInt(iface.address.split('.')[1]) >= 16 && 
+             parseInt(iface.address.split('.')[1]) >= 16 && 
                    parseInt(iface.address.split('.')[1]) <= 31) {
           candidates.push({ ip: iface.address, priority: 3, interface: name }); // Prioridad baja
         }

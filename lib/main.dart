@@ -16,101 +16,98 @@ final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
-  // Asegurar que los servicios de Flutter estén inicializados
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Cargar variables de entorno (opcional)
-  await _initializeDotenv();
+  // Configurar manejo de errores
+  FlutterError.onError = (FlutterErrorDetails details) {
+    print('🚨 Error no capturado: ${details.exception}');
+    print('📍 Stack trace: ${details.stack}');
+  };
 
-  // PASO 0.5: Limpiar configuraciones obsoletas ANTES de inicializar servicios
-  await _cleanObsoleteConfigurations();
-
-  print('🌐 Iniciando configuración de red inteligente...');
-
-  // PASO 1: Inicializar NetworkConfigService PRIMERO y COMPLETAMENTE
-  final networkConfig = NetworkConfigService();
-  bool networkInitialized = false;
-
+  // Cargar variables de entorno
   try {
-    // Inicializar con un timeout más largo para permitir que termine completamente
-    networkInitialized = await networkConfig.initialize().timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        print('⏰ Timeout en inicialización de red, intentando recuperación...');
-        return false;
-      },
-    );
+    await dotenv.load();
+    print('✅ Variables de entorno cargadas exitosamente');
   } catch (e) {
-    print('❌ Error en inicialización inicial de red: $e');
-    networkInitialized = false;
+    print('! Archivo .env no encontrado, usando configuración por defecto: $e');
+    print('✅ Configuración por defecto establecida');
   }
 
-  if (networkInitialized) {
-    print('✅ Red configurada exitosamente: ${networkConfig.baseUrl}');
+  // Limpiar configuraciones obsoletas al inicio
+  print('🧹 Limpiando configuraciones obsoletas al inicio...');
+  await _cleanObsoleteConfigurations();
+  print('✅ No se encontraron configuraciones obsoletas');
 
-    // Mostrar información adicional del servidor si está disponible
-    if (networkConfig.serverInfo != null) {
-      final serverInfo = networkConfig.serverInfo!;
-      final serverName =
-          serverInfo['server']?['name'] ?? 'Servidor desconocido';
-      final serverVersion = serverInfo['server']?['version'] ?? 'N/A';
-      print('📡 Servidor detectado: $serverName v$serverVersion');
-    }
-  } else {
-    print(
-      '⚠️ Configuración inicial fallida, intentando recuperación inteligente...',
-    );
+  // Inicializar configuración de red con timeout mejorado
+  print('🌐 Iniciando configuración de red inteligente...');
+  final networkService = NetworkConfigService();
 
+  try {
+    // Dar más tiempo para el auto-discovery inteligente
     try {
-      // Intentar recuperación inteligente como fallback
-      final recoverySuccess = await networkConfig.smartRecovery().timeout(
-        const Duration(seconds: 10),
+      await networkService.initialize().timeout(
+        const Duration(
+          seconds: 45,
+        ), // Aumentado para dar tiempo al nuevo sistema
         onTimeout: () {
-          print('⏰ Timeout en recuperación inteligente');
+          print(
+            '⏰ Timeout en inicialización de red, intentando recuperación...',
+          );
+          return;
+        },
+      );
+    } catch (e) {
+      print('❌ Error en inicialización de red: $e');
+    }
+
+    // Verificar si la configuración fue exitosa
+    if (!networkService.isConfigured) {
+      print(
+        '! Configuración inicial fallida, intentando recuperación inteligente...',
+      );
+      // Intentar recuperación inteligente con timeout RÁPIDO
+      final recovered = await networkService.smartRecovery().timeout(
+        const Duration(seconds: 8), // Timeout más rápido
+        onTimeout: () {
+          print('⏰ Timeout en recuperación inteligente (8s)');
           return false;
         },
       );
 
-      if (recoverySuccess) {
-        print('🧠 Recuperación inteligente exitosa: ${networkConfig.baseUrl}');
-        networkInitialized = true;
-      } else {
+      if (!recovered) {
         print('❌ No se pudo establecer conexión automática');
+        print(
+          '🔧 Red configurada con valores por defecto: ${networkService.baseUrl}',
+        );
+        print(
+          '💡 Usa el diagnóstico de red en configuración de chat para conectar automáticamente',
+        );
       }
-    } catch (e) {
-      print('❌ Error en recuperación inteligente: $e');
     }
+  } catch (e) {
+    print('❌ Error en configuración de red: $e');
+    print('🔧 Continuando con configuración por defecto');
   }
 
-  // Siempre configurar con valores por defecto si no hay conexión
-  if (!networkInitialized) {
-    print(
-      '🔧 Red configurada con valores por defecto: ${networkConfig.baseUrl}',
-    );
-    print(
-      '💡 Usa el diagnóstico de red en configuración de chat para conectar automáticamente',
-    );
-  }
-
-  // PASO 2: Verificar que NetworkConfigService esté realmente listo antes de continuar
-  print(
-    '🔍 Verificando que NetworkConfigService esté completamente configurado...',
-  );
-
-  // Dar tiempo adicional para que se complete la configuración
+  // Verificar que NetworkConfigService esté completamente configurado (optimizado)
+  print('🔍 Verificando que NetworkConfigService esté configurado...');
   int attempts = 0;
-  while (!networkConfig.isConfigured && attempts < 3) {
+  const maxAttempts = 3; // Reducido para ser más rápido
+
+  while (!networkService.isConfigured && attempts < maxAttempts) {
     attempts++;
-    print('⏳ Esperando configuración completa (intento $attempts/3)...');
-    await Future.delayed(Duration(seconds: 1));
+    print(
+      '⏳ Esperando configuración completa (intento $attempts/$maxAttempts)...',
+    );
+    await Future.delayed(const Duration(seconds: 1)); // Reducido a 1 segundo
   }
 
-  if (networkConfig.isConfigured) {
-    print('✅ NetworkConfigService está completamente configurado');
-  } else {
+  if (!networkService.isConfigured) {
     print(
-      '⚠️ NetworkConfigService no está completamente configurado, continuando de todos modos',
+      '! NetworkConfigService no está completamente configurado, continuando de todos modos',
     );
+  } else {
+    print('✅ NetworkConfigService configurado correctamente');
   }
 
   // PASO 3: Inicializar el servicio de notificaciones (no requiere red)
@@ -174,7 +171,7 @@ Future<void> main() async {
             unawaited(
               Future.delayed(const Duration(seconds: 10)).then((_) async {
                 print('🔄 Reintentando conexión automática...');
-                await networkConfig.refreshConfiguration();
+                await networkService.refreshConfiguration();
                 final retryConnected =
                     await geminiService.checkServerConnection();
                 print(
@@ -190,7 +187,7 @@ Future<void> main() async {
           unawaited(
             Future.delayed(const Duration(seconds: 15)).then((_) async {
               print('🔄 Reintentando después de error...');
-              await networkConfig.refreshConfiguration();
+              await networkService.refreshConfiguration();
             }),
           );
         }),
