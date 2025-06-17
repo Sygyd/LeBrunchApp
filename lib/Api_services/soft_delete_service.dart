@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'network_config_service.dart';
+import '../config.dart'; // Usar directamente la configuración estática
 
 /// Servicio para manejar operaciones de soft delete
 /// Proporciona funcionalidades para restaurar elementos eliminados
@@ -10,15 +10,17 @@ import 'network_config_service.dart';
 class SoftDeleteService {
   // Método para obtener la URL base del servidor
   Future<String> _getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverIp =
-        prefs.getString('serverIp') ??
-        dotenv.env['NODE_SERVER_IP'] ??
-        NetworkConfigService().serverIp;
-    final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-    final baseUrl = 'http://$serverIp:$serverPort';
-    print('🌐 SoftDeleteService - URL base del servidor: $baseUrl');
-    return baseUrl;
+    try {
+      // Usar la configuración estática como primera opción
+      print(
+        '🌐 SoftDeleteService - Usando configuración estática: ${AppConfig.serverUrl}',
+      );
+      return AppConfig.serverUrl;
+    } catch (e) {
+      print('❌ Error al obtener URL base: $e');
+      // Fallback solo en caso de error crítico
+      return 'http://192.168.1.85:3000';
+    }
   }
 
   // Método para obtener el token de autorización
@@ -50,11 +52,11 @@ class SoftDeleteService {
       final headers = await _getAuthHeaders();
 
       print('🗑️ SoftDeleteService: Obteniendo platos eliminados...');
+      print('🌐 SoftDeleteService: URL: $baseUrl/menu/deleted/list');
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/menu/deleted/list'),
-        headers: headers,
-      );
+      final response = await http
+          .get(Uri.parse('$baseUrl/menu/deleted/list'), headers: headers)
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -68,17 +70,34 @@ class SoftDeleteService {
         return deletedItems;
       } else {
         print(
-          '❌ SoftDeleteService: Error al obtener platos eliminados: ${response.statusCode}',
+          '❌ SoftDeleteService: Error del servidor al obtener platos eliminados: ${response.statusCode}',
         );
+        print('📝 SoftDeleteService: Respuesta del servidor: ${response.body}');
         throw Exception(
-          'Error al obtener platos eliminados: ${response.statusCode}',
+          'Error del servidor (${response.statusCode}): ${response.reasonPhrase}',
         );
       }
     } catch (e) {
       print(
-        '❌ SoftDeleteService: Error de conexión al obtener platos eliminados: $e',
+        '❌ SoftDeleteService: Error crítico al obtener platos eliminados: $e',
       );
-      throw Exception('Error de conexión: $e');
+
+      // Proporcionar un mensaje más específico basado en el tipo de error
+      if (e.toString().contains('NotInitializedError')) {
+        throw Exception(
+          'Servicio no inicializado. Por favor, reinicia la aplicación.',
+        );
+      } else if (e.toString().contains('TimeoutException')) {
+        throw Exception(
+          'Tiempo de espera agotado. Verifica tu conexión a internet.',
+        );
+      } else if (e.toString().contains('SocketException')) {
+        throw Exception(
+          'Sin conexión al servidor. Verifica que el servidor esté funcionando.',
+        );
+      } else {
+        throw Exception('Error de conexión: ${e.toString()}');
+      }
     }
   }
 
@@ -122,11 +141,11 @@ class SoftDeleteService {
       final headers = await _getAuthHeaders();
 
       print('🗑️ SoftDeleteService: Obteniendo usuarios eliminados...');
+      print('🌐 SoftDeleteService: URL: $baseUrl/users/deleted/list');
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/users/deleted/list'),
-        headers: headers,
-      );
+      final response = await http
+          .get(Uri.parse('$baseUrl/users/deleted/list'), headers: headers)
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -140,17 +159,34 @@ class SoftDeleteService {
         return deletedUsers;
       } else {
         print(
-          '❌ SoftDeleteService: Error al obtener usuarios eliminados: ${response.statusCode}',
+          '❌ SoftDeleteService: Error del servidor al obtener usuarios eliminados: ${response.statusCode}',
         );
+        print('📝 SoftDeleteService: Respuesta del servidor: ${response.body}');
         throw Exception(
-          'Error al obtener usuarios eliminados: ${response.statusCode}',
+          'Error del servidor (${response.statusCode}): ${response.reasonPhrase}',
         );
       }
     } catch (e) {
       print(
-        '❌ SoftDeleteService: Error de conexión al obtener usuarios eliminados: $e',
+        '❌ SoftDeleteService: Error crítico al obtener usuarios eliminados: $e',
       );
-      throw Exception('Error de conexión: $e');
+
+      // Proporcionar un mensaje más específico basado en el tipo de error
+      if (e.toString().contains('NotInitializedError')) {
+        throw Exception(
+          'Servicio no inicializado. Por favor, reinicia la aplicación.',
+        );
+      } else if (e.toString().contains('TimeoutException')) {
+        throw Exception(
+          'Tiempo de espera agotado. Verifica tu conexión a internet.',
+        );
+      } else if (e.toString().contains('SocketException')) {
+        throw Exception(
+          'Sin conexión al servidor. Verifica que el servidor esté funcionando.',
+        );
+      } else {
+        throw Exception('Error de conexión: ${e.toString()}');
+      }
     }
   }
 
@@ -255,6 +291,94 @@ class SoftDeleteService {
     } catch (e) {
       print('❌ Error al obtener estadísticas: $e');
       return {'deletedDishes': 0, 'deletedUsers': 0, 'total': 0};
+    }
+  }
+
+  /// Eliminar usuario permanentemente con todas sus dependencias
+  /// ⚠️ CUIDADO: Esta es una eliminación PERMANENTE, no soft delete
+  Future<bool> permanentlyDeleteUserWithDependencies(String userId) async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final headers = await _getAuthHeaders();
+
+      print(
+        '🗑️ SoftDeleteService: Eliminación permanente de usuario ID: $userId',
+      );
+      print(
+        '⚠️ ADVERTENCIA: Esta operación eliminará TODOS los datos relacionados',
+      );
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/users/$userId/permanent-delete'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        print('✅ SoftDeleteService: Usuario $userId eliminado permanentemente');
+        return true;
+      } else {
+        print(
+          '❌ SoftDeleteService: Error al eliminar permanentemente: ${response.statusCode}',
+        );
+        final errorData = json.decode(response.body);
+        throw Exception(
+          errorData['message'] ?? 'Error al eliminar usuario permanentemente',
+        );
+      }
+    } catch (e) {
+      print('❌ SoftDeleteService: Error en eliminación permanente: $e');
+      throw Exception('Error al eliminar usuario permanentemente: $e');
+    }
+  }
+
+  /// Verificar dependencias de un usuario antes de eliminarlo
+  Future<Map<String, dynamic>> checkUserDependencies(String userId) async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final headers = await _getAuthHeaders();
+
+      print(
+        '🔍 SoftDeleteService: Verificando dependencias del usuario ID: $userId',
+      );
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/users/$userId/dependencies'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print(
+          '✅ SoftDeleteService: Dependencias verificadas para usuario $userId',
+        );
+        return {
+          'hasPedidos': data['hasPedidos'] ?? false,
+          'pedidosCount': data['pedidosCount'] ?? 0,
+          'pedidosIds': data['pedidosIds'] ?? [],
+          'canDelete': data['canDelete'] ?? false,
+          'warnings': data['warnings'] ?? [],
+        };
+      } else {
+        print(
+          '❌ SoftDeleteService: Error al verificar dependencias: ${response.statusCode}',
+        );
+        return {
+          'hasPedidos': false,
+          'pedidosCount': 0,
+          'pedidosIds': [],
+          'canDelete': false,
+          'warnings': ['Error al verificar dependencias'],
+        };
+      }
+    } catch (e) {
+      print('❌ SoftDeleteService: Error al verificar dependencias: $e');
+      return {
+        'hasPedidos': false,
+        'pedidosCount': 0,
+        'pedidosIds': [],
+        'canDelete': false,
+        'warnings': ['Error de conexión al verificar dependencias'],
+      };
     }
   }
 }

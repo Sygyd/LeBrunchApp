@@ -36,28 +36,25 @@ class PlaceholderScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
-      child: BackgroundScaffold(
-        appBar: AppBar(title: Text(title), automaticallyImplyLeading: false),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.construction, size: 80, color: Colors.amber),
-              SizedBox(height: 20),
-              Text(
-                'Pantalla en construcción',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              SizedBox(height: 10),
-              Text(
-                'Esta funcionalidad estará disponible próximamente',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
+    return BackgroundScaffold(
+      appBar: AppBar(title: Text(title), automaticallyImplyLeading: false),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.construction, size: 80, color: Colors.amber),
+            SizedBox(height: 20),
+            Text(
+              'Pantalla en construcción',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Esta funcionalidad estará disponible próximamente',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
         ),
       ),
     );
@@ -87,6 +84,7 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
   bool showAdminSettings = false;
   bool _isShowingDialog =
       false; // Variable para rastrear si hay un diálogo activo
+  DateTime? _lastDialogAttempt; // NUEVO: Rastrear último intento de diálogo
 
   late PageController _pageController;
   late Stream<int> _pageStream;
@@ -123,6 +121,10 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
     _pageController = PageController(initialPage: _currentIndex);
     _pageStreamController = StreamController<int>.broadcast();
     _pageStream = _pageStreamController.stream;
+
+    // NUEVO: Resetear flag de diálogo al inicializar para evitar estados atascados
+    _isShowingDialog = false;
+    print('🔄 Flag de diálogo reseteado en initState');
 
     // OPTIMIZADO: Cargar datos de usuario INMEDIATAMENTE para no bloquear UI
     _loadUserData();
@@ -511,60 +513,35 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
       _updateCartItemCount();
     }
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Evitar mostrar múltiples diálogos
-        if (_isShowingDialog) return false;
+    print(
+      '🏗️ CustomBottomNavigationBar build() - _isShowingDialog: $_isShowingDialog',
+    );
 
-        setState(() {
-          _isShowingDialog = true;
-        });
-
-        // Mostrar diálogo de confirmación para cerrar sesión
-        final shouldLogout = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false, // Evitar cerrar el diálogo tocando fuera
-          builder:
-              (context) => AlertDialog(
-                title: const Text('Cerrar sesión'),
-                content: const Text('¿Deseas cerrar sesión?'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context, false);
-                      setState(() {
-                        _isShowingDialog = false;
-                      });
-                    },
-                    child: const Text('Cancelar'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context, true);
-                      setState(() {
-                        _isShowingDialog = false;
-                      });
-                    },
-                    child: const Text(
-                      'Cerrar sesión',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ],
-              ),
+    return PopScope(
+      canPop: false, // Siempre interceptar el gesto de back
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        print(
+          '🔙 PopScope.onPopInvokedWithResult activado - didPop: $didPop, result: $result, Rol: $_userRole, Diálogo activo: $_isShowingDialog',
         );
 
-        // Restablecer el estado del diálogo si se cerró inesperadamente
-        if (mounted && _isShowingDialog) {
-          setState(() {
-            _isShowingDialog = false;
-          });
+        // Si ya se procesó la navegación hacia atrás, no hacer nada
+        if (didPop) {
+          print('🔄 Navegación ya procesada, retornando');
+          return;
         }
 
-        if (shouldLogout == true) {
-          await _logout();
+        // Evitar mostrar múltiples diálogos
+        if (_isShowingDialog) {
+          print('⚠️ Diálogo ya activo, ignorando gesto');
+          return;
         }
-        return false; // Siempre retornar false para evitar la navegación hacia atrás
+
+        print('🚀 Llamando al método centralizado de logout...');
+
+        // Llamar al método centralizado que maneja todo
+        await _showLogoutConfirmationDialog();
+
+        print('🔚 PopScope.onPopInvokedWithResult terminado');
       },
       child: BackgroundScaffold(
         appBar: AppBar(
@@ -596,8 +573,21 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
               padding: const EdgeInsets.only(right: 20.0),
               child: GestureDetector(
                 onTap: () => _showUserModal(context),
+                onDoubleTap: () {
+                  // NUEVO: Doble-tap para resetear flag en emergencias
+                  if (_isShowingDialog) {
+                    _resetDialogFlag();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('🔧 Flag de diálogo reseteado'),
+                        duration: Duration(seconds: 2),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                },
                 child: Tooltip(
-                  message: 'Perfil de usuario',
+                  message: 'Perfil de usuario (doble-tap para resetear)',
                   child: CircleAvatar(
                     backgroundColor: Colors.white,
                     foregroundColor: primaryColor,
@@ -1225,58 +1215,21 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
               ),
               const Divider(),
               ListTile(
-                leading: Icon(Icons.logout, color: Colors.red),
+                leading: Icon(Icons.logout_rounded, color: Colors.red),
                 title: const Text(
-                  'Cerrar Sesión',
+                  'Desconectarse',
                   style: TextStyle(color: Colors.red),
                 ),
                 onTap: () {
                   Navigator.pop(context); // Cerrar el modal
-                  setState(() {
-                    _isShowingDialog = true;
-                  });
 
-                  // Mostrar diálogo de confirmación
-                  showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder:
-                        (context) => AlertDialog(
-                          title: const Text('Cerrar sesión'),
-                          content: const Text('¿Deseas cerrar sesión?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context, false);
-                                setState(() {
-                                  _isShowingDialog = false;
-                                });
-                              },
-                              child: const Text('Cancelar'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context, true);
-                                _logout(); // Llamar directamente al método de cierre de sesión
-                                setState(() {
-                                  _isShowingDialog = false;
-                                });
-                              },
-                              child: const Text(
-                                'Cerrar sesión',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                  ).then((value) {
-                    // Asegurarse de restablecer el estado del diálogo
-                    if (mounted && _isShowingDialog) {
-                      setState(() {
-                        _isShowingDialog = false;
-                      });
-                    }
-                  });
+                  // CORREGIDO: NO establecer el flag aquí, dejarlo que lo maneje el método centralizado
+                  print(
+                    '🔘 Botón Desconectarse presionado desde modal de usuario',
+                  );
+
+                  // Mostrar diálogo de confirmación usando método centralizado
+                  _showLogoutConfirmationDialog();
                 },
               ),
             ],
@@ -1710,6 +1663,141 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         return Icons.coffee;
       default:
         return Icons.person;
+    }
+  }
+
+  // Método centralizado para mostrar diálogo de confirmación de logout
+  Future<void> _showLogoutConfirmationDialog() async {
+    print(
+      '🚀 _showLogoutConfirmationDialog iniciado - Flag actual: $_isShowingDialog',
+    );
+
+    // NUEVO: Limpiar flag si ha pasado mucho tiempo (más de 10 segundos)
+    final now = DateTime.now();
+
+    if (_lastDialogAttempt != null && _isShowingDialog) {
+      final timeDiff = now.difference(_lastDialogAttempt!).inSeconds;
+      if (timeDiff > 10) {
+        print(
+          '🧹 Flag _isShowingDialog atascado por ${timeDiff}s, limpiando...',
+        );
+        _isShowingDialog = false;
+      }
+    }
+    _lastDialogAttempt = now;
+
+    // Evitar mostrar múltiples diálogos
+    if (_isShowingDialog) {
+      print('⚠️ Diálogo ya activo, retornando inmediatamente');
+      return;
+    }
+
+    // Establecer flag de diálogo activo
+    _isShowingDialog = true;
+    print('🔒 Flag _isShowingDialog establecido a: $_isShowingDialog');
+
+    try {
+      print('📱 Iniciando showDialog...');
+
+      // Mostrar diálogo de confirmación para desconectar/cerrar sesión
+      final shouldLogout = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false, // Evitar cerrar el diálogo tocando fuera
+        builder:
+            (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.logout_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Desconectarse'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '¿Estás seguro de que quieres salir de Le Brunch?',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Se cerrará tu sesión y tendrás que volver a iniciar sesión.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    print('🏠 Usuario eligió quedarse');
+                    Navigator.pop(context, false);
+                  },
+                  child: Text(
+                    'Quedarse',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    print('🚪 Usuario eligió desconectarse');
+                    Navigator.pop(context, true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Desconectarse',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+      );
+
+      print('📋 Respuesta del diálogo recibida: $shouldLogout');
+
+      // Procesar la respuesta
+      if (shouldLogout == true) {
+        print('🔄 Ejecutando logout...');
+        await _logout();
+      } else {
+        print('✅ Usuario se queda, continuando en la app');
+      }
+    } catch (e) {
+      print('❌ Error en diálogo de logout: $e');
+    } finally {
+      // CRÍTICO: SIEMPRE resetear el flag en el bloque finally
+      print('🔧 Reseteando flag _isShowingDialog de $_isShowingDialog a false');
+      _isShowingDialog = false;
+      print('✅ Flag _isShowingDialog ahora es: $_isShowingDialog');
+    }
+
+    print('🔚 _showLogoutConfirmationDialog terminado');
+  }
+
+  // NUEVO: Método para resetear manualmente el flag de diálogo en emergencias
+  void _resetDialogFlag() {
+    if (_isShowingDialog) {
+      print('🆘 Reseteando flag de diálogo manualmente...');
+      _isShowingDialog = false;
+      print('✅ Flag de diálogo reseteado correctamente');
     }
   }
 

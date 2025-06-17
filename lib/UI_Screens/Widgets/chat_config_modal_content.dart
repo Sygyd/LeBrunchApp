@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../Api_services/global_config_service.dart';
 import '../../Api_services/network_config_service.dart';
 import '../../Api_services/menu/menu_service.dart';
+import '../../config.dart'; // 🔥 IMPORTAR AppConfig
 import 'network_diagnostic_widget.dart';
 
 class ChatConfigModalContent extends StatefulWidget {
@@ -27,8 +28,8 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   bool _debugMode = false;
   bool _enableReports = true;
   bool _enablePopularDishes = true;
-  bool _enableMenuManagement = true;
-  String _currentModel = "gemini-2.0-flash";
+  String _currentModel =
+      "gemini-2.5-flash-preview-05-20"; // 🔥 MODELO ACTUALIZADO
   bool _isLoading = false;
   bool _isConnected = false;
   bool _initialSetupComplete = false;
@@ -176,14 +177,33 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
       setState(() {
         _serverIpController.text = ipToUse;
+        // 🔥 CORREGIDO: Cargar el modelo actual sin forzar cambios, pero validar que esté en las opciones disponibles
         _currentModel = _globalConfig.currentModel;
+
+        // Validar que el modelo cargado esté en las opciones disponibles del dropdown
+        const availableModels = [
+          'gemini-2.5-flash-preview-05-20',
+          'gemini-2.0-flash',
+          'gemini-1.5-flash',
+        ];
+
+        if (!availableModels.contains(_currentModel)) {
+          print(
+            '⚠️ Modal: Modelo "$_currentModel" no está en las opciones disponibles, usando por defecto',
+          );
+          _currentModel = "gemini-2.5-flash-preview-05-20";
+        }
+
+        print('📋 Modal: Modelo final configurado: $_currentModel');
+
         _enableReports = _globalConfig.enableReports;
         _enablePopularDishes = _globalConfig.enablePopularDishes;
-        _enableMenuManagement = _globalConfig.enableMenuManagement;
         _showSystemMessages = _globalConfig.showSystemMessages;
         _debugMode = _globalConfig.debugMode;
       });
-      print('🔧 Modal: Configuración cargada - IP: $ipToUse');
+      print(
+        '🔧 Modal: Configuración cargada - IP: $ipToUse, Modelo: $_currentModel',
+      );
     } catch (e) {
       print('❌ Modal: Error al cargar configuraciones: $e');
     }
@@ -239,13 +259,14 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   Future<void> _saveSettings() async {
     setState(() => _isLoading = true);
     try {
-      // Actualizar configuración usando GlobalConfigService
+      // 🔥 CORREGIDO: Permitir guardar cualquier modelo seleccionado por el usuario
+      print('💾 Modal: Guardando modelo seleccionado: $_currentModel');
+
+      // Actualizar configuración usando GlobalConfigService (sin cambiar IP)
       final success = await _globalConfig.updateServerConfig(
-        serverIp: _serverIpController.text.trim(),
         model: _currentModel,
         enableReports: _enableReports,
         enablePopularDishes: _enablePopularDishes,
-        enableMenuManagement: _enableMenuManagement,
         showSystemMessages: _showSystemMessages,
         debugMode: _debugMode,
       );
@@ -278,42 +299,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error al guardar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _testConnection() async {
-    setState(() => _isLoading = true);
-    try {
-      final result = await _globalConfig.testConnectionWithDetails(
-        _serverIpController.text.trim(),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Prueba completada'),
-            backgroundColor:
-                result['success']
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.red,
-          ),
-        );
-
-        setState(() {
-          _isConnected = result['success'] ?? false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error al probar conexión: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -360,14 +345,16 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
   Future<void> _loadFromServer() async {
     setState(() => _isLoading = true);
     try {
-      final success = await _globalConfig.loadConfigFromServer();
-      if (success) {
+      // 🔥 ACTUALIZADO: Obtener estado del servidor y recargar configuración
+      final serverStatus = await _globalConfig.getServerStatus();
+      if (serverStatus != null && serverStatus['connected'] == true) {
+        await _globalConfig.loadConfig();
         await _loadCurrentSettings();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text(
-                '✅ Configuración sincronizada desde servidor',
+              content: Text(
+                '✅ Configuración recargada desde servidor ${AppConfig.serverUrl}',
               ),
               backgroundColor: Theme.of(context).colorScheme.primary,
             ),
@@ -377,7 +364,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('❌ No se pudo cargar configuración del servidor'),
+              content: Text('❌ No se pudo conectar con el servidor'),
               backgroundColor: Colors.red,
             ),
           );
@@ -394,28 +381,36 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     }
   }
 
-  // NUEVO: Forzar sincronización manual
+  // 🔥 ACTUALIZADO: Forzar sincronización manual
   Future<void> _forceSyncWithServer() async {
     setState(() => _isLoading = true);
     try {
-      final success = await _globalConfig.forceSyncWithServer();
+      // Guardar configuración actual al servidor
+      final success = await _globalConfig.updateServerConfig(
+        model: _currentModel,
+        enableReports: _enableReports,
+        enablePopularDishes: _enablePopularDishes,
+        showSystemMessages: _showSystemMessages,
+        debugMode: _debugMode,
+      );
+
       if (success) {
         await _loadCurrentSettings();
-        // Verificar estado actual de sincronización
-        final syncStatus = await _globalConfig.getSyncStatus();
+        // Verificar estado del servidor
+        final serverStatus = await _globalConfig.getServerStatus();
 
         if (mounted) {
           String message = '✅ Sincronización completada';
-          if (syncStatus != null) {
-            final serverConfig = syncStatus['serverConfig'];
-            final synchronized = serverConfig?['synchronized'] ?? false;
-            final currentModel = serverConfig?['model'] ?? 'desconocido';
-            final brunchyModel = serverConfig?['brunchyModel'] ?? 'desconocido';
+          if (serverStatus != null && serverStatus['connected'] == true) {
+            final geminiModel = serverStatus['geminiModel'];
+            final currentServerModel = geminiModel?['current'] ?? 'desconocido';
 
-            message += '\n🤖 Modelo actual: $currentModel';
-            if (!synchronized) {
+            message += '\n🤖 Modelo en servidor: $currentServerModel';
+            message += '\n🌐 URL: ${AppConfig.serverUrl}';
+
+            if (currentServerModel != _currentModel) {
               message +=
-                  '\n⚠️ Modelos desincronizados: $currentModel vs $brunchyModel';
+                  '\n⚠️ Modelos diferentes: servidor ($currentServerModel) vs local ($_currentModel)';
             }
           }
 
@@ -473,10 +468,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
         children: [
           // Estado del Sistema
           _buildSystemStatusCard(),
-          const SizedBox(height: 20),
-
-          // Configuración del Servidor
-          _buildServerConfigCard(),
           const SizedBox(height: 20),
 
           // Configuración del Asistente
@@ -574,6 +565,13 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               ],
             ),
             const SizedBox(height: 16),
+            // Mostrar IP del servidor siempre
+            _buildStatusRow(
+              'IP del Servidor',
+              _serverIpController.text.isNotEmpty
+                  ? _serverIpController.text
+                  : AppConfig.serverIp,
+            ),
             if (_serverStatus != null) ...[
               _buildStatusRow('Estado', _serverStatus!['status'] ?? 'unknown'),
               _buildStatusRow(
@@ -581,7 +579,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                 _serverStatus!['version'] ?? 'unknown',
               ),
               if (_serverStatus!['geminiModel'] != null) ...[
-                _buildStatusRow(
+                _buildStatusRowWithOverflow(
                   'Modelo Activo',
                   _serverStatus!['geminiModel']['current'] ?? 'unknown',
                 ),
@@ -600,57 +598,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               const Text('Inicializando conexión con el servidor...')
             else
               const Text('No se pudo cargar el estado del sistema...'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildServerConfigCard() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.dns,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Servidor',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _serverIpController,
-              decoration: const InputDecoration(
-                labelText: 'IP del Servidor',
-                hintText: '192.168.1.240',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.computer),
-              ),
-            ),
           ],
         ),
       ),
@@ -703,7 +650,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               ),
               items: [
                 DropdownMenuItem(
-                  value: 'gemini-2.0-flash',
+                  value: 'gemini-2.5-flash-preview-05-20',
                   child: Row(
                     children: [
                       Container(
@@ -716,38 +663,11 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: const Text(
-                          'NUEVO',
+                          'RECOMENDADO',
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.bold,
                             color: Colors.green,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(child: Text('Flash 2.0')),
-                    ],
-                  ),
-                ),
-                DropdownMenuItem(
-                  value: 'gemini-2.5-flash-preview-05-20',
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'BETA',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange,
                           ),
                         ),
                       ),
@@ -756,17 +676,36 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                     ],
                   ),
                 ),
+                DropdownMenuItem(
+                  value: 'gemini-2.0-flash',
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'ESTABLE',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('Flash 2.0')),
+                    ],
+                  ),
+                ),
                 const DropdownMenuItem(
                   value: 'gemini-1.5-flash',
-                  child: Text('Flash 1.5'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-1.5-pro',
-                  child: Text('Pro 1.5'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-1.0-pro',
-                  child: Text('Pro 1.0'),
+                  child: Text('Flash 1.5 (Legacy)'),
                 ),
               ],
               onChanged: (value) {
@@ -794,14 +733,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
               onChanged:
                   (value) => setState(() => _enablePopularDishes = value),
               secondary: const Icon(Icons.trending_up),
-            ),
-            SwitchListTile(
-              title: const Text('Gestión de Menú'),
-              subtitle: const Text('Permitir gestión del menú desde el chat'),
-              value: _enableMenuManagement,
-              onChanged:
-                  (value) => setState(() => _enableMenuManagement = value),
-              secondary: const Icon(Icons.restaurant_menu),
             ),
           ],
         ),
@@ -892,6 +823,61 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     );
   }
 
+  // NUEVO: Widget especial para el modelo activo que maneja overflow
+  Widget _buildStatusRowWithOverflow(String label, String value) {
+    // Acortar el nombre del modelo si es muy largo
+    String displayValue = value;
+    if (value.length > 20) {
+      if (value.contains('gemini-2.5-flash-preview')) {
+        displayValue = 'Gemini 2.5 Preview';
+      } else if (value.contains('gemini-2.0-flash')) {
+        displayValue = 'Gemini 2.0 Flash';
+      } else if (value.contains('gemini-1.5-flash')) {
+        displayValue = 'Gemini 1.5 Flash';
+      } else if (value.contains('gemini-1.5-pro')) {
+        displayValue = 'Gemini 1.5 Pro';
+      } else if (value.contains('gemini-1.0-pro')) {
+        displayValue = 'Gemini 1.0 Pro';
+      } else {
+        // Para otros modelos, truncar genéricamente
+        displayValue =
+            value.length > 18 ? '${value.substring(0, 15)}...' : value;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Tooltip(
+                message: value, // Mostrar el valor completo en tooltip
+                child: Text(
+                  displayValue,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButtons() {
     return Column(
       children: [
@@ -916,9 +902,9 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isLoading ? null : _testConnection,
-                icon: const Icon(Icons.wifi_find),
-                label: const Text('Probar'),
+                onPressed: _isLoading ? null : _checkServerStatus,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Actualizar Estado'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(

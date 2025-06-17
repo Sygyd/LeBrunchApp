@@ -63,7 +63,8 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
   // Variables para personalización de administrador
   String _serverIp = NetworkConfigService().serverIp;
-  String _currentModelName = "gemini-2.0-flash";
+  String _currentModelName =
+      "gemini-2.5-flash-preview-05-20"; // 🔥 MODELO ACTUALIZADO
   bool _showSystemMessages = true;
 
   // ID de usuario
@@ -784,12 +785,10 @@ class _SharedChatScreenState extends State<SharedChatScreen>
 
     return BackgroundScaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false, // Quitar botón de back
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: const Color(0xFF3EA69B),
-              child: Icon(Icons.support_agent, color: Colors.white),
-            ),
+            _buildBrunchyAppBarAvatar(),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -804,25 +803,10 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                 ),
                 if (_showConnectionStatusInAppBar || widget.isAdmin)
                   Text(
-                    _geminiService.isCheckingConnection
-                        ? 'Conectando...'
-                        : aktuellenIsConnected
-                        ? (aktuellenIsGeminiWorking
-                            ? 'En línea'
-                            : 'Servidor conectado, Gemini no disponible')
-                        : 'Desconectado',
+                    _getBrunchyStatusText(),
                     style: TextStyle(
                       fontSize: 12,
-                      color:
-                          _geminiService.isCheckingConnection
-                              ? Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.7)
-                              : aktuellenIsConnected
-                              ? (aktuellenIsGeminiWorking
-                                  ? Colors.green.shade700
-                                  : Colors.red.shade700)
-                              : Colors.red.shade700,
+                      color: _getBrunchyStatusColor(),
                     ),
                   ),
               ],
@@ -949,6 +933,9 @@ class _SharedChatScreenState extends State<SharedChatScreen>
                               key: ValueKey(message.messageId ?? message.id),
                               message: message,
                               userRole: _userRole,
+                              brunchyState: _getBrunchyState(),
+                              isTyping:
+                                  _isTyping && index == _messages.length - 1,
                             );
                           },
                         ),
@@ -1097,6 +1084,100 @@ class _SharedChatScreenState extends State<SharedChatScreen>
         ),
       ),
     );
+  }
+
+  // Determinar el estado actual de Brunchy basado en la conexión y estado de escritura
+  BrunchyState _getBrunchyState() {
+    if (!_geminiService.isConnected) {
+      return BrunchyState.disconnected;
+    } else if (_isTyping) {
+      return BrunchyState.thinking;
+    } else {
+      return BrunchyState.connected;
+    }
+  }
+
+  // Construir avatar de Brunchy para el AppBar
+  Widget _buildBrunchyAppBarAvatar() {
+    final theme = Theme.of(context);
+    final brunchyState = _getBrunchyState();
+
+    IconData iconData;
+    Color backgroundColor;
+    Color iconColor = Colors.white;
+
+    switch (brunchyState) {
+      case BrunchyState.connected:
+        iconData = Icons.sentiment_satisfied_alt;
+        backgroundColor = theme.colorScheme.primary;
+        break;
+      case BrunchyState.thinking:
+        iconData = Icons.psychology;
+        backgroundColor = theme.colorScheme.secondary;
+        break;
+      case BrunchyState.disconnected:
+        iconData = Icons.bedtime;
+        backgroundColor = theme.colorScheme.outline;
+        iconColor = Colors.white.withOpacity(0.7);
+        break;
+    }
+
+    Widget avatar = CircleAvatar(
+      backgroundColor: backgroundColor,
+      child: Icon(iconData, color: iconColor, size: 20),
+    );
+
+    // Si está escribiendo, agregar animación pulsante
+    if (_isTyping) {
+      return TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 1000),
+        tween: Tween(begin: 0.9, end: 1.1),
+        builder: (context, value, child) {
+          return Transform.scale(scale: value, child: avatar);
+        },
+        onEnd: () {
+          // La animación se repetirá automáticamente mientras _isTyping sea true
+        },
+      );
+    }
+
+    return avatar;
+  }
+
+  // Obtener texto de estado de Brunchy
+  String _getBrunchyStatusText() {
+    if (_geminiService.isCheckingConnection) {
+      return 'Despertando...';
+    }
+
+    final brunchyState = _getBrunchyState();
+    switch (brunchyState) {
+      case BrunchyState.connected:
+        return '¡Listo para ayudarte!';
+      case BrunchyState.thinking:
+        return 'Pensando...';
+      case BrunchyState.disconnected:
+        return 'Durmiendo';
+    }
+  }
+
+  // Obtener color del texto de estado de Brunchy
+  Color _getBrunchyStatusColor() {
+    final theme = Theme.of(context);
+
+    if (_geminiService.isCheckingConnection) {
+      return theme.colorScheme.onSurface.withOpacity(0.7);
+    }
+
+    final brunchyState = _getBrunchyState();
+    switch (brunchyState) {
+      case BrunchyState.connected:
+        return Colors.green.shade700;
+      case BrunchyState.thinking:
+        return Colors.orange.shade700;
+      case BrunchyState.disconnected:
+        return Colors.red.shade700;
+    }
   }
 
   Widget _buildTypingDots() {

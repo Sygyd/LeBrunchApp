@@ -1263,20 +1263,104 @@ router.get("/pedidos/cliente/:clienteId/recomendaciones", async (req, res) => {
     // Crear una lista unificada de recomendaciones
     const recomendacionesUnificadas = [];
     
-    // Agregar hasta 2 favoritos del cliente
-    recomendaciones.favoritos_cliente.slice(0, 2).forEach(plato => {
-      recomendacionesUnificadas.push(plato);
-    });
+    // Verificar si es un cliente nuevo (sin historial)
+    const esClienteNuevo = recomendaciones.favoritos_cliente.length === 0;
     
-    // Agregar hasta 2 populares nuevos
-    recomendaciones.populares_nuevos.slice(0, 2).forEach(plato => {
-      recomendacionesUnificadas.push(plato);
-    });
-    
-    // Agregar hasta 1 similar a sus gustos
-    recomendaciones.similares_gustos.slice(0, 1).forEach(plato => {
-      recomendacionesUnificadas.push(plato);
-    });
+    if (esClienteNuevo) {
+      console.log(`🆕 Cliente nuevo detectado: ${clienteId} - Generando recomendaciones para principiantes`);
+      
+      // Para clientes nuevos: usar más platos populares y agregar variedad por categorías
+      const platosPopulares = recomendaciones.populares_nuevos.slice(0, parseInt(limit));
+      
+      // Si tenemos suficientes populares, usarlos todos
+      platosPopulares.forEach(plato => {
+        recomendacionesUnificadas.push(plato);
+      });
+      
+      // Si necesitamos más platos para completar el límite, obtener platos diversos
+      const platosNecesarios = parseInt(limit) - recomendacionesUnificadas.length;
+      if (platosNecesarios > 0) {
+        console.log(`🔍 Necesitamos ${platosNecesarios} platos más para cliente nuevo`);
+        
+                 // Obtener platos adicionales de diferentes categorías
+         try {
+           const platosIds = platosPopulares.map(p => p.idplato);
+           let platosAdicionalesQuery;
+           let queryParams;
+           
+           if (platosIds.length > 0) {
+             // Si hay platos populares, excluirlos de la consulta adicional
+             const placeholders = platosIds.map((_, index) => `$${index + 1}`).join(',');
+             platosAdicionalesQuery = `
+               SELECT DISTINCT 
+                 m.idplato,
+                 m.nombre,
+                 m.categoria,
+                 m.precio,
+                 m.tipo,
+                 0 as total_vendido
+               FROM menu m
+               WHERE 
+                 m.isDelete = FALSE
+                 AND m.disponibilidad = TRUE
+                 AND m.idplato NOT IN (${placeholders})
+               ORDER BY m.categoria, RANDOM()
+               LIMIT $${platosIds.length + 1}
+             `;
+             queryParams = [...platosIds, platosNecesarios];
+           } else {
+             // Si no hay platos populares, obtener cualquier plato disponible
+             platosAdicionalesQuery = `
+               SELECT DISTINCT 
+                 m.idplato,
+                 m.nombre,
+                 m.categoria,
+                 m.precio,
+                 m.tipo,
+                 0 as total_vendido
+               FROM menu m
+               WHERE 
+                 m.isDelete = FALSE
+                 AND m.disponibilidad = TRUE
+               ORDER BY m.categoria, RANDOM()
+               LIMIT $1
+             `;
+             queryParams = [platosNecesarios];
+           }
+           
+           const platosAdicionalesResult = await pool.query(platosAdicionalesQuery, queryParams);
+           
+           platosAdicionalesResult.rows.forEach(plato => {
+             recomendacionesUnificadas.push({
+               ...plato,
+               motivo: `Descubre nuestros ${plato.categoria.toLowerCase()}`
+             });
+           });
+           
+         } catch (error) {
+           console.warn(`⚠️ Error obteniendo platos adicionales para cliente nuevo: ${error.message}`);
+         }
+      }
+      
+    } else {
+      // Para clientes con historial: usar la lógica original
+      console.log(`👤 Cliente recurrente: ${clienteId} - Generando recomendaciones personalizadas`);
+      
+      // Agregar hasta 2 favoritos del cliente
+      recomendaciones.favoritos_cliente.slice(0, 2).forEach(plato => {
+        recomendacionesUnificadas.push(plato);
+      });
+      
+      // Agregar hasta 2 populares nuevos
+      recomendaciones.populares_nuevos.slice(0, 2).forEach(plato => {
+        recomendacionesUnificadas.push(plato);
+      });
+      
+      // Agregar hasta 1 similar a sus gustos
+      recomendaciones.similares_gustos.slice(0, 1).forEach(plato => {
+        recomendacionesUnificadas.push(plato);
+      });
+    }
     
     // Limitar al número solicitado
     const recomendacionesFinales = recomendacionesUnificadas.slice(0, parseInt(limit));

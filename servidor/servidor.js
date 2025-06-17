@@ -187,7 +187,7 @@ class BrunchyMCP {
       'gemini-1.5-pro': 'gemini-1.5-pro',
       'gemini-1.0-pro': 'gemini-1.0-pro'
     };
-    this.currentModel = 'gemini-2.0-flash'; // Modelo por defecto - sincronizado con frontend
+    this.currentModel = 'gemini-2.5-flash-preview-05-20'; // 🔥 MODELO ACTUALIZADO SEGÚN REQUERIMIENTO
     this.baseSystemPrompt = `
     Eres 'Brunchy', un mesero virtual súper amigable y expresivo del restaurante Le Brunch. 😊
     
@@ -213,6 +213,7 @@ class BrunchyMCP {
     - Horarios, ubicación e información específica del restaurante 📍
     - Precios, ingredientes, y preparación de nuestros platos 👨‍🍳
     - Historia y concepto del brunch en relación al restaurante 📚
+    - Reportes de ventas, estadísticas y datos del restaurante 📊💰
     
     🎯 TU ÚNICO OBJETIVO: Ser un mesero virtual que hace que ordenar sea una experiencia divertida y deliciosa.
     
@@ -227,6 +228,26 @@ class BrunchyMCP {
     8. JAMÁS acortes los nombres de los platos. Usa el nombre COMPLETO tal como aparece en el menú 📋
     9. Las cantidades por defecto son 1 si no se especifican 1️⃣
     10. IMPORTANTE: Presta especial atención a especificaciones individuales dentro de cantidades múltiples 🔍
+
+    📊 SISTEMA DE REPORTES Y ANÁLISIS:
+    - Puedo ayudarte con reportes de ventas, estadísticas y datos del restaurante
+    - Tengo acceso a información de pedidos, ventas diarias, mensuales y por períodos específicos
+    - Puedo calcular y mostrar datos sobre platos populares, tendencias de ventas, y análisis de rendimiento
+    - Para preguntas como "ventas del mes", "ventas del año", uso los datos disponibles para generar respuestas útiles
+    - Soy creativo interpretando las solicitudes de reportes y usando la información disponible
+    - Puedo combinar diferentes fuentes de datos para dar respuestas completas e informativas
+    
+    🔧 ENDPOINTS DISPONIBLES PARA REPORTES:
+    - /pedidos/ventas/hoy - Ventas del día actual
+    - /pedidos/ventas/rango?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD - Ventas por período específico
+    - /pedidos/pendientes/count - Conteo de pedidos pendientes
+    - /admin/metrics - Métricas administrativas generales
+    
+    💡 EJEMPLOS DE USO INTELIGENTE:
+    - "Ventas del mes": Usar /pedidos/ventas/rango con startDate=primer día del mes actual y endDate=último día del mes
+    - "Ventas del año": Usar /pedidos/ventas/rango con startDate=01-01-2024 y endDate=31-12-2024
+    - "Ventas de enero": Usar /pedidos/ventas/rango con startDate=2024-01-01 y endDate=2024-01-31
+    - Calcular fechas automáticamente basado en la fecha actual y la solicitud del usuario
 
     🤖 SISTEMA DE RECOMENDACIONES PERSONALIZADAS:
     - Tenemos un sistema inteligente que analiza el historial de pedidos de cada cliente
@@ -478,8 +499,8 @@ class BrunchyMCP {
       currentModel: this.currentModel,
       availableModels: Object.keys(this.availableModels),
       modelDisplayNames: {
-        'gemini-2.0-flash': 'Flash 2.0 (Recomendado)',
-        'gemini-2.5-flash-preview-05-20': 'Flash 2.5 Preview (Experimental)',
+        'gemini-2.5-flash-preview-05-20': 'Flash 2.5 Preview (Recomendado)', // 🔥 MODELO POR DEFECTO ACTUALIZADO
+        'gemini-2.0-flash': 'Flash 2.0 (Estable)',
         'gemini-1.5-flash': 'Flash 1.5',
         'gemini-1.5-pro': 'Pro 1.5',
         'gemini-1.0-pro': 'Pro 1.0'
@@ -915,10 +936,9 @@ ${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
 // Configuración global del asistente (controlada por el admin)
 let globalAssistantConfig = {
   serverIp: config.host, // Usar la IP detectada automáticamente
-  model: 'gemini-2.0-flash', // Cambiado para coincidir con frontend
+  model: 'gemini-2.5-flash-preview-05-20', // 🔥 MODELO ACTUALIZADO SEGÚN REQUERIMIENTO
   enableReports: true,
   enablePopularDishes: true,
-  enableMenuManagement: true,
   showSystemMessages: true,
   debugMode: false,
   systemPrompt: 'Prompt personalizado del sistema'
@@ -926,6 +946,29 @@ let globalAssistantConfig = {
 
 // Instanciar BrunchyMCP y cargar el menú al iniciar el servidor
 const brunchy = new BrunchyMCP();
+
+// 🔥 MIGRACIÓN AUTOMÁTICA: Asegurar que el modelo por defecto sea correcto
+const migrateToDefaultModel = () => {
+  const obsoleteModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  const defaultModel = 'gemini-2.5-flash-preview-05-20';
+  
+  // Si globalAssistantConfig tiene un modelo obsoleto, actualizar
+  if (obsoleteModels.includes(globalAssistantConfig.model)) {
+    console.log(`🔄 Servidor: Migrando modelo obsoleto "${globalAssistantConfig.model}" a "${defaultModel}"`);
+    globalAssistantConfig.model = defaultModel;
+  }
+  
+  // Si brunchy tiene un modelo diferente, sincronizar
+  if (brunchy.currentModel !== globalAssistantConfig.model) {
+    console.log(`🔄 Servidor: Sincronizando BrunchyMCP de "${brunchy.currentModel}" a "${globalAssistantConfig.model}"`);
+    brunchy.setModel(globalAssistantConfig.model);
+  }
+  
+  console.log(`✅ Servidor: Modelo confirmado como "${brunchy.currentModel}"`);
+};
+
+// Ejecutar migración automática
+migrateToDefaultModel();
 
 // IMPORTANTE: Sincronizar el modelo de BrunchyMCP con la configuración global
 brunchy.setModel(globalAssistantConfig.model);
@@ -1034,6 +1077,55 @@ app.get('/pedidos/ventas/hoy', async (req, res) => {
   } catch (error) {
     console.error("❌ Error al obtener ventas del día:", error);
     return res.status(500).json({ error: "Error al obtener ventas del día", details: error.message });
+  }
+});
+
+// 🔥 NUEVO: Endpoint para ventas por rango de fechas (para reportes inteligentes)
+app.get('/pedidos/ventas/rango', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        error: "Se requieren startDate y endDate en formato YYYY-MM-DD",
+        example: "/pedidos/ventas/rango?startDate=2024-01-01&endDate=2024-01-31"
+      });
+    }
+
+    const query = `
+      SELECT 
+        COALESCE(SUM(m.precio * pd.cantidad), 0) as total,
+        COUNT(DISTINCT p.idpedido) as total_pedidos,
+        COUNT(pd.idplato) as total_items,
+        TO_CHAR($1::date, 'YYYY-MM-DD') as fecha_inicio,
+        TO_CHAR($2::date, 'YYYY-MM-DD') as fecha_fin
+      FROM pedidos p 
+      JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+      JOIN menu m ON pd.idplato = m.idplato 
+      WHERE p.fecha >= $1::date 
+        AND p.fecha <= $2::date + interval '1 day'
+        AND p.estado = 'completado'
+    `;
+    
+    const { rows } = await pool.query(query, [startDate, endDate]);
+    const result = rows[0];
+    
+    return res.status(200).json({
+      total: parseFloat(result.total),
+      total_pedidos: parseInt(result.total_pedidos),
+      total_items: parseInt(result.total_items),
+      fecha_inicio: result.fecha_inicio,
+      fecha_fin: result.fecha_fin,
+      periodo_dias: Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1,
+      promedio_diario: parseFloat((result.total / (Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1)).toFixed(2)),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error al obtener ventas por rango:", error);
+    return res.status(500).json({ 
+      error: "Error al obtener ventas por rango", 
+      details: error.message 
+    });
   }
 });
 
@@ -1197,6 +1289,140 @@ app.post('/mcp/chat', async (req, res) => {
   }
 });
 
+// 🔥 FUNCIÓN PARA PROCESAR ACCIONES SUGERIDAS POR BRUNCHY
+async function processActionSuggestion(geminiResponse, requestId) {
+  const { action, report_type, time_frame, api_call } = geminiResponse;
+  
+  if (action === 'generate_report' && report_type === 'sales') {
+    console.log(`📊 [${requestId}]: Generando reporte de ventas automáticamente`);
+    
+    try {
+      // Calcular fechas según el time_frame solicitado
+      const now = new Date();
+      let startDate, endDate = now;
+      
+      if (time_frame === 'last_three_months') {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+      } else if (time_frame === 'last_month') {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      } else if (time_frame === 'last_year') {
+        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      } else {
+        // Por defecto, último mes
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      }
+      
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+      
+      console.log(`📅 [${requestId}]: Consultando ventas desde ${startDateStr} hasta ${endDateStr}`);
+      
+      // Ejecutar consulta de ventas por rango
+      const salesQuery = `
+        SELECT 
+          COALESCE(SUM(m.precio * pd.cantidad), 0) as total_ventas,
+          COUNT(DISTINCT p.idpedido) as total_pedidos,
+          COUNT(DISTINCT DATE(p.fecha)) as dias_con_ventas,
+          AVG(m.precio * pd.cantidad) as promedio_por_item,
+          MIN(p.fecha) as primera_venta,
+          MAX(p.fecha) as ultima_venta
+        FROM pedidos p 
+        JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+        JOIN menu m ON pd.idplato = m.idplato 
+        WHERE DATE(p.fecha) BETWEEN $1 AND $2 
+        AND p.estado = 'completado'
+      `;
+      
+      const salesResult = await pool.query(salesQuery, [startDateStr, endDateStr]);
+      const salesData = salesResult.rows[0];
+      
+      // Consulta adicional: platos más vendidos en el período
+      const topDishesQuery = `
+        SELECT 
+          m.nombre,
+          SUM(pd.cantidad) as cantidad_vendida,
+          SUM(m.precio * pd.cantidad) as ingresos_generados
+        FROM pedidos p 
+        JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+        JOIN menu m ON pd.idplato = m.idplato 
+        WHERE DATE(p.fecha) BETWEEN $1 AND $2 
+        AND p.estado = 'completado'
+        GROUP BY m.idplato, m.nombre, m.precio
+        ORDER BY cantidad_vendida DESC
+        LIMIT 5
+      `;
+      
+      const topDishesResult = await pool.query(topDishesQuery, [startDateStr, endDateStr]);
+      const topDishes = topDishesResult.rows;
+      
+      // Formatear respuesta mejorada
+      const totalVentas = parseFloat(salesData.total_ventas) || 0;
+      const totalPedidos = parseInt(salesData.total_pedidos) || 0;
+      const diasConVentas = parseInt(salesData.dias_con_ventas) || 0;
+      const promedioPorItem = parseFloat(salesData.promedio_por_item) || 0;
+      
+      const periodDescription = time_frame === 'last_three_months' ? 'últimos 3 meses' :
+                               time_frame === 'last_month' ? 'último mes' :
+                               time_frame === 'last_year' ? 'último año' : 'período solicitado';
+      
+      let enhancedText = `📊 **REPORTE DE VENTAS - ${periodDescription.toUpperCase()}** ✨\n\n`;
+      enhancedText += `📅 **Período:** ${startDateStr} al ${endDateStr}\n\n`;
+      enhancedText += `💰 **Total de Ventas:** $${totalVentas.toFixed(2)} 💸\n`;
+      enhancedText += `📋 **Total de Pedidos:** ${totalPedidos} pedidos\n`;
+      enhancedText += `📆 **Días con Ventas:** ${diasConVentas} días\n`;
+      enhancedText += `📊 **Promedio por Item:** $${promedioPorItem.toFixed(2)}\n\n`;
+      
+      if (totalPedidos > 0) {
+        const promedioDiario = totalVentas / Math.max(diasConVentas, 1);
+        enhancedText += `📈 **Promedio Diario:** $${promedioDiario.toFixed(2)}\n\n`;
+      }
+      
+      if (topDishes.length > 0) {
+        enhancedText += `🏆 **TOP 5 PLATOS MÁS VENDIDOS:**\n`;
+        topDishes.forEach((dish, index) => {
+          const emoji = index === 0 ? '👑' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐';
+          enhancedText += `${emoji} **${dish.nombre}** - ${dish.cantidad_vendida} vendidos ($${parseFloat(dish.ingresos_generados).toFixed(2)})\n`;
+        });
+        enhancedText += '\n';
+      }
+      
+      enhancedText += totalVentas > 1000 ? '🎉 ¡Excelente período de ventas!' : 
+                     totalVentas > 500 ? '👍 Buen rendimiento en ventas' : 
+                     '💪 ¡Sigamos trabajando para mejorar!';
+      
+      console.log(`✅ [${requestId}]: Reporte generado exitosamente`);
+      
+      return {
+        text_response: enhancedText,
+        action: 'report_generated',
+        report_data: {
+          period: periodDescription,
+          startDate: startDateStr,
+          endDate: endDateStr,
+          totalSales: totalVentas,
+          totalOrders: totalPedidos,
+          daysWithSales: diasConVentas,
+          averagePerItem: promedioPorItem,
+          topDishes: topDishes
+        }
+      };
+      
+    } catch (error) {
+      console.error(`❌ [${requestId}]: Error generando reporte:`, error);
+      
+      return {
+        text_response: `❌ Lo siento, hubo un error al generar el reporte de ventas: ${error.message}\n\nPero puedes intentar preguntarme de nuevo o usar el panel de reportes en la administración. 😊`,
+        action: 'error',
+        error_details: error.message
+      };
+    }
+  }
+  
+  // Si la acción no es reconocida, devolver la respuesta original
+  console.log(`⚠️ [${requestId}]: Acción no reconocida: ${action}`);
+  return geminiResponse;
+}
+
 // Endpoint /chat ACTUALIZADO con configuración global
 app.post('/chat', async (req, res) => {
   const { message, sessionId, isAdmin, clientId } = req.body;
@@ -1216,91 +1442,35 @@ app.post('/chat', async (req, res) => {
   }
       
   try {
-    // Si es un admin, usar configuración especial
+    // 🔥 CAMBIO CLAVE: TODO va directamente a Brunchy para que use su inteligencia mejorada
+    // Solo logueamos si es admin para debug, pero ya no interceptamos nada
     if (isAdmin) {
-      console.log(`🔧 Chat [${requestId}]: Procesando mensaje de admin con configuración global`);
-      
-      // Verificar si el mensaje contiene solicitudes de reportes o información especial
-      const lowerMessage = message.toLowerCase();
-      
-      if (globalAssistantConfig.enableReports && 
-          (lowerMessage.includes('reporte') || lowerMessage.includes('ventas') || lowerMessage.includes('estadística'))) {
-        console.log(`📊 Chat [${requestId}]: Solicitud de reporte detectada`);
-        
-        // Obtener datos de reportes
-        try {
-          const [salesResult, pendingResult] = await Promise.all([
-            pool.query("SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"),
-            pool.query("SELECT COUNT(*) as count FROM pedidos WHERE estado = 'pendiente'")
-          ]);
-          
-          const todaySales = parseFloat(salesResult.rows[0].total);
-          const pendingOrders = parseInt(pendingResult.rows[0].count);
-          
-          const reportResponse = {
-            text_response: `📊 **REPORTE DEL SISTEMA**\n\n💰 **Ventas de Hoy:** $${todaySales.toFixed(2)}\n📋 **Pedidos Pendientes:** ${pendingOrders}\n🕒 **Hora del Reporte:** ${new Date().toLocaleString()}\n\n¿Necesitas información más detallada?`,
-            type: 'admin_report',
-            data: {
-              todaySales,
-              pendingOrders,
-              timestamp: new Date().toISOString()
-            }
-          };
-          
-          return res.json({
-            ...reportResponse,
-            requestId,
-            timestamp: new Date().toISOString()
-          });
-        } catch (reportError) {
-          console.error(`❌ Chat [${requestId}]: Error al generar reporte:`, reportError);
-        }
-      }
-      
-      if (globalAssistantConfig.enablePopularDishes && 
-          (lowerMessage.includes('popular') || lowerMessage.includes('más vendido') || lowerMessage.includes('favorito'))) {
-        console.log(`🏆 Chat [${requestId}]: Solicitud de platos populares detectada`);
-        
-        try {
-          const popularResult = await pool.query(`
-            SELECT m.nombre, SUM(pd.cantidad) as cantidad_vendida, m.precio
-            FROM pedido_detalle pd
-            INNER JOIN pedidos p ON pd.idpedido = p.idpedido
-            INNER JOIN menu m ON pd.idplato = m.idplato
-            WHERE p.estado = 'completado' AND m.isDelete = FALSE
-            GROUP BY m.idplato, m.nombre, m.precio
-            ORDER BY cantidad_vendida DESC
-            LIMIT 5
-          `);
-          
-          let dishesText = '🏆 **PLATOS MÁS POPULARES**\n\n';
-          popularResult.rows.forEach((dish, index) => {
-            dishesText += `${index + 1}. **${dish.nombre}**\n`;
-            dishesText += `   📊 Vendidos: ${dish.cantidad_vendida}\n`;
-            dishesText += `   💰 Precio: $${dish.precio}\n\n`;
-          });
-          
-          const popularResponse = {
-            text_response: dishesText,
-            type: 'admin_popular_dishes',
-            data: popularResult.rows
-          };
-          
-          return res.json({
-            ...popularResponse,
-            requestId,
-            timestamp: new Date().toISOString()
-          });
-        } catch (popularError) {
-          console.error(`❌ Chat [${requestId}]: Error al obtener platos populares:`, popularError);
-        }
-      }
+      console.log(`🔧 Chat [${requestId}]: Procesando mensaje de admin - ENVIANDO A BRUNCHY DIRECTAMENTE`);
     }
     
-    // Para mensajes normales (admin o cliente), usar BrunchyMCP
+    // Para TODOS los mensajes (admin o cliente), usar BrunchyMCP directamente
     // Pasar el clientId si está disponible para obtener recomendaciones personalizadas
     const geminiResponse = await brunchy.getGeminiResponse(message, sessionId, clientId);
     console.log(`📝 Chat [${requestId}]: Respuesta de BrunchyMCP:`, geminiResponse);
+    
+    // 🔥 NUEVO: Procesar acciones sugeridas por Brunchy
+    if (geminiResponse.action && isAdmin) {
+      console.log(`🎯 Chat [${requestId}]: Procesando acción sugerida: ${geminiResponse.action}`);
+      
+      try {
+        const enhancedResponse = await processActionSuggestion(geminiResponse, requestId);
+        
+        res.json({
+          ...enhancedResponse,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      } catch (actionError) {
+        console.error(`❌ Chat [${requestId}]: Error al procesar acción:`, actionError);
+        // Si falla el procesamiento de la acción, enviar la respuesta original
+      }
+    }
     
     res.json({
       ...geminiResponse,
@@ -1676,7 +1846,6 @@ app.post('/config/global', (req, res) => {
       model, 
       enableReports, 
       enablePopularDishes, 
-      enableMenuManagement,
       showSystemMessages,
       debugMode,
       systemPrompt 
@@ -1691,7 +1860,6 @@ app.post('/config/global', (req, res) => {
     }
     if (enableReports !== undefined) globalAssistantConfig.enableReports = enableReports;
     if (enablePopularDishes !== undefined) globalAssistantConfig.enablePopularDishes = enablePopularDishes;
-    if (enableMenuManagement !== undefined) globalAssistantConfig.enableMenuManagement = enableMenuManagement;
     if (showSystemMessages !== undefined) globalAssistantConfig.showSystemMessages = showSystemMessages;
     if (debugMode !== undefined) globalAssistantConfig.debugMode = debugMode;
     if (systemPrompt !== undefined) globalAssistantConfig.systemPrompt = systemPrompt;

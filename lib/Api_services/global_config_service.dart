@@ -3,21 +3,21 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
-// ✅ VERSIÓN SUPER SIMPLIFICADA
+// ✅ VERSIÓN MEJORADA CON SINCRONIZACIÓN REAL DE IP Y MODELO ACTUALIZADO
 class GlobalConfigService {
   static final GlobalConfigService _instance = GlobalConfigService._internal();
   factory GlobalConfigService() => _instance;
   GlobalConfigService._internal();
 
-  // 👈 CONFIGURACIÓN SIMPLIFICADA: Todo viene de config.dart
+  // 👈 CONFIGURACIÓN ACTUALIZADA: Usar AppConfig dinámico
   String get serverIp => AppConfig.serverIp;
   String get serverUrl => AppConfig.serverUrl;
 
-  // Solo configuración esencial de la app
-  String _currentModel = "gemini-2.0-flash";
+  // Configuración esencial de la app - MODELO ACTUALIZADO SEGÚN REQUERIMIENTO
+  String _currentModel =
+      "gemini-2.5-flash-preview-05-20"; // 🔥 MODELO ACTUALIZADO
   bool _enableReports = true;
   bool _enablePopularDishes = true;
-  bool _enableMenuManagement = true;
   bool _showSystemMessages = true;
   bool _debugMode = false;
 
@@ -25,50 +25,74 @@ class GlobalConfigService {
   String get currentModel => _currentModel;
   bool get enableReports => _enableReports;
   bool get enablePopularDishes => _enablePopularDishes;
-  bool get enableMenuManagement => _enableMenuManagement;
   bool get showSystemMessages => _showSystemMessages;
   bool get debugMode => _debugMode;
 
-  // 🔧 CARGAR CONFIGURACIÓN SIMPLE
+  // 🔧 CARGAR CONFIGURACIÓN MEJORADA
   Future<void> loadConfig() async {
     try {
-      print('🔧 Cargando configuración simple...');
-      print('📍 IP del servidor: ${AppConfig.serverIp}');
-      print('🌐 URL del servidor: ${AppConfig.serverUrl}');
+      print('🔧 Cargando configuración mejorada...');
 
       final prefs = await SharedPreferences.getInstance();
 
+      // Cargar IP guardada y actualizar AppConfig
+      final savedIp = prefs.getString('global_server_ip');
+      if (savedIp != null && savedIp.isNotEmpty) {
+        AppConfig.updateServerIp(savedIp);
+        print('🔄 IP cargada desde SharedPreferences: $savedIp');
+      }
+
+      print('📍 IP del servidor: ${AppConfig.serverIp}');
+      print('🌐 URL del servidor: ${AppConfig.serverUrl}');
+
+      // Cargar configuraciones del asistente con migración automática
       _currentModel =
-          prefs.getString('global_gemini_model') ?? "gemini-2.0-flash";
+          prefs.getString('global_gemini_model') ??
+          "gemini-2.5-flash-preview-05-20";
+
+      // 🔥 MIGRACIÓN AUTOMÁTICA: Actualizar modelos obsoletos
+      if (_currentModel == "gemini-2.0-flash" ||
+          _currentModel == "gemini-1.5-flash") {
+        final oldModel = _currentModel;
+        _currentModel = "gemini-2.5-flash-preview-05-20";
+        // Guardar el modelo actualizado inmediatamente
+        await prefs.setString('global_gemini_model', _currentModel);
+        print(
+          '🔄 Modelo migrado automáticamente de "$oldModel" a "$_currentModel"',
+        );
+      }
+
       _enableReports = prefs.getBool('global_enable_reports') ?? true;
       _enablePopularDishes =
           prefs.getBool('global_enable_popular_dishes') ?? true;
-      _enableMenuManagement =
-          prefs.getBool('global_enable_menu_management') ?? true;
       _showSystemMessages =
           prefs.getBool('global_show_system_messages') ?? true;
       _debugMode = prefs.getBool('global_debug_mode') ?? false;
 
-      print('✅ Configuración simple cargada - Modelo: $_currentModel');
+      print('✅ Configuración mejorada cargada - Modelo: $_currentModel');
     } catch (e) {
       print('❌ Error al cargar configuración: $e');
     }
   }
 
-  // 💾 GUARDAR CONFIGURACIÓN
+  // 💾 GUARDAR CONFIGURACIÓN MEJORADA
   Future<void> saveConfig() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Guardar IP actual de AppConfig
+      await prefs.setString('global_server_ip', AppConfig.serverIp);
+
+      // Guardar configuraciones del asistente
       await prefs.setString('global_gemini_model', _currentModel);
       await prefs.setBool('global_enable_reports', _enableReports);
       await prefs.setBool('global_enable_popular_dishes', _enablePopularDishes);
-      await prefs.setBool(
-        'global_enable_menu_management',
-        _enableMenuManagement,
-      );
       await prefs.setBool('global_show_system_messages', _showSystemMessages);
       await prefs.setBool('global_debug_mode', _debugMode);
-      print('✅ Configuración guardada');
+
+      print(
+        '✅ Configuración guardada - IP: ${AppConfig.serverIp}, Modelo: $_currentModel',
+      );
     } catch (e) {
       print('❌ Error al guardar configuración: $e');
     }
@@ -90,11 +114,6 @@ class GlobalConfigService {
     await saveConfig();
   }
 
-  Future<void> updateMenuManagement(bool enabled) async {
-    _enableMenuManagement = enabled;
-    await saveConfig();
-  }
-
   Future<void> updateSystemMessages(bool enabled) async {
     _showSystemMessages = enabled;
     await saveConfig();
@@ -105,40 +124,38 @@ class GlobalConfigService {
     await saveConfig();
   }
 
-  // 🧪 PROBAR CONEXIÓN CON EL SERVIDOR
+  // 🔄 MÉTODO MEJORADO PARA ACTUALIZAR IP DEL SERVIDOR
+  Future<void> updateServerIp(String newIp) async {
+    try {
+      // Actualizar AppConfig directamente
+      AppConfig.updateServerIp(newIp);
+
+      // Guardar en SharedPreferences
+      await saveConfig();
+
+      print('✅ IP del servidor actualizada: $newIp → ${AppConfig.serverUrl}');
+    } catch (e) {
+      print('❌ Error al actualizar IP del servidor: $e');
+    }
+  }
+
+  // 🧪 PROBAR CONEXIÓN CON LA IP ACTUAL
   Future<bool> testConnection() async {
     try {
-      print('🔍 Probando conexión con ${AppConfig.serverUrl}...');
       final response = await http
           .get(Uri.parse('${AppConfig.serverUrl}/status'))
           .timeout(const Duration(seconds: 3));
 
       final isConnected = response.statusCode == 200;
-      print(isConnected ? '✅ Servidor conectado' : '❌ Servidor no responde');
+      print(
+        '🔌 Test de conexión a ${AppConfig.serverUrl}: ${isConnected ? "✅ ÉXITO" : "❌ FALLO"}',
+      );
       return isConnected;
     } catch (e) {
-      print('❌ Error de conexión: $e');
+      print('❌ Error en test de conexión: $e');
       return false;
     }
   }
-
-  // 📊 OBTENER CONFIGURACIÓN DEL SERVIDOR
-  Future<Map<String, dynamic>?> getServerConfig() async {
-    try {
-      final response = await http
-          .get(Uri.parse('${AppConfig.serverUrl}/config'))
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-    } catch (e) {
-      print('⚠️ No se pudo obtener configuración del servidor: $e');
-    }
-    return null;
-  }
-
-  // ✅ MÉTODOS FALTANTES AGREGADOS
 
   // 📊 OBTENER ESTADO DEL SERVIDOR
   Future<Map<String, dynamic>?> getServerStatus() async {
@@ -159,6 +176,7 @@ class GlobalConfigService {
           'keyRotation': data['keyRotation'] ?? {},
           'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
           'connected': true,
+          'currentServerUrl': AppConfig.serverUrl, // Agregar URL actual
         };
       }
     } catch (e) {
@@ -170,57 +188,64 @@ class GlobalConfigService {
       'timestamp': DateTime.now().toIso8601String(),
       'connected': false,
       'database': {'connected': false},
+      'currentServerUrl': AppConfig.serverUrl,
     };
   }
 
-  // 🔧 ACTUALIZAR CONFIGURACIÓN DEL SERVIDOR
+  // 🔧 ACTUALIZAR CONFIGURACIÓN DEL SERVIDOR - VERSIÓN MEJORADA
   Future<bool> updateServerConfig({
     String? serverIp,
     String? model,
     bool? enableReports,
     bool? enablePopularDishes,
-    bool? enableMenuManagement,
     bool? showSystemMessages,
     bool? debugMode,
   }) async {
     try {
-      // Actualizar configuración local
+      // 1. Actualizar IP PRIMERO si se proporciona
+      if (serverIp != null && serverIp.isNotEmpty) {
+        await updateServerIp(serverIp);
+        print('🔄 IP actualizada en AppConfig: ${AppConfig.serverIp}');
+      }
+
+      // 2. Actualizar configuración local
       if (model != null) _currentModel = model;
       if (enableReports != null) _enableReports = enableReports;
       if (enablePopularDishes != null)
         _enablePopularDishes = enablePopularDishes;
-      if (enableMenuManagement != null)
-        _enableMenuManagement = enableMenuManagement;
       if (showSystemMessages != null) _showSystemMessages = showSystemMessages;
       if (debugMode != null) _debugMode = debugMode;
 
-      // Guardar cambios localmente
+      // 3. Guardar cambios localmente
       await saveConfig();
 
-      // Intentar sincronizar con el servidor si está disponible
+      // 4. Intentar sincronizar con el servidor usando la URL actualizada
       try {
+        print('🔄 Sincronizando con servidor en: ${AppConfig.serverUrl}');
+
+        final requestBody = <String, dynamic>{};
+        if (serverIp != null) requestBody['serverIp'] = serverIp;
+        if (model != null) requestBody['model'] = model;
+        if (enableReports != null) requestBody['enableReports'] = enableReports;
+        if (enablePopularDishes != null)
+          requestBody['enablePopularDishes'] = enablePopularDishes;
+        if (showSystemMessages != null)
+          requestBody['showSystemMessages'] = showSystemMessages;
+        if (debugMode != null) requestBody['debugMode'] = debugMode;
+
         final response = await http
             .post(
               Uri.parse('${AppConfig.serverUrl}/config/global'),
               headers: {'Content-Type': 'application/json'},
-              body: json.encode({
-                if (serverIp != null) 'serverIp': serverIp,
-                if (model != null) 'model': model,
-                if (enableReports != null) 'enableReports': enableReports,
-                if (enablePopularDishes != null)
-                  'enablePopularDishes': enablePopularDishes,
-                if (enableMenuManagement != null)
-                  'enableMenuManagement': enableMenuManagement,
-                if (showSystemMessages != null)
-                  'showSystemMessages': showSystemMessages,
-                if (debugMode != null) 'debugMode': debugMode,
-              }),
+              body: json.encode(requestBody),
             )
             .timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {
-          print('✅ Configuración sincronizada con el servidor');
+          print('✅ Configuración sincronizada con el servidor exitosamente');
           return true;
+        } else {
+          print('⚠️ Servidor respondió con código: ${response.statusCode}');
         }
       } catch (e) {
         print(
@@ -235,134 +260,17 @@ class GlobalConfigService {
     }
   }
 
-  // 🔍 PROBAR CONEXIÓN CON DETALLES
-  Future<Map<String, dynamic>> testConnectionWithDetails(String ip) async {
-    try {
-      final testUrl = 'http://$ip:3000';
-      print('🔍 Probando conexión detallada con $testUrl...');
-
-      final response = await http
-          .get(Uri.parse('$testUrl/status'))
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return {
-          'success': true,
-          'message': 'Conexión exitosa',
-          'serverUrl': testUrl,
-          'status': data['status'] ?? 'ok',
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Servidor respondió con código ${response.statusCode}',
-          'serverUrl': testUrl,
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-      }
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Error de conexión: $e',
-        'serverUrl': 'http://$ip:3000',
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-    }
-  }
-
-  // 📥 CARGAR CONFIGURACIÓN DESDE EL SERVIDOR
-  Future<bool> loadConfigFromServer() async {
-    try {
-      final response = await http
-          .get(Uri.parse('${AppConfig.serverUrl}/config/global'))
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final config = data['config'] ?? {};
-
-        // Actualizar configuración local con datos del servidor
-        _currentModel = config['model'] ?? _currentModel;
-        _enableReports = config['enableReports'] ?? _enableReports;
-        _enablePopularDishes =
-            config['enablePopularDishes'] ?? _enablePopularDishes;
-        _enableMenuManagement =
-            config['enableMenuManagement'] ?? _enableMenuManagement;
-        _showSystemMessages =
-            config['showSystemMessages'] ?? _showSystemMessages;
-        _debugMode = config['debugMode'] ?? _debugMode;
-
-        await saveConfig();
-        print('✅ Configuración cargada desde el servidor');
-        return true;
-      }
-    } catch (e) {
-      print('⚠️ No se pudo cargar configuración del servidor: $e');
-    }
-    return false;
-  }
-
-  // 🔄 FORZAR SINCRONIZACIÓN CON EL SERVIDOR
-  Future<bool> forceSyncWithServer() async {
-    try {
-      // Primero cargar configuración del servidor
-      await loadConfigFromServer();
-
-      // Luego enviar nuestra configuración actual
-      final success = await updateServerConfig(
-        model: _currentModel,
-        enableReports: _enableReports,
-        enablePopularDishes: _enablePopularDishes,
-        enableMenuManagement: _enableMenuManagement,
-        showSystemMessages: _showSystemMessages,
-        debugMode: _debugMode,
-      );
-
-      if (success) {
-        print('✅ Sincronización forzada completada');
-        return true;
-      }
-    } catch (e) {
-      print('❌ Error en sincronización forzada: $e');
-    }
-    return false;
-  }
-
-  // 📊 OBTENER ESTADO DE SINCRONIZACIÓN
-  Future<Map<String, dynamic>> getSyncStatus() async {
-    try {
-      final serverStatus = await getServerStatus();
-      final isConnected = serverStatus?['connected'] ?? false;
-
-      return {
-        'synchronized': isConnected,
-        'lastSync': DateTime.now().toIso8601String(),
-        'serverConnected': isConnected,
-        'localConfig': toMap(),
-      };
-    } catch (e) {
-      return {
-        'synchronized': false,
-        'lastSync': null,
-        'serverConnected': false,
-        'error': e.toString(),
-      };
-    }
-  }
-
-  // 🗺️ CONVERTIR A MAPA
+  // 📋 OBTENER MAPA DE CONFIGURACIÓN COMPLETA
   Map<String, dynamic> toMap() {
     return {
-      'serverIp': serverIp,
-      'serverUrl': serverUrl,
+      'serverIp': AppConfig.serverIp,
+      'serverUrl': AppConfig.serverUrl,
       'currentModel': _currentModel,
       'enableReports': _enableReports,
       'enablePopularDishes': _enablePopularDishes,
-      'enableMenuManagement': _enableMenuManagement,
       'showSystemMessages': _showSystemMessages,
       'debugMode': _debugMode,
+      'configInfo': AppConfig.getConfigInfo(),
     };
   }
 }

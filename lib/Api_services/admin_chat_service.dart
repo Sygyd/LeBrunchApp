@@ -17,7 +17,8 @@ class AdminChatService {
   final Map<String, String> _adminCommands = {
     '/config': 'Mostrar configuración actual del sistema',
     '/ip': 'Cambiar IP del servidor (ej: /ip 192.168.1.100)',
-    '/model': 'Cambiar modelo de Gemini (ej: /model gemini-2.0-flash)',
+    '/model':
+        'Cambiar modelo de Gemini (ej: /model gemini-2.5-flash-preview-05-20)',
     '/reports': 'Activar/desactivar reportes (ej: /reports on/off)',
     '/popular': 'Activar/desactivar platos populares (ej: /popular on/off)',
     '/debug': 'Activar/desactivar modo debug (ej: /debug on/off)',
@@ -63,7 +64,7 @@ class AdminChatService {
       case '/model':
         if (parts.length < 2) {
           return _buildErrorResponse(
-            'Uso: /model <nombre_modelo>\nEjemplo: /model gemini-2.0-flash',
+            'Uso: /model <nombre_modelo>\nEjemplo: /model gemini-2.5-flash-preview-05-20',
           );
         }
         return await _changeGeminiModel(parts[1]);
@@ -114,25 +115,16 @@ class AdminChatService {
       // Detectar si el mensaje solicita información especial
       final lowerMessage = message.toLowerCase();
 
-      if (lowerMessage.contains('reporte') ||
-          lowerMessage.contains('ventas') ||
-          lowerMessage.contains('estadística')) {
-        return await _handleReportsRequest(message);
-      }
-
-      if (lowerMessage.contains('popular') ||
-          lowerMessage.contains('más vendido') ||
-          lowerMessage.contains('favorito')) {
-        return await _handlePopularDishesRequest(message);
-      }
-
+      // 🔥 NUEVO: Dejar que Brunchy maneje TODOS los reportes inteligentemente
+      // Solo interceptar solicitudes de configuración local
       if (lowerMessage.contains('configuración') ||
           lowerMessage.contains('config') ||
           lowerMessage.contains('estado del sistema')) {
         return await _buildConfigResponse();
       }
 
-      // Si no es una solicitud especial, enviar al chat normal con contexto de admin
+      // 🔥 CAMBIO CLAVE: Enviar TODO al chat normal para que Brunchy use su nueva inteligencia
+      // Esto incluye reportes, platos populares, etc.
       return await _sendToNormalChat(message);
     } catch (e) {
       print('❌ Error procesando mensaje del admin: $e');
@@ -282,7 +274,6 @@ ${todaySales > 100 ? '¡Qué día tan productivo! 🎉' : '¡Vamos por más vent
           'adminCapabilities': {
             'reports': _globalConfig.enableReports,
             'popularDishes': _globalConfig.enablePopularDishes,
-            'menuManagement': _globalConfig.enableMenuManagement,
           },
         }),
       );
@@ -412,7 +403,7 @@ ${todaySales > 100 ? '¡Qué día tan productivo! 🎉' : '¡Vamos por más vent
 
 **⚙️ Configuración:**
 • `/ip 192.168.1.100` - Cambiar IP del servidor 🔗
-• `/model gemini-2.0-flash` - Cambiar modelo de IA 🤖
+• `/model gemini-2.5-flash-preview-05-20` - Cambiar modelo de IA 🤖
 • `/reports on/off` - Activar/desactivar reportes 📈
 • `/popular on/off` - Activar/desactivar platos populares 🏆
 

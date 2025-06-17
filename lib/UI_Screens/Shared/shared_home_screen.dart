@@ -3,8 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../Api_services/pedidos/orders_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../../Api_services/network_config_service.dart';
+import '../../config.dart';
 import 'dart:async';
 
 /// Pantalla de inicio compartida que puede ser usada tanto por Cocinero como por Barista
@@ -84,14 +83,9 @@ class _SharedHomeScreenState extends State<SharedHomeScreen> {
       // Obtener pedidos activos (solo pendientes)
       final activeOrders = await _ordersService.getOrders(estado: 'pendiente');
 
-      // Obtener datos del servidor
-      final prefs = await SharedPreferences.getInstance();
-      final serverIp =
-          prefs.getString('serverIp') ??
-          dotenv.env['NODE_SERVER_IP'] ??
-          NetworkConfigService().serverIp;
-      final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-      final baseUrl = 'http://$serverIp:$serverPort';
+      // SIMPLIFICADO: Usar configuración centralizada de AppConfig
+      final baseUrl = AppConfig.serverUrl;
+      debugPrint('🌐 🧑‍🍳🧋 Usando servidor desde AppConfig: $baseUrl');
 
       // Usar consulta directa para obtener conteo de órdenes completadas hoy
       final completedTodayQuery = {
@@ -174,14 +168,11 @@ class _SharedHomeScreenState extends State<SharedHomeScreen> {
   // Método para obtener promedio histórico
   Future<String> _getHistoricalAverage() async {
     try {
-      // Obtener datos del servidor
-      final prefs = await SharedPreferences.getInstance();
-      final serverIp =
-          prefs.getString('serverIp') ??
-          dotenv.env['NODE_SERVER_IP'] ??
-          NetworkConfigService().serverIp;
-      final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
-      final baseUrl = 'http://$serverIp:$serverPort';
+      // SIMPLIFICADO: Usar configuración centralizada de AppConfig
+      final baseUrl = AppConfig.serverUrl;
+      debugPrint(
+        '🌐 🧑‍🍳🧋 Calculando promedio histórico con servidor: $baseUrl',
+      );
 
       // Consulta SQL para obtener promedio histórico
       final query = {

@@ -99,11 +99,14 @@ class _AdminChatScreenState extends State<AdminChatScreen>
       // Cargar configuración global primero
       await _globalConfig.loadConfig();
 
-      // Intentar sincronizar con el servidor si es posible
+      // 🔥 CORREGIDO: Ya no existe loadConfigFromServer(), usamos getServerStatus para verificar conexión
       try {
-        await _globalConfig.loadConfigFromServer();
+        final serverStatus = await _globalConfig.getServerStatus();
+        if (serverStatus != null && serverStatus['connected'] == true) {
+          print('✅ AdminChat: Servidor conectado - ${serverStatus['message']}');
+        }
       } catch (e) {
-        print('⚠️ No se pudo sincronizar con servidor: $e');
+        print('⚠️ No se pudo verificar estado del servidor: $e');
       }
 
       await _loadMessageHistory();

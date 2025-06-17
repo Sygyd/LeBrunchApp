@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../../Api_services/network_config_service.dart';
+import '../../config.dart';
 
 /// Pantalla de perfil compartida que puede ser usada tanto por Cocinero como por Barista
 /// Recibe parámetros para personalizar la apariencia y comportamiento según el rol
@@ -71,28 +70,32 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
         'especialidad': widget.roleEspecialidad,
       };
 
+      // Variables para datos actualizados
+      String updatedUserName = userName;
       String updatedEmail = userEmail;
+      String updatedCedula = userCedula;
 
       // Verificar si el widget sigue montado antes de continuar
       if (!mounted) return;
 
-      // Intentar obtener la información del usuario directamente desde la base de datos
-      // para asegurar que tenemos los datos más actualizados
-      final serverIp =
-          prefs.getString('serverIp') ??
-          dotenv.env['NODE_SERVER_IP'] ??
-          NetworkConfigService().serverIp;
-      final serverPort = dotenv.env['NODE_SERVER_PORT'] ?? '3000';
+      // SIMPLIFICADO: Usar configuración centralizada de AppConfig
+      print('🌐 $roleEmoji Obteniendo configuración del servidor...');
+
+      // Usar la configuración centralizada del proyecto
+      final serverUrl = AppConfig.serverUrl;
+      print('🔗 $roleEmoji Usando servidor desde AppConfig: $serverUrl');
 
       if (userId != null) {
         try {
-          final url = Uri.parse('http://$serverIp:$serverPort/users/$userId');
+          print('📡 $roleEmoji Conectando a: $serverUrl/users/$userId');
+
+          final url = Uri.parse('$serverUrl/users/$userId');
           final response = await http
-              .get(url)
+              .get(url, headers: {'Content-Type': 'application/json'})
               .timeout(
                 const Duration(seconds: 5),
                 onTimeout: () {
-                  debugPrint('⏱️ Timeout al obtener datos del usuario');
+                  print('⏱️ $roleEmoji Timeout al obtener datos del usuario');
                   throw Exception('Timeout en la conexión');
                 },
               );
@@ -100,31 +103,84 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
           // Verificar si el widget sigue montado
           if (!mounted) return;
 
+          print('📊 $roleEmoji Respuesta del servidor: ${response.statusCode}');
+
           if (response.statusCode == 200) {
             final userData = json.decode(response.body);
-            debugPrint('📊 Datos de usuario desde API: $userData');
+            print('✅ $roleEmoji Datos de usuario desde API: $userData');
 
-            // Actualizar información del email si está disponible en la respuesta
+            // CORREGIDO: Actualizar TODOS los datos del usuario, no solo el email
+            if (userData['nombre'] != null &&
+                userData['nombre'].toString().isNotEmpty) {
+              final firstName = userData['nombre'].toString();
+              final lastName = userData['apellido']?.toString() ?? '';
+              updatedUserName =
+                  lastName.isNotEmpty ? '$firstName $lastName' : firstName;
+
+              // Actualizar SharedPreferences con el nombre completo
+              await prefs.setString('user_name', updatedUserName);
+              print('📝 $roleEmoji Nombre actualizado: $updatedUserName');
+            }
+
             if (userData['email'] != null &&
                 userData['email'].toString().isNotEmpty) {
-              updatedEmail = userData['email'];
+              updatedEmail = userData['email'].toString();
               await prefs.setString('user_email', updatedEmail);
+              print('📝 $roleEmoji Email actualizado: $updatedEmail');
             }
+
+            if (userData['cedula'] != null &&
+                userData['cedula'].toString().isNotEmpty) {
+              updatedCedula = userData['cedula'].toString();
+              await prefs.setString('user_cedula', updatedCedula);
+              print('📝 $roleEmoji Cédula actualizada: $updatedCedula');
+            }
+
+            // Actualizar el mapa userInfo con los datos frescos del servidor
+            userInfo = {
+              'id': userData['id']?.toString() ?? userId.toString(),
+              'nombre':
+                  userData['nombre']?.toString() ?? userName.split(' ').first,
+              'apellido':
+                  userData['apellido']?.toString() ??
+                  (userName.split(' ').length > 1
+                      ? userName.substring(userName.indexOf(' ') + 1)
+                      : ''),
+              'cedula': userData['cedula']?.toString() ?? userCedula,
+              'email': userData['email']?.toString() ?? userEmail,
+              'cargo': widget.roleTitle,
+              'especialidad': widget.roleEspecialidad,
+            };
+
+            print('🔄 $roleEmoji UserInfo actualizado con datos del servidor');
+          } else {
+            print('❌ $roleEmoji Error del servidor: ${response.statusCode}');
+            print('📄 $roleEmoji Cuerpo de respuesta: ${response.body}');
           }
         } catch (e) {
-          debugPrint('❌ Error obteniendo datos del usuario: $e');
-          // No detenemoas la ejecución, continuamos con los datos disponibles
+          print('❌ $roleEmoji Error obteniendo datos del usuario: $e');
+          print(
+            '📱 $roleEmoji Continuando con datos locales de SharedPreferences',
+          );
+          // No detenemos la ejecución, continuamos con los datos disponibles
         }
+      } else {
+        print('⚠️ $roleEmoji No se encontró userId en SharedPreferences');
       }
 
       // Verificación final de mounted antes de actualizar el estado
       if (mounted) {
         setState(() {
           _userInfo = userInfo;
-          _userName = userName;
+          _userName = updatedUserName;
           _userEmail = updatedEmail;
           _isLoading = false;
         });
+
+        print('✅ $roleEmoji Estado actualizado correctamente');
+        print('👤 $roleEmoji Nombre final: $updatedUserName');
+        print('📧 $roleEmoji Email final: $updatedEmail');
+        print('🆔 $roleEmoji Cédula final: $updatedCedula');
       }
     } catch (e) {
       if (mounted) {
@@ -132,7 +188,9 @@ class _SharedProfileScreenState extends State<SharedProfileScreen> {
           _isLoading = false;
         });
       }
-      debugPrint('Error cargando datos del usuario: $e');
+      print(
+        '❌ ${widget.role == 'barista' ? '🧋' : '🧑‍🍳'} Error cargando datos del usuario: $e',
+      );
     }
   }
 

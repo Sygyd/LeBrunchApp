@@ -376,8 +376,8 @@ class _TelegramAudioButtonState extends State<TelegramAudioButton>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = widget.primaryColor ?? theme.colorScheme.primary;
-    final backgroundColor = widget.backgroundColor ?? theme.colorScheme.surface;
+    final primaryColor = theme.colorScheme.primary;
+    final backgroundColor = theme.colorScheme.surface;
 
     return Stack(
       clipBehavior: Clip.none,

@@ -8,9 +8,12 @@ import '/UI_Screens/Widgets/custom_modal.dart';
 import '/Api_services/password_reset_service.dart';
 import 'dart:convert';
 import '/Api_services/cart_service.dart';
+import 'validation_utils.dart';
+import '../../config.dart';
+import '../../config.dart'; // Usar configuración estática
 
-// Constantes para la configuración
-final String apiBaseUrl = NetworkConfigService().baseUrl;
+// Usar configuración estática directamente
+final String apiBaseUrl = AppConfig.serverUrl;
 const Duration animationDuration = Duration(milliseconds: 300);
 
 class AuthModals {
@@ -42,6 +45,9 @@ class AuthModals {
   }
 }
 
+// ===============================================
+// LOGIN MODAL CON VALIDACIONES ROBUSTAS
+// ===============================================
 class _LoginModalContent extends StatefulWidget {
   @override
   State<_LoginModalContent> createState() => _LoginModalContentState();
@@ -75,7 +81,7 @@ class _LoginModalContentState extends State<_LoginModalContent> {
         Uri.parse('$apiBaseUrl/login'),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "email": _emailController.text.trim(),
+          "email": _emailController.text.trim().toLowerCase(),
           "contrasena": _passwordController.text,
         }),
       );
@@ -90,20 +96,70 @@ class _LoginModalContentState extends State<_LoginModalContent> {
       } else {
         if (!mounted) return;
 
-        String errorMessage =
-            response.statusCode == 401
-                ? "Credenciales incorrectas"
-                : "Error en el servidor (${response.statusCode})";
+        String errorMessage;
+        try {
+          final errorData = jsonDecode(response.body);
+          final serverMessage =
+              errorData['message'] ?? errorData['error'] ?? '';
+
+          switch (response.statusCode) {
+            case 401:
+              errorMessage = "Email o contraseña incorrectos";
+              break;
+            case 403:
+              if (serverMessage.toLowerCase().contains('eliminado') ||
+                  serverMessage.toLowerCase().contains('deleted')) {
+                errorMessage =
+                    "Esta cuenta ha sido eliminada. Contacta al administrador.";
+              } else {
+                errorMessage =
+                    "Acceso denegado. Tu cuenta puede estar inactiva.";
+              }
+              break;
+            case 404:
+              errorMessage = "No existe una cuenta con este email";
+              break;
+            case 422:
+              errorMessage =
+                  "Datos de login inválidos. Verifica tu email y contraseña.";
+              break;
+            case 429:
+              errorMessage =
+                  "Demasiados intentos de login. Espera unos minutos.";
+              break;
+            case 500:
+              errorMessage = "Error interno del servidor. Intenta más tarde.";
+              break;
+            default:
+              errorMessage =
+                  serverMessage.isNotEmpty
+                      ? serverMessage
+                      : "Error en el servidor (${response.statusCode})";
+          }
+        } catch (e) {
+          errorMessage = "Error en el servidor (${response.statusCode})";
+        }
 
         await CustomModal.showError(context: context, message: errorMessage);
       }
     } catch (e) {
       if (!mounted) return;
 
-      await CustomModal.showError(
-        context: context,
-        message: "Error de conexión: ${e.toString()}",
-      );
+      String errorMessage;
+      if (e.toString().contains('SocketException') ||
+          e.toString().contains('NetworkException')) {
+        errorMessage =
+            "Sin conexión al servidor. Verifica tu internet y que el servidor esté funcionando.";
+      } else if (e.toString().contains('TimeoutException')) {
+        errorMessage =
+            "Tiempo de espera agotado. Verifica tu conexión a internet.";
+      } else if (e.toString().contains('FormatException')) {
+        errorMessage = "Error en la respuesta del servidor. Intenta más tarde.";
+      } else {
+        errorMessage = "Error de conexión: ${e.toString()}";
+      }
+
+      await CustomModal.showError(context: context, message: errorMessage);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -218,10 +274,12 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                 'Ingresa a tu cuenta',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
+                  fontFamily: 'LightHouse',
                 ),
               ),
               const SizedBox(height: 30),
-              // Campo Email (validación simplificada)
+
+              // Campo Email (validación robusta)
               TextFormField(
                 controller: _emailController,
                 focusNode: _emailFocus,
@@ -230,11 +288,24 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                   FocusScope.of(context).requestFocus(_passwordFocus);
                 },
                 keyboardType: TextInputType.emailAddress,
-                validator:
-                    (value) =>
-                        value?.isEmpty ?? true ? 'Ingresa tu email' : null,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'El email es obligatorio';
+                  }
+
+                  final emailRegex = RegExp(
+                    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+                  );
+
+                  if (!emailRegex.hasMatch(value.trim())) {
+                    return 'Ingresa un email válido (ej: usuario@dominio.com)';
+                  }
+
+                  return null;
+                },
                 decoration: InputDecoration(
                   labelText: 'Email',
+                  labelStyle: TextStyle(fontFamily: 'LightHouse'),
                   prefixIcon: Icon(Icons.email),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -242,18 +313,28 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Campo Contraseña (validación simplificada)
+
+              // Campo Contraseña (validación robusta)
               TextFormField(
                 controller: _passwordController,
                 focusNode: _passwordFocus,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _login(),
                 obscureText: _obscurePassword,
-                validator:
-                    (value) =>
-                        value?.isEmpty ?? true ? 'Ingresa tu contraseña' : null,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'La contraseña es obligatoria';
+                  }
+
+                  if (value.length < 8) {
+                    return 'La contraseña debe tener al menos 8 caracteres';
+                  }
+
+                  return null;
+                },
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
+                  labelStyle: TextStyle(fontFamily: 'LightHouse'),
                   prefixIcon: Icon(Icons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -272,6 +353,7 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                 ),
               ),
               const SizedBox(height: 10),
+
               // Olvidé contraseña
               Align(
                 alignment: Alignment.centerRight,
@@ -280,10 +362,14 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                     Navigator.pop(context);
                     AuthModals.showForgotPasswordModal(context);
                   },
-                  child: Text('¿Olvidaste tu contraseña?'),
+                  child: Text(
+                    '¿Olvidaste tu contraseña?',
+                    style: TextStyle(fontFamily: 'LightHouse'),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
+
               // Botón
               SizedBox(
                 width: double.infinity,
@@ -305,15 +391,22 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                               color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
-                          : Text('Ingresar'),
+                          : Text(
+                            'Ingresar',
+                            style: TextStyle(fontFamily: 'LightHouse'),
+                          ),
                 ),
               ),
               const SizedBox(height: 20),
+
               // Enlace a registro
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('¿No tienes cuenta?'),
+                  Text(
+                    '¿No tienes cuenta?',
+                    style: TextStyle(fontFamily: 'LightHouse'),
+                  ),
                   TextButton(
                     onPressed:
                         _isLoading
@@ -322,7 +415,10 @@ class _LoginModalContentState extends State<_LoginModalContent> {
                               Navigator.pop(context);
                               AuthModals.showRegisterModal(context);
                             },
-                    child: Text('Regístrate'),
+                    child: Text(
+                      'Regístrate',
+                      style: TextStyle(fontFamily: 'LightHouse'),
+                    ),
                   ),
                 ],
               ),
@@ -727,24 +823,50 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Por favor ingresa tu nueva contraseña';
-    }
-    if (value.length < 6) {
-      return 'La contraseña debe tener al menos 6 caracteres';
-    }
-    return null;
+    return ValidationUtils.validateRegisterPassword(value);
   }
 
   String? _validateConfirmPassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Confirma tu contraseña';
-    }
-    if (value != _passwordController.text) {
-      return 'Las contraseñas no coinciden';
-    }
-    return null;
+    return ValidationUtils.validatePasswordConfirmation(
+      value,
+      _passwordController.text,
+    );
   }
+
+  Widget _buildPasswordRequirement(String text, bool isCompleted) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(
+            isCompleted ? Icons.check_circle : Icons.cancel,
+            size: 16,
+            color: isCompleted ? Colors.green : Colors.red,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: isCompleted ? Colors.green : Colors.red,
+                fontWeight: isCompleted ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Métodos para verificar cada requisito individualmente
+  bool _hasMinLength(String password) => password.length >= 8;
+
+  bool _hasUppercase(String password) => RegExp(r'[A-Z]').hasMatch(password);
+
+  bool _hasNumber(String password) => RegExp(r'[0-9]').hasMatch(password);
+
+  bool _hasSymbol(String password) =>
+      RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(password);
 
   Future<void> _resetPassword() async {
     if (!_formKey.currentState!.validate()) return;
@@ -802,7 +924,7 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
 
           // Subtítulo
           Text(
-            'Ingresa tu nueva contraseña. Debe tener al menos 6 caracteres.',
+            'Ingresa tu nueva contraseña. Los requisitos se marcarán en verde cuando se cumplan.',
             style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
@@ -834,12 +956,12 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
             onFieldSubmitted: (_) {
               FocusScope.of(context).requestFocus(_confirmPasswordFocus);
             },
+            onChanged: (value) {
+              // Actualizar indicadores en tiempo real
+              setState(() {});
+            },
             obscureText: _obscurePassword,
-            validator:
-                (value) =>
-                    PasswordResetService.isValidPassword(value ?? '')
-                        ? null
-                        : 'La contraseña debe tener al menos 6 caracteres',
+            validator: _validatePassword,
             decoration: InputDecoration(
               labelText: 'Nueva contraseña',
               prefixIcon: Icon(Icons.lock),
@@ -853,6 +975,51 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Requisitos de contraseña
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceVariant,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Requisitos de la contraseña:',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _buildPasswordRequirement(
+                  'Mínimo 8 caracteres',
+                  _hasMinLength(_passwordController.text),
+                ),
+                const SizedBox(height: 2),
+                _buildPasswordRequirement(
+                  'Al menos 1 mayúscula (A-Z)',
+                  _hasUppercase(_passwordController.text),
+                ),
+                const SizedBox(height: 2),
+                _buildPasswordRequirement(
+                  'Al menos 1 número (0-9)',
+                  _hasNumber(_passwordController.text),
+                ),
+                const SizedBox(height: 2),
+                _buildPasswordRequirement(
+                  'Al menos 1 símbolo (!@#\$%^&*)',
+                  _hasSymbol(_passwordController.text),
+                ),
+              ],
             ),
           ),
 
@@ -964,6 +1131,109 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
   final FocusNode _emailFocus = FocusNode();
   final FocusNode _contrasenaFocus = FocusNode();
   final FocusNode _confirmContrasenaFocus = FocusNode();
+
+  // =====================================================
+  // FUNCIONES DE VALIDACIÓN
+  // =====================================================
+
+  /// Capitalizar primera letra y convertir el resto a minúsculas
+  String _capitalizeFirstLetter(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
+  }
+
+  /// Validar que el texto no contenga números
+  bool _containsNumbers(String text) {
+    return RegExp(r'\d').hasMatch(text);
+  }
+
+  /// Validar formato de email robusto
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'El email es obligatorio';
+    }
+
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Ingresa un email válido (ej: usuario@dominio.com)';
+    }
+
+    return null;
+  }
+
+  /// Validar cédula (solo números positivos, desde 1 hasta infinito)
+  String? _validateCedula(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'La cédula es obligatoria';
+    }
+
+    // Solo permitir números
+    if (!RegExp(r'^\d+$').hasMatch(value.trim())) {
+      return 'La cédula solo puede contener números';
+    }
+
+    final cedulaNumber = int.tryParse(value.trim());
+    if (cedulaNumber == null || cedulaNumber < 1) {
+      return 'La cédula debe ser un número positivo mayor a 0';
+    }
+
+    return null;
+  }
+
+  /// Validar contraseña robusta
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'La contraseña es obligatoria';
+    }
+
+    if (value.length < 8) {
+      return 'La contraseña debe tener al menos 8 caracteres';
+    }
+
+    // Verificar que tenga al menos una mayúscula
+    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+      return 'La contraseña debe tener al menos una mayúscula';
+    }
+
+    // Verificar que tenga al menos un número
+    if (!RegExp(r'[0-9]').hasMatch(value)) {
+      return 'La contraseña debe tener al menos un número';
+    }
+
+    // Verificar que tenga al menos un símbolo
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
+      return 'La contraseña debe tener al menos un símbolo (!@#\$%^&*(),.?":{}|<>)';
+    }
+
+    return null;
+  }
+
+  /// Validar nombre/apellido
+  String? _validateName(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return 'El $fieldName es obligatorio';
+    }
+
+    final trimmedValue = value.trim();
+
+    if (trimmedValue.length < 2) {
+      return 'El $fieldName debe tener al menos 2 caracteres';
+    }
+
+    if (_containsNumbers(trimmedValue)) {
+      return 'El $fieldName no puede contener números';
+    }
+
+    // Validar que solo contenga letras y espacios
+    if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$').hasMatch(trimmedValue)) {
+      return 'El $fieldName solo puede contener letras y espacios';
+    }
+
+    return null;
+  }
 
   @override
   void dispose() {
@@ -1086,13 +1356,28 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                 ),
               ),
               const SizedBox(height: 30),
-              // Campo Nombre
+              // Campo Nombre (con validaciones robustas)
               TextFormField(
                 controller: _nombreController,
                 focusNode: _nombreFocus,
                 textInputAction: TextInputAction.next,
                 onFieldSubmitted: (_) {
                   FocusScope.of(context).requestFocus(_apellidoFocus);
+                },
+                onChanged: (value) {
+                  // Auto-capitalizar primera letra
+                  if (value.isNotEmpty) {
+                    final capitalizedValue = _capitalizeFirstLetter(value);
+                    if (value != capitalizedValue) {
+                      _nombreController.value = _nombreController.value
+                          .copyWith(
+                            text: capitalizedValue,
+                            selection: TextSelection.collapsed(
+                              offset: capitalizedValue.length,
+                            ),
+                          );
+                    }
+                  }
                 },
                 decoration: InputDecoration(
                   labelText: 'Nombre',
@@ -1101,21 +1386,31 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Ingresa tu nombre';
-                  if (value.length < 2) return 'Nombre muy corto';
-                  return null;
-                },
+                validator: (value) => _validateName(value, 'nombre'),
               ),
               const SizedBox(height: 15),
-              // Campo Apellido
+              // Campo Apellido (con validaciones robustas)
               TextFormField(
                 controller: _apellidoController,
                 focusNode: _apellidoFocus,
                 textInputAction: TextInputAction.next,
                 onFieldSubmitted: (_) {
                   FocusScope.of(context).requestFocus(_cedulaFocus);
+                },
+                onChanged: (value) {
+                  // Auto-capitalizar primera letra
+                  if (value.isNotEmpty) {
+                    final capitalizedValue = _capitalizeFirstLetter(value);
+                    if (value != capitalizedValue) {
+                      _apellidoController.value = _apellidoController.value
+                          .copyWith(
+                            text: capitalizedValue,
+                            selection: TextSelection.collapsed(
+                              offset: capitalizedValue.length,
+                            ),
+                          );
+                    }
+                  }
                 },
                 decoration: InputDecoration(
                   labelText: 'Apellido',
@@ -1124,11 +1419,7 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Ingresa tu apellido';
-                  return null;
-                },
+                validator: (value) => _validateName(value, 'apellido'),
               ),
               const SizedBox(height: 15),
               // Campo Cédula

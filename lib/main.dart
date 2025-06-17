@@ -121,6 +121,9 @@ Future<void> main() async {
       return service;
     });
 
+    // NUEVO: Migrar configuración de modelo antes de cargar
+    await _migrateObsoleteModelConfiguration();
+
     // Cargar configuración de forma no bloqueante
     unawaited(
       globalConfig
@@ -372,5 +375,41 @@ Future<void> _cleanObsoleteConfigurations() async {
     }
   } catch (error) {
     print('⚠️ Error al limpiar configuraciones obsoletas: $error');
+  }
+}
+
+// NUEVO: Función para migrar configuraciones obsoletas al nuevo modelo
+Future<void> _migrateObsoleteModelConfiguration() async {
+  try {
+    print('🔄 Verificando migración de modelo de Gemini...');
+    final prefs = await SharedPreferences.getInstance();
+
+    final currentSavedModel = prefs.getString('global_gemini_model');
+    const obsoleteModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    const newDefaultModel = 'gemini-2.5-flash-preview-05-20';
+
+    // Si tiene un modelo obsoleto o no tiene modelo guardado, actualizar
+    if (currentSavedModel == null ||
+        obsoleteModels.contains(currentSavedModel)) {
+      await prefs.setString('global_gemini_model', newDefaultModel);
+      print('✅ Modelo migrado de "$currentSavedModel" a "$newDefaultModel"');
+    } else if (currentSavedModel != newDefaultModel) {
+      // NUEVO: Forzar migración a 2.5 preview si no es exactamente el correcto
+      await prefs.setString('global_gemini_model', newDefaultModel);
+      print(
+        '🔄 Modelo actualizado de "$currentSavedModel" a "$newDefaultModel" (migración forzada)',
+      );
+    } else {
+      print('✅ Modelo actual "$currentSavedModel" ya está actualizado');
+    }
+
+    // NUEVO: También limpiar cualquier configuración de modelo obsoleta en otras claves
+    final networkModel = prefs.getString('gemini_model_name');
+    if (networkModel != null && obsoleteModels.contains(networkModel)) {
+      await prefs.remove('gemini_model_name');
+      print('🧹 Configuración de modelo obsoleta limpiada: gemini_model_name');
+    }
+  } catch (e) {
+    print('⚠️ Error en migración de modelo: $e');
   }
 }

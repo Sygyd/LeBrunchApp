@@ -18,18 +18,12 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Esto bloquea completamente el botón de retroceso
-        return false;
-      },
-      child: BackgroundScaffold(
-        body: SafeArea(
-          minimum: const EdgeInsets.only(top: 0),
-          // Usar directamente el widget MenuView sin la barra superior
-          child: MenuView(
-            userRole: 1, // Rol de cliente
-          ),
+    return BackgroundScaffold(
+      body: SafeArea(
+        minimum: const EdgeInsets.only(top: 0),
+        // Usar directamente el widget MenuView sin la barra superior
+        child: MenuView(
+          userRole: 1, // Rol de cliente
         ),
       ),
     );

@@ -3,11 +3,26 @@ import 'package:intl/intl.dart';
 import '../../models/chat_message.dart';
 import 'audio_message_widget.dart';
 
+// Enum para los diferentes estados de Brunchy
+enum BrunchyState {
+  connected, // Conectado/Alegre - disponible
+  thinking, // Pensando/Escribiendo - procesando
+  disconnected, // Desconectado/Durmiendo - sin conexión
+}
+
 class ChatMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final int? userRole; // Nuevo parámetro para el rol del usuario
+  final BrunchyState brunchyState; // Estado actual de Brunchy
+  final bool isTyping; // Si Brunchy está escribiendo
 
-  const ChatMessageBubble({super.key, required this.message, this.userRole});
+  const ChatMessageBubble({
+    super.key,
+    required this.message,
+    this.userRole,
+    this.brunchyState = BrunchyState.connected,
+    this.isTyping = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -65,8 +80,8 @@ class ChatMessageBubble extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.primary.withOpacity(0.8),
+                    _getBrunchyAvatarColor(theme),
+                    _getBrunchyAvatarColor(theme).withOpacity(0.8),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -74,17 +89,13 @@ class ChatMessageBubble extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    color: _getBrunchyAvatarColor(theme).withOpacity(0.3),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: Icon(
-                Icons.restaurant_menu,
-                size: 20,
-                color: theme.colorScheme.onPrimary,
-              ),
+              child: _buildBrunchyIcon(theme),
             ),
           ],
 
@@ -241,6 +252,64 @@ class ChatMessageBubble extends StatelessWidget {
         return theme.colorScheme.primary;
       default:
         return theme.colorScheme.primary;
+    }
+  }
+
+  // Construir ícono de Brunchy según su estado
+  Widget _buildBrunchyIcon(ThemeData theme) {
+    IconData iconData;
+    Color iconColor = theme.colorScheme.onPrimary;
+
+    // Si está escribiendo, siempre mostrar estado "thinking"
+    BrunchyState currentState = isTyping ? BrunchyState.thinking : brunchyState;
+
+    switch (currentState) {
+      case BrunchyState.connected:
+        iconData = Icons.sentiment_satisfied_alt; // Cara feliz/alegre
+        break;
+      case BrunchyState.thinking:
+        iconData = Icons.psychology; // Cerebro pensando
+        break;
+      case BrunchyState.disconnected:
+        iconData = Icons.bedtime; // Durmiendo
+        iconColor = theme.colorScheme.onPrimary.withOpacity(
+          0.6,
+        ); // Más opaco cuando está desconectado
+        break;
+    }
+
+    // Si está escribiendo, agregar una animación sutil
+    if (isTyping) {
+      return TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 1000),
+        tween: Tween(begin: 0.7, end: 1.0),
+        builder: (context, value, child) {
+          return Transform.scale(
+            scale: value,
+            child: Icon(iconData, size: 20, color: iconColor),
+          );
+        },
+        onEnd: () {
+          // Repetir la animación si sigue escribiendo
+        },
+      );
+    }
+
+    return Icon(iconData, size: 20, color: iconColor);
+  }
+
+  // Obtener color del avatar de Brunchy según su estado
+  Color _getBrunchyAvatarColor(ThemeData theme) {
+    // Si está escribiendo, siempre mostrar estado "thinking"
+    BrunchyState currentState = isTyping ? BrunchyState.thinking : brunchyState;
+
+    switch (currentState) {
+      case BrunchyState.connected:
+        return theme.colorScheme.primary;
+      case BrunchyState.thinking:
+        return theme.colorScheme.secondary;
+      case BrunchyState.disconnected:
+        return theme.colorScheme.outline;
     }
   }
 

@@ -399,21 +399,50 @@ class _RecommendationsWidgetState extends State<RecommendationsWidget> {
     }
 
     // Si no hay suficientes recomendaciones personalizadas, agregar populares
+    // PERO solo si las recomendaciones personalizadas no están vacías debido a ser cliente nuevo
     if (recomendaciones.length < 4 &&
         _recommendationsData!['populares'] != null) {
       final populares =
           _recommendationsData!['populares'] as List<dynamic>? ?? [];
 
-      // Tomar los populares que faltan, pero SIN sobrescribir su motivo original
-      final popularesToAdd =
-          populares.take(4 - recomendaciones.length).toList();
+      // Verificar si el usuario es un cliente nuevo
+      final esClienteNuevo =
+          _recommendationsData!['personalizadas'] != null &&
+          _recommendationsData!['personalizadas']['favoritos_cliente'] !=
+              null &&
+          (_recommendationsData!['personalizadas']['favoritos_cliente'] as List)
+              .isEmpty;
 
-      for (var popular in popularesToAdd) {
-        // Solo agregar motivo si no tiene uno ya
-        if (popular['motivo'] == null || popular['motivo'].toString().isEmpty) {
-          popular['motivo'] = 'Popular entre otros clientes';
+      // Solo agregar populares adicionales si NO es un cliente nuevo
+      // (para clientes nuevos, el servidor ya maneja las recomendaciones correctamente)
+      if (!esClienteNuevo) {
+        // Crear un Set de IDs ya incluidos para evitar duplicaciones
+        final idsYaIncluidos =
+            recomendaciones
+                .where((r) => r['idplato'] != null)
+                .map<int>((r) => int.tryParse(r['idplato'].toString()) ?? 0)
+                .where((id) => id > 0)
+                .toSet();
+
+        // Filtrar populares que no estén ya incluidos
+        final popularesNoDuplicados =
+            populares
+                .where((popular) {
+                  final id =
+                      int.tryParse(popular['idplato']?.toString() ?? '0') ?? 0;
+                  return id > 0 && !idsYaIncluidos.contains(id);
+                })
+                .take(4 - recomendaciones.length)
+                .toList();
+
+        for (var popular in popularesNoDuplicados) {
+          // Solo agregar motivo si no tiene uno ya
+          if (popular['motivo'] == null ||
+              popular['motivo'].toString().isEmpty) {
+            popular['motivo'] = 'Popular entre otros clientes';
+          }
+          recomendaciones.add(popular);
         }
-        recomendaciones.add(popular);
       }
     }
 
