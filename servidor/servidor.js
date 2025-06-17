@@ -32,13 +32,13 @@ class GeminiKeyManager {
       process.env.GEMINI_API_KEY_2,
       process.env.GEMINI_API_KEY_3
     ].filter(key => key && key.trim() !== ''); // Filtrar claves vacías
-    
+
     this.currentKeyIndex = 0;
     this.keyUsageCount = new Map(); // Contador de uso por clave
     this.errorCounts = new Map(); // Contador de errores por clave
-    
+
     console.log(`🔑 GeminiKeyManager iniciado con ${this.apiKeys.length} claves API`);
-    
+
     // Inicializar contadores
     this.apiKeys.forEach((key, index) => {
       this.keyUsageCount.set(index, 0);
@@ -63,7 +63,7 @@ class GeminiKeyManager {
     const errorCount = this.errorCounts.get(keyIndex) + 1;
     this.errorCounts.set(keyIndex, errorCount);
     console.log(`❌ Error registrado para clave #${keyIndex + 1} (total errores: ${errorCount})`);
-    
+
     // Si una clave tiene muchos errores, evitarla temporalmente
     if (errorCount >= 3) {
       console.log(`⚠️ Clave #${keyIndex + 1} marcada como problemática (${errorCount} errores)`);
@@ -73,7 +73,7 @@ class GeminiKeyManager {
   incrementUsage(keyIndex = this.currentKeyIndex) {
     const usageCount = this.keyUsageCount.get(keyIndex) + 1;
     this.keyUsageCount.set(keyIndex, usageCount);
-    
+
     // Rotar automáticamente después de cierto número de usos
     if (usageCount % 50 === 0) {
       console.log(`🔄 Auto-rotación: clave #${keyIndex + 1} ha sido usada ${usageCount} veces`);
@@ -93,31 +93,31 @@ class GeminiKeyManager {
   }
 
   handleApiError(error) {
-    const isQuotaError = error.message?.includes('quota') || 
-                        error.message?.includes('429') ||
-                        error.message?.includes('QUOTA_EXCEEDED');
-                        
-    const isInvalidKeyError = error.message?.includes('API key not valid') || 
-                             error.message?.includes('API_KEY_INVALID');
+    const isQuotaError = error.message?.includes('quota') ||
+      error.message?.includes('429') ||
+      error.message?.includes('QUOTA_EXCEEDED');
+
+    const isInvalidKeyError = error.message?.includes('API key not valid') ||
+      error.message?.includes('API_KEY_INVALID');
 
     const isOverloadedError = error.message?.includes('overloaded') ||
-                             error.message?.includes('503') ||
-                             error.status === 503 ||
-                             error.statusText === 'Service Unavailable';
+      error.message?.includes('503') ||
+      error.status === 503 ||
+      error.statusText === 'Service Unavailable';
 
     const isRateLimitError = error.message?.includes('rate limit') ||
-                            error.message?.includes('too many requests') ||
-                            error.status === 429;
+      error.message?.includes('too many requests') ||
+      error.status === 429;
 
     if (isQuotaError || isInvalidKeyError || isOverloadedError || isRateLimitError) {
       console.log(`🔄 Error de API detectado (${error.status || 'unknown'}), rotando claves...`);
       this.markKeyError();
-      
+
       // Intentar con la siguiente clave
       const nextKey = this.getNextKey();
       return new GoogleGenerativeAI(nextKey);
     }
-    
+
     return null; // No se puede manejar este error
   }
 }
@@ -142,7 +142,7 @@ const audioStorage = multer.diskStorage({
   },
 });
 
-const audioUpload = multer({ 
+const audioUpload = multer({
   storage: audioStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB máximo
@@ -158,7 +158,7 @@ const audioUpload = multer({
       'audio/m4a',
       'audio/aac',
     ];
-    
+
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(mp3|mp4|wav|webm|ogg|m4a|aac)$/i)) {
       cb(null, true);
     } else {
@@ -243,11 +243,66 @@ class BrunchyMCP {
     - /pedidos/pendientes/count - Conteo de pedidos pendientes
     - /admin/metrics - Métricas administrativas generales
     
-    💡 EJEMPLOS DE USO INTELIGENTE:
-    - "Ventas del mes": Usar /pedidos/ventas/rango con startDate=primer día del mes actual y endDate=último día del mes
-    - "Ventas del año": Usar /pedidos/ventas/rango con startDate=01-01-2024 y endDate=31-12-2024
-    - "Ventas de enero": Usar /pedidos/ventas/rango con startDate=2024-01-01 y endDate=2024-01-31
-    - Calcular fechas automáticamente basado en la fecha actual y la solicitud del usuario
+    💡 CÁLCULO INTELIGENTE DE FECHAS (CRÍTICO):
+    - SIEMPRE calcula las fechas basándote en la fecha actual de hoy
+    - Para "ventas del mes" o "este mes": calcula automáticamente el primer y último día del mes actual
+    - Para "ventas del año" o "este año": calcula automáticamente del 1 de enero al 31 de diciembre del año actual
+    - Para "ventas de enero": usa el 1 y 31 de enero del año actual, NO del 2024
+    - NUNCA uses fechas fijas como 2024-06-01 o 2025-01-01 sin calcular la fecha real
+    
+    📅 FORMATEO DINÁMICO DE FECHAS (OBLIGATORIO):
+    Hoy es ${new Date().toISOString().split('T')[0]} - USA ESTA FECHA COMO REFERENCIA
+    
+    📊 PERÍODOS COMPLEJOS INTELIGENTES (NUEVO):
+    Debes ser capaz de calcular automáticamente estos períodos basándote en la fecha actual:
+    
+    🔹 BIMESTRES (cada 2 meses):
+    - "primer bimestre" / "primer bimestre del año" → enero-febrero (01-01 a 02-28/29)
+    - "segundo bimestre" → marzo-abril (03-01 a 04-30)
+    - "tercer bimestre" → mayo-junio (05-01 a 06-30)
+    - "cuarto bimestre" → julio-agosto (07-01 a 08-31)
+    - "quinto bimestre" → septiembre-octubre (09-01 a 10-31)
+    - "sexto bimestre" → noviembre-diciembre (11-01 a 12-31)
+    - "último bimestre" / "bimestre actual" → calcular en qué bimestre estamos HOY
+    
+    🔹 TRIMESTRES (cada 3 meses):
+    - "primer trimestre" / "Q1" → enero-marzo (01-01 a 03-31)
+    - "segundo trimestre" / "Q2" → abril-junio (04-01 a 06-30)
+    - "tercer trimestre" / "Q3" → julio-septiembre (07-01 a 09-30)
+    - "cuarto trimestre" / "Q4" → octubre-diciembre (10-01 a 12-31)
+    - "trimestre actual" → calcular en qué trimestre estamos HOY
+    
+    🔹 SEMESTRES (cada 6 meses):
+    - "primer semestre" → enero-junio (01-01 a 06-30)
+    - "segundo semestre" → julio-diciembre (07-01 a 12-31)
+    - "semestre actual" → calcular en qué semestre estamos HOY
+    
+    🔹 PERÍODOS RELATIVOS INTELIGENTES:
+    - "últimos 15 días" → desde hace 15 días hasta hoy
+    - "últimas 2 semanas" → desde hace 14 días hasta hoy
+    - "último mes" → mes anterior completo (ej: si estamos en enero 2025, sería diciembre 2024)
+    - "últimos 3 meses" → desde hace 3 meses hasta hoy
+    - "últimos 6 meses" → desde hace 6 meses hasta hoy
+    - "último año" → año anterior completo (ej: si estamos en 2025, sería 2024 completo)
+    - "último bimestre" → el bimestre completado anterior al actual (basado en fecha actual)
+    - "último trimestre" → el trimestre completado anterior al actual (basado en fecha actual)
+    - "último semestre" → el semestre completado anterior al actual (basado en fecha actual)
+    
+    🔹 PERÍODOS ESPECÍFICOS:
+    - "enero a marzo" → 2025-01-01 a 2025-03-31
+    - "desde enero" → 2025-01-01 hasta hoy
+    - "hasta marzo" → desde principio del año hasta 2025-03-31
+    
+    EJEMPLOS CORRECTOS PARA ENERO 2025:
+    - "Ventas de este mes" → startDate=2025-01-01, endDate=2025-01-31
+    - "Ventas del primer trimestre" → startDate=2025-01-01, endDate=2025-03-31
+    - "Ventas del primer semestre" → startDate=2025-01-01, endDate=2025-06-30
+    - "Ventas del último bimestre" → startDate=2024-11-01, endDate=2024-12-31 (nov-dic 2024, sexto bimestre)
+    - "Ventas del último trimestre" → startDate=2024-10-01, endDate=2024-12-31 (oct-dic 2024, cuarto trimestre)
+    - "Ventas del último semestre" → startDate=2024-07-01, endDate=2024-12-31 (jul-dic 2024, segundo semestre)
+    - "Ventas de los últimos 3 meses" → startDate=2024-10-01, endDate=2025-01-31 (oct 2024 - ene 2025)
+    
+    ⚠️ REGLA CRÍTICA: JAMÁS uses fechas hardcodeadas como 2024-06-01. SIEMPRE calcula basándote en la fecha actual.
 
     🤖 SISTEMA DE RECOMENDACIONES PERSONALIZADAS:
     - Tenemos un sistema inteligente que analiza el historial de pedidos de cada cliente
@@ -411,6 +466,102 @@ class BrunchyMCP {
       }
       \`\`\`
 
+    - Admin: "Dame los reportes de este mes"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Claro que sí, mi amor! 📊✨ Con gusto te ayudo con los reportes de ventas de este mes. ¡Aquí te va la información que necesitas! 😊",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "2025-01-01",
+            "endDate": "2025-01-31"
+          }
+        }
+      }
+      \`\`\`
+
+    - Admin: "Necesito el reporte del primer trimestre"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Perfecto! 📈✨ Te traigo el reporte completo del primer trimestre (enero a marzo). ¡Vamos a ver qué tal hemos estado! 💪😊",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "2025-01-01",
+            "endDate": "2025-03-31"
+          }
+        }
+      }
+      \`\`\`
+
+    - Admin: "Dame las ventas del último bimestre"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Claro! 📊💫 Te muestro las ventas del último bimestre (noviembre-diciembre 2024). ¡A ver qué tal terminamos el año! 🎉",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "2024-11-01",
+            "endDate": "2024-12-31"
+          }
+        }
+      }
+      \`\`\`
+
+    - Admin: "Quiero ver las ventas de los últimos 3 meses"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Excelente idea! 📈✨ Te traigo las ventas de los últimos 3 meses para que veas la tendencia. ¡Datos fresquitos! 💝😊",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "2024-10-01",
+            "endDate": "2025-01-31"
+          }
+        }
+      }
+      \`\`\`
+
+    - Admin: "Dame el reporte del segundo semestre del año pasado"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Por supuesto! 📊💫 Te traigo el reporte del segundo semestre de 2024 (julio a diciembre). ¡Vamos a ver qué tal fue la segunda mitad del año! 🚀",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "2024-07-01",
+            "endDate": "2024-12-31"
+          }
+        }
+      }
+      \`\`\`
+
+    - Admin: "Quiero las ventas de hoy"
+    - Brunchy:
+      \`\`\`json
+      {
+        "text_response": "¡Por supuesto! 📊💫 Te traigo las ventas del día de hoy. ¡Vamos a ver qué tal nos ha ido! 😊",
+        "action": {
+          "type": "api_call",
+          "endpoint": "/pedidos/ventas/rango",
+          "params": {
+            "startDate": "${new Date().toISOString().split('T')[0]}",
+            "endDate": "${new Date().toISOString().split('T')[0]}"
+          }
+        }
+      }
+      \`\`\`
+
     - Cliente: "Dame dos panquecas y una coca-cola"
     - Brunchy:
       \`\`\`json
@@ -466,7 +617,7 @@ class BrunchyMCP {
         menuString += `- ${item.nombre} (categoría: ${item.categoria}, precio: \$${item.precio})\n`;
       });
     }
-    
+
     if (otros.length > 0) {
       menuString += "\n--- OTROS ---\n";
       otros.forEach(item => {
@@ -475,10 +626,41 @@ class BrunchyMCP {
     }
 
     if (this.menu.length === 0) {
-        menuString = "\nActualmente no tenemos información detallada del menú disponible. Puedes preguntar por categorías generales o si tenemos algún plato específico.\n";
+      menuString = "\nActualmente no tenemos información detallada del menú disponible. Puedes preguntar por categorías generales o si tenemos algún plato específico.\n";
     }
 
-    this.systemPrompt = this.baseSystemPrompt + menuString;
+    // 🔥 NUEVO: Procesar fechas dinámicas en el system prompt
+    let processedPrompt = this.baseSystemPrompt + menuString;
+
+    // Reemplazar las plantillas de fecha con valores reales
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+    const currentDay = today.getDate();
+    const todayFormatted = today.toISOString().split('T')[0];
+
+    // Primer día del mes actual
+    const firstDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+
+    // Último día del mes actual
+    const lastDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${new Date(currentYear, currentMonth, 0).getDate()}`;
+
+    // Reemplazar todas las plantillas de fecha
+    processedPrompt = processedPrompt.replace(/\${new Date\(\)\.toISOString\(\)\.split\('T'\)\[0\]}/g, todayFormatted);
+    processedPrompt = processedPrompt.replace(/\${new Date\(\)\.getFullYear\(\)}/g, currentYear);
+    processedPrompt = processedPrompt.replace(/\${String\(new Date\(\)\.getMonth\(\) \+ 1\)\.padStart\(2, '0'\)}/g, String(currentMonth).padStart(2, '0'));
+    processedPrompt = processedPrompt.replace(/\${new Date\(new Date\(\)\.getFullYear\(\), new Date\(\)\.getMonth\(\) \+ 1, 0\)\.getDate\(\)}/g, new Date(currentYear, currentMonth, 0).getDate());
+
+    // Construir patrones para fechas del mes actual
+    const monthStartPattern = /\${new Date\(\)\.getFullYear\(\)}-\${String\(new Date\(\)\.getMonth\(\) \+ 1\)\.padStart\(2, '0'\)}-01/g;
+    const monthEndPattern = /\${new Date\(\)\.getFullYear\(\)}-\${String\(new Date\(\)\.getMonth\(\) \+ 1\)\.padStart\(2, '0'\)}-\${new Date\(new Date\(\)\.getFullYear\(\), new Date\(\)\.getMonth\(\) \+ 1, 0\)\.getDate\(\)}/g;
+
+    processedPrompt = processedPrompt.replace(monthStartPattern, firstDayOfMonth);
+    processedPrompt = processedPrompt.replace(monthEndPattern, lastDayOfMonth);
+
+    this.systemPrompt = processedPrompt;
+
+    console.log(`📅 Fechas procesadas: Hoy=${todayFormatted}, Mes=${firstDayOfMonth} a ${lastDayOfMonth}`);
   }
 
   // Método para cambiar el modelo de Gemini
@@ -512,13 +694,13 @@ class BrunchyMCP {
     if (!this.chatHistories[sessionId]) {
       this.chatHistories[sessionId] = [];
     }
-    
+
     // Limitar el historial para no exceder el límite de tokens, manteniendo los últimos N intercambios.
     // Ejemplo: mantener los últimos 10 mensajes (5 intercambios usuario/modelo)
-    const maxHistoryLength = 10; 
+    const maxHistoryLength = 10;
     let currentSessionHistory = this.chatHistories[sessionId];
     if (currentSessionHistory.length > maxHistoryLength) {
-        currentSessionHistory = currentSessionHistory.slice(-maxHistoryLength);
+      currentSessionHistory = currentSessionHistory.slice(-maxHistoryLength);
     }
 
     // Si tenemos el ID del cliente, obtener recomendaciones personalizadas
@@ -526,7 +708,7 @@ class BrunchyMCP {
     if (clientId) {
       try {
         console.log(`🤖 [BrunchyMCP] Obteniendo recomendaciones completas para cliente ${clientId}`);
-        
+
         // Usar el endpoint existente de recomendaciones que ya incluye toda la lógica
         const recommendationsQuery = `
           WITH cliente_favoritos AS (
@@ -703,20 +885,20 @@ class BrunchyMCP {
             END || ' - ' || items_por_tipo || ' items pedidos' as descripcion
           FROM estadisticas_cliente
         `;
-        
+
         const recommendationsResult = await pool.query(recommendationsQuery, [clientId]);
-        
+
         if (recommendationsResult.rows.length > 0) {
           const favoritos = recommendationsResult.rows
             .filter(row => row.tipo === 'favorito')
             .map(row => `${row.nombre} ($${row.precio} - ${row.descripcion})`)
             .join(', ');
-          
+
           const popularesMismoTipo = recommendationsResult.rows
             .filter(row => row.tipo === 'popular_mismo_tipo')
             .map(row => `${row.nombre} ($${row.precio} - ${row.descripcion})`)
             .join(', ');
-          
+
           const popularesGenerales = recommendationsResult.rows
             .filter(row => row.tipo === 'popular_general')
             .slice(0, 2)
@@ -800,46 +982,46 @@ ${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
     currentSessionHistory.push({ role: "user", parts: [{ text: message }] });
 
     if (this.menu.length === 0) {
-        await this.loadMenu(); 
+      await this.loadMenu();
     }
 
     console.log(`[BrunchyMCP] Enviando a Gemini para sesión ${sessionId}${clientId ? ` (cliente ${clientId})` : ''}:`, message);
-    
+
     // Función para intentar la solicitud con rotación automática de claves
     const attemptRequest = async (retryCount = 0) => {
       const maxRetries = keyManager.apiKeys.length; // Intentar con todas las claves disponibles
-      
+
       try {
         // Obtener instancia de Gemini con la clave actual
         const genAI = keyManager.getGenAIInstance();
         console.log(`🔑 [BrunchyMCP] Usando clave API #${keyManager.currentKeyIndex + 1}`);
-        
-        const model = genAI.getGenerativeModel({ 
-            model: this.currentModel,
-            systemInstruction: { 
-                role: "system", 
-                parts: [{ text: enhancedSystemPrompt }] 
-            } 
+
+        const model = genAI.getGenerativeModel({
+          model: this.currentModel,
+          systemInstruction: {
+            role: "system",
+            parts: [{ text: enhancedSystemPrompt }]
+          }
         });
 
         const result = await model.generateContent({
-            contents: currentSessionHistory,
-            generationConfig: {
-                temperature: 0.6,
-                topP: 0.9,
-                topK: 30,
-                maxOutputTokens: 1024,
-            },
+          contents: currentSessionHistory,
+          generationConfig: {
+            temperature: 0.6,
+            topP: 0.9,
+            topK: 30,
+            maxOutputTokens: 1024,
+          },
         });
 
         const response = result.response;
         if (!response || !response.candidates || !response.candidates[0] || !response.candidates[0].content || !response.candidates[0].content.parts || !response.candidates[0].content.parts[0]) {
-            console.error('❌ [BrunchyMCP] Respuesta inesperada de Gemini o contenido vacío.');
-            currentSessionHistory.push({ role: "model", parts: [{ text: "Error: No se recibió respuesta del modelo." }] });
-            this.chatHistories[sessionId] = currentSessionHistory;
-            return { text_response: "Lo siento, no pude procesar tu solicitud en este momento. Por favor, intenta de nuevo." };
+          console.error('❌ [BrunchyMCP] Respuesta inesperada de Gemini o contenido vacío.');
+          currentSessionHistory.push({ role: "model", parts: [{ text: "Error: No se recibió respuesta del modelo." }] });
+          this.chatHistories[sessionId] = currentSessionHistory;
+          return { text_response: "Lo siento, no pude procesar tu solicitud en este momento. Por favor, intenta de nuevo." };
         }
-        
+
         const responseText = response.candidates[0].content.parts[0].text;
         console.log('[BrunchyMCP] Respuesta cruda de Gemini:', responseText);
 
@@ -848,84 +1030,84 @@ ${preferencias ? `📈 TUS PREFERENCIAS: ${preferencias}` : ''}
 
         let parsedResponse;
         try {
-            const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```|\{(\s*?"text_response":.*?)\}/s);
-            if (jsonMatch && (jsonMatch[1] || jsonMatch[2])) {
-                let jsonString = jsonMatch[1] || jsonMatch[2];
-                
-                // Función para corregir JSON malformado común
-                const fixMalformedJson = (jsonStr) => {
-                  // Corregir falta de comas después de text_response
-                  jsonStr = jsonStr.replace(/("text_response":\s*"[^"]*")\s*("action":)/g, '$1,\n  $2');
-                  
-                  // Corregir falta de comas después de action
-                  jsonStr = jsonStr.replace(/("action":\s*"[^"]*")\s*("items":)/g, '$1,\n  $2');
-                  
-                  // Corregir falta de comas entre propiedades en general
-                  jsonStr = jsonStr.replace(/("\w+":\s*(?:"[^"]*"|[^,}\]]+))\s*("\w+":\s*)/g, '$1,\n  $2');
-                  
-                  // Limpiar espacios extra y saltos de línea problemáticos
-                  jsonStr = jsonStr.replace(/,\s*,/g, ',').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
-                  
-                  return jsonStr;
-                };
-                
-                // Intentar parsear JSON original primero
-                try {
-                  parsedResponse = JSON.parse(jsonString);
-                  console.log('[BrunchyMCP] Respuesta parseada como JSON:', parsedResponse);
-                  return parsedResponse;
-                } catch (firstError) {
-                  console.log('🔧 [BrunchyMCP] JSON malformado, intentando corregir...');
-                  
-                  // Intentar corregir y parsear nuevamente
-                  const fixedJsonString = fixMalformedJson(jsonString);
-                  console.log('🔧 [BrunchyMCP] JSON corregido:', fixedJsonString);
-                  
-                  try {
-                    parsedResponse = JSON.parse(fixedJsonString);
-                    console.log('✅ [BrunchyMCP] JSON corregido parseado exitosamente:', parsedResponse);
-                    return parsedResponse;
-                  } catch (secondError) {
-                    console.error('❌ [BrunchyMCP] No se pudo corregir el JSON, usando texto plano');
-                    throw secondError;
-                  }
-                }
-            } else {
-                parsedResponse = { text_response: responseText };
-                console.log('[BrunchyMCP] Respuesta tratada como texto plano:', parsedResponse);
+          const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```|\{(\s*?"text_response":.*?)\}/s);
+          if (jsonMatch && (jsonMatch[1] || jsonMatch[2])) {
+            let jsonString = jsonMatch[1] || jsonMatch[2];
+
+            // Función para corregir JSON malformado común
+            const fixMalformedJson = (jsonStr) => {
+              // Corregir falta de comas después de text_response
+              jsonStr = jsonStr.replace(/("text_response":\s*"[^"]*")\s*("action":)/g, '$1,\n  $2');
+
+              // Corregir falta de comas después de action
+              jsonStr = jsonStr.replace(/("action":\s*"[^"]*")\s*("items":)/g, '$1,\n  $2');
+
+              // Corregir falta de comas entre propiedades en general
+              jsonStr = jsonStr.replace(/("\w+":\s*(?:"[^"]*"|[^,}\]]+))\s*("\w+":\s*)/g, '$1,\n  $2');
+
+              // Limpiar espacios extra y saltos de línea problemáticos
+              jsonStr = jsonStr.replace(/,\s*,/g, ',').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+
+              return jsonStr;
+            };
+
+            // Intentar parsear JSON original primero
+            try {
+              parsedResponse = JSON.parse(jsonString);
+              console.log('[BrunchyMCP] Respuesta parseada como JSON:', parsedResponse);
+              return parsedResponse;
+            } catch (firstError) {
+              console.log('🔧 [BrunchyMCP] JSON malformado, intentando corregir...');
+
+              // Intentar corregir y parsear nuevamente
+              const fixedJsonString = fixMalformedJson(jsonString);
+              console.log('🔧 [BrunchyMCP] JSON corregido:', fixedJsonString);
+
+              try {
+                parsedResponse = JSON.parse(fixedJsonString);
+                console.log('✅ [BrunchyMCP] JSON corregido parseado exitosamente:', parsedResponse);
                 return parsedResponse;
+              } catch (secondError) {
+                console.error('❌ [BrunchyMCP] No se pudo corregir el JSON, usando texto plano');
+                throw secondError;
+              }
             }
-        } catch (jsonError) {
-            console.error('❌ [BrunchyMCP] Error al parsear JSON de la respuesta de Gemini, tratando como texto plano:', jsonError);
-            
-            // Extraer solo el text_response si está disponible
-            const textMatch = responseText.match(/"text_response":\s*"([^"]+)"/);
-            if (textMatch) {
-              parsedResponse = { text_response: textMatch[1] };
-              console.log('🔧 [BrunchyMCP] Extraído text_response del JSON malformado:', parsedResponse);
-            } else {
-              parsedResponse = { text_response: responseText };
-            }
+          } else {
+            parsedResponse = { text_response: responseText };
+            console.log('[BrunchyMCP] Respuesta tratada como texto plano:', parsedResponse);
             return parsedResponse;
+          }
+        } catch (jsonError) {
+          console.error('❌ [BrunchyMCP] Error al parsear JSON de la respuesta de Gemini, tratando como texto plano:', jsonError);
+
+          // Extraer solo el text_response si está disponible
+          const textMatch = responseText.match(/"text_response":\s*"([^"]+)"/);
+          if (textMatch) {
+            parsedResponse = { text_response: textMatch[1] };
+            console.log('🔧 [BrunchyMCP] Extraído text_response del JSON malformado:', parsedResponse);
+          } else {
+            parsedResponse = { text_response: responseText };
+          }
+          return parsedResponse;
         }
 
       } catch (error) {
         console.error(`❌ [BrunchyMCP] Error al obtener respuesta de Gemini (intento ${retryCount + 1}):`, error);
-        
+
         // Intentar manejar el error con rotación de claves
         const newGenAI = keyManager.handleApiError(error);
-        
+
         if (newGenAI && retryCount < maxRetries - 1) {
           console.log(`🔄 [BrunchyMCP] Reintentando con nueva clave API (intento ${retryCount + 2}/${maxRetries})`);
           // Pequeño delay antes del reintento para evitar saturar las APIs
           await new Promise(resolve => setTimeout(resolve, 1000 + (retryCount * 500)));
           return attemptRequest(retryCount + 1);
         }
-        
+
         // Si llegamos aquí, ya agotamos todas las claves o el error no es manejable
         currentSessionHistory.push({ role: "model", parts: [{ text: "Error interno del modelo al procesar la solicitud." }] });
         this.chatHistories[sessionId] = currentSessionHistory;
-        return { text_response: "Lo siento, tengo problemas para procesar tu solicitud en este momento. Por favor, intenta de nuevo más tarde."};
+        return { text_response: "Lo siento, tengo problemas para procesar tu solicitud en este momento. Por favor, intenta de nuevo más tarde." };
       }
     };
 
@@ -951,19 +1133,19 @@ const brunchy = new BrunchyMCP();
 const migrateToDefaultModel = () => {
   const obsoleteModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
   const defaultModel = 'gemini-2.5-flash-preview-05-20';
-  
+
   // Si globalAssistantConfig tiene un modelo obsoleto, actualizar
   if (obsoleteModels.includes(globalAssistantConfig.model)) {
     console.log(`🔄 Servidor: Migrando modelo obsoleto "${globalAssistantConfig.model}" a "${defaultModel}"`);
     globalAssistantConfig.model = defaultModel;
   }
-  
+
   // Si brunchy tiene un modelo diferente, sincronizar
   if (brunchy.currentModel !== globalAssistantConfig.model) {
     console.log(`🔄 Servidor: Sincronizando BrunchyMCP de "${brunchy.currentModel}" a "${globalAssistantConfig.model}"`);
     brunchy.setModel(globalAssistantConfig.model);
   }
-  
+
   console.log(`✅ Servidor: Modelo confirmado como "${brunchy.currentModel}"`);
 };
 
@@ -1022,15 +1204,15 @@ app.post('/test/pedidos', (req, res) => {
     }
     return res.status(201).json({
       success: true,
-      idpedido: Date.now(), 
+      idpedido: Date.now(),
       message: 'Pedido de prueba recibido correctamente',
       fecha: new Date().toISOString()
     });
   } catch (error) {
     console.error('❌ Error en endpoint de prueba:', error);
-    return res.status(500).json({ 
-      error: 'Error del servidor', 
-      details: error.message 
+    return res.status(500).json({
+      error: 'Error del servidor',
+      details: error.message
     });
   }
 });
@@ -1063,7 +1245,7 @@ app.post('/db/query', async (req, res) => {
 app.get('/pedidos/pendientes/count', async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT COUNT(*) as count FROM pedidos WHERE estado = 'pendiente'");
-    return res.status(200).json({count: parseInt(rows[0].count), timestamp: new Date().toISOString()});
+    return res.status(200).json({ count: parseInt(rows[0].count), timestamp: new Date().toISOString() });
   } catch (error) {
     console.error("❌ Error al obtener número de pedidos pendientes:", error);
     return res.status(500).json({ error: "Error al obtener número de pedidos pendientes", details: error.message });
@@ -1073,7 +1255,7 @@ app.get('/pedidos/pendientes/count', async (req, res) => {
 app.get('/pedidos/ventas/hoy', async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'");
-    return res.status(200).json({total: parseFloat(rows[0].total), timestamp: new Date().toISOString()});
+    return res.status(200).json({ total: parseFloat(rows[0].total), timestamp: new Date().toISOString() });
   } catch (error) {
     console.error("❌ Error al obtener ventas del día:", error);
     return res.status(500).json({ error: "Error al obtener ventas del día", details: error.message });
@@ -1084,9 +1266,9 @@ app.get('/pedidos/ventas/hoy', async (req, res) => {
 app.get('/pedidos/ventas/rango', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     if (!startDate || !endDate) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Se requieren startDate y endDate en formato YYYY-MM-DD",
         example: "/pedidos/ventas/rango?startDate=2024-01-01&endDate=2024-01-31"
       });
@@ -1106,10 +1288,10 @@ app.get('/pedidos/ventas/rango', async (req, res) => {
         AND p.fecha <= $2::date + interval '1 day'
         AND p.estado = 'completado'
     `;
-    
+
     const { rows } = await pool.query(query, [startDate, endDate]);
     const result = rows[0];
-    
+
     return res.status(200).json({
       total: parseFloat(result.total),
       total_pedidos: parseInt(result.total_pedidos),
@@ -1122,9 +1304,9 @@ app.get('/pedidos/ventas/rango', async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error al obtener ventas por rango:", error);
-    return res.status(500).json({ 
-      error: "Error al obtener ventas por rango", 
-      details: error.message 
+    return res.status(500).json({
+      error: "Error al obtener ventas por rango",
+      details: error.message
     });
   }
 });
@@ -1175,7 +1357,7 @@ app.get('/pedidos', async (req, res) => {
 app.get('/debug/categorias', async (req, res) => {
   try {
     console.log('🔍 Solicitud de debug de categorías');
-    
+
     const result = await pool.query(`
       SELECT DISTINCT categoria, tipo, COUNT(*) as count
       FROM menu 
@@ -1183,12 +1365,12 @@ app.get('/debug/categorias', async (req, res) => {
       GROUP BY categoria, tipo 
       ORDER BY tipo, categoria
     `);
-    
+
     console.log('🔍 Categorías encontradas en la base de datos:');
     result.rows.forEach(row => {
       console.log(`   ${row.tipo}: "${row.categoria}" (${row.count} platos)`);
     });
-    
+
     res.json({
       categorias: result.rows,
       timestamp: new Date().toISOString()
@@ -1203,7 +1385,7 @@ app.get('/debug/categorias', async (req, res) => {
 app.post('/debug/fix-tipos', async (req, res) => {
   try {
     console.log('🔧 Iniciando corrección de tipos null en la base de datos');
-    
+
     // Actualizar comidas que tienen tipo null
     const updateComidas = await pool.query(`
       UPDATE menu 
@@ -1211,7 +1393,7 @@ app.post('/debug/fix-tipos', async (req, res) => {
       WHERE LOWER(categoria) IN ('tablas', 'panquecas', 'tostadas francesas', 'gofres', 'omelettes') 
         AND tipo IS NULL
     `);
-    
+
     // Actualizar bebidas que tienen tipo null
     const updateBebidas = await pool.query(`
       UPDATE menu 
@@ -1219,10 +1401,10 @@ app.post('/debug/fix-tipos', async (req, res) => {
       WHERE categoria IN ('Expresos', 'Frapuccinos', 'Cold Brew', 'Jugos') 
         AND tipo IS NULL
     `);
-    
+
     console.log(`✅ Corregidos ${updateComidas.rowCount} platos de comida`);
     console.log(`✅ Corregidos ${updateBebidas.rowCount} platos de bebida`);
-    
+
     // Verificar el resultado
     const verificacion = await pool.query(`
       SELECT DISTINCT categoria, tipo, COUNT(*) as count
@@ -1231,7 +1413,7 @@ app.post('/debug/fix-tipos', async (req, res) => {
       GROUP BY categoria, tipo 
       ORDER BY tipo, categoria
     `);
-    
+
     res.json({
       success: true,
       message: `Corrección completada: ${updateComidas.rowCount} comidas + ${updateBebidas.rowCount} bebidas`,
@@ -1280,7 +1462,7 @@ app.post('/mcp/chat', async (req, res) => {
     // Usar la nueva instancia brunchy para mantener consistencia
     const geminiResponse = await brunchy.getGeminiResponse(message, sessionId);
     res.json({
-        ...geminiResponse, // La respuesta ya está formateada
+      ...geminiResponse, // La respuesta ya está formateada
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1289,18 +1471,438 @@ app.post('/mcp/chat', async (req, res) => {
   }
 });
 
+// 🔥 FUNCIÓN PARA CALCULAR PERÍODOS COMPLEJOS INTELIGENTEMENTE
+function calculateComplexPeriods(message, requestId) {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-based (0 = enero)
+  const currentDate = today.getDate();
+
+  console.log(`📅 [${requestId}]: Calculando período para: "${message}"`);
+  console.log(`📅 [${requestId}]: Fecha actual: ${today.toISOString().split('T')[0]}`);
+
+  const msg = message.toLowerCase();
+
+  // Función helper para formatear fechas
+  const formatDate = (date) => {
+    return date.toISOString().split('T')[0];
+  };
+
+  // BIMESTRES (cada 2 meses)
+  if (msg.includes('bimestre')) {
+    if (msg.includes('primer') || msg.includes('1')) {
+      return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-02-28` };
+    } else if (msg.includes('segundo') || msg.includes('2')) {
+      return { startDate: `${currentYear}-03-01`, endDate: `${currentYear}-04-30` };
+    } else if (msg.includes('tercer') || msg.includes('3')) {
+      return { startDate: `${currentYear}-05-01`, endDate: `${currentYear}-06-30` };
+    } else if (msg.includes('cuarto') || msg.includes('4')) {
+      return { startDate: `${currentYear}-07-01`, endDate: `${currentYear}-08-31` };
+    } else if (msg.includes('quinto') || msg.includes('5')) {
+      return { startDate: `${currentYear}-09-01`, endDate: `${currentYear}-10-31` };
+    } else if (msg.includes('sexto') || msg.includes('6')) {
+      return { startDate: `${currentYear}-11-01`, endDate: `${currentYear}-12-31` };
+    } else if (msg.includes('actual')) {
+      // Calcular bimestre actual basado en fecha actual
+      const bimestreActual = Math.floor(currentMonth / 2) + 1;
+      const startMonth = (bimestreActual - 1) * 2;
+      const endMonth = startMonth + 1;
+      const endDay = new Date(currentYear, endMonth + 1, 0).getDate();
+      return {
+        startDate: `${currentYear}-${String(startMonth + 1).padStart(2, '0')}-01`,
+        endDate: `${currentYear}-${String(endMonth + 1).padStart(2, '0')}-${endDay}`
+      };
+    } else if (msg.includes('último') || msg.includes('anterior') || msg.includes('pasado')) {
+      // Calcular ÚLTIMO bimestre completado basado en fecha actual
+      console.log(`🔍 [${requestId}]: Calculando último bimestre. Mes actual: ${currentMonth + 1}`);
+
+      const bimestreActual = Math.floor(currentMonth / 2) + 1;
+      let ultimoBimestre = bimestreActual - 1;
+      let year = currentYear;
+
+      // Si estamos en el primer bimestre, el último fue el sexto del año anterior
+      if (ultimoBimestre < 1) {
+        ultimoBimestre = 6;
+        year = currentYear - 1;
+      }
+
+      console.log(`📅 [${requestId}]: Último bimestre: ${ultimoBimestre} de ${year}`);
+
+      const startMonth = (ultimoBimestre - 1) * 2;
+      const endMonth = startMonth + 1;
+      const endDay = new Date(year, endMonth + 1, 0).getDate();
+
+      return {
+        startDate: `${year}-${String(startMonth + 1).padStart(2, '0')}-01`,
+        endDate: `${year}-${String(endMonth + 1).padStart(2, '0')}-${endDay}`
+      };
+    }
+  }
+
+  // TRIMESTRES (cada 3 meses)
+  if (msg.includes('trimestre') || msg.includes('q1') || msg.includes('q2') || msg.includes('q3') || msg.includes('q4')) {
+    if (msg.includes('primer') || msg.includes('1') || msg.includes('q1')) {
+      return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-03-31` };
+    } else if (msg.includes('segundo') || msg.includes('2') || msg.includes('q2')) {
+      return { startDate: `${currentYear}-04-01`, endDate: `${currentYear}-06-30` };
+    } else if (msg.includes('tercer') || msg.includes('3') || msg.includes('q3')) {
+      return { startDate: `${currentYear}-07-01`, endDate: `${currentYear}-09-30` };
+    } else if (msg.includes('cuarto') || msg.includes('4') || msg.includes('q4')) {
+      return { startDate: `${currentYear}-10-01`, endDate: `${currentYear}-12-31` };
+    } else if (msg.includes('actual')) {
+      // Calcular trimestre actual basado en fecha actual
+      const trimestreActual = Math.floor(currentMonth / 3) + 1;
+      const startMonth = (trimestreActual - 1) * 3;
+      const endMonth = startMonth + 2;
+      const endDay = new Date(currentYear, endMonth + 1, 0).getDate();
+      return {
+        startDate: `${currentYear}-${String(startMonth + 1).padStart(2, '0')}-01`,
+        endDate: `${currentYear}-${String(endMonth + 1).padStart(2, '0')}-${endDay}`
+      };
+    } else if (msg.includes('último') || msg.includes('anterior') || msg.includes('pasado')) {
+      // Calcular ÚLTIMO trimestre completado basado en fecha actual
+      console.log(`🔍 [${requestId}]: Calculando último trimestre. Mes actual: ${currentMonth + 1}`);
+
+      const trimestreActual = Math.floor(currentMonth / 3) + 1;
+      let ultimoTrimestre = trimestreActual - 1;
+      let year = currentYear;
+
+      // Si estamos en Q1, el último trimestre fue Q4 del año anterior
+      if (ultimoTrimestre < 1) {
+        ultimoTrimestre = 4;
+        year = currentYear - 1;
+      }
+
+      console.log(`📅 [${requestId}]: Último trimestre: Q${ultimoTrimestre} de ${year}`);
+
+      const startMonth = (ultimoTrimestre - 1) * 3;
+      const endMonth = startMonth + 2;
+      const endDay = new Date(year, endMonth + 1, 0).getDate();
+
+      return {
+        startDate: `${year}-${String(startMonth + 1).padStart(2, '0')}-01`,
+        endDate: `${year}-${String(endMonth + 1).padStart(2, '0')}-${endDay}`
+      };
+    }
+  }
+
+  // SEMESTRES (cada 6 meses)
+  if (msg.includes('semestre')) {
+    if (msg.includes('primer') || msg.includes('1')) {
+      return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-06-30` };
+    } else if (msg.includes('segundo') || msg.includes('2')) {
+      return { startDate: `${currentYear}-07-01`, endDate: `${currentYear}-12-31` };
+    } else if (msg.includes('actual')) {
+      // Calcular semestre actual basado en fecha actual
+      if (currentMonth < 6) {
+        return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-06-30` };
+      } else {
+        return { startDate: `${currentYear}-07-01`, endDate: `${currentYear}-12-31` };
+      }
+    } else if (msg.includes('último') || msg.includes('anterior') || msg.includes('pasado')) {
+      // Calcular ÚLTIMO semestre completado basado en fecha actual
+      console.log(`🔍 [${requestId}]: Calculando último semestre. Mes actual: ${currentMonth + 1}`);
+
+      if (currentMonth < 6) {
+        // Estamos en primer semestre (ene-jun), último semestre fue segundo del año anterior
+        console.log(`📅 [${requestId}]: En primer semestre actual, último fue segundo semestre ${currentYear - 1}`);
+        return { startDate: `${currentYear - 1}-07-01`, endDate: `${currentYear - 1}-12-31` };
+      } else {
+        // Estamos en segundo semestre (jul-dic), último semestre fue primer semestre del año actual
+        console.log(`📅 [${requestId}]: En segundo semestre actual, último fue primer semestre ${currentYear}`);
+        return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-06-30` };
+      }
+    }
+  }
+
+  // PERÍODOS RELATIVOS
+  if (msg.includes('últimos') || msg.includes('ultimos')) {
+    if (msg.includes('15 días') || msg.includes('quince días')) {
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 15);
+      return { startDate: formatDate(startDate), endDate: formatDate(today) };
+    } else if (msg.includes('2 semanas') || msg.includes('dos semanas')) {
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 14);
+      return { startDate: formatDate(startDate), endDate: formatDate(today) };
+    } else if (msg.includes('3 meses') || msg.includes('tres meses')) {
+      const startDate = new Date(today);
+      startDate.setMonth(startDate.getMonth() - 3);
+      return { startDate: formatDate(startDate), endDate: formatDate(today) };
+    } else if (msg.includes('6 meses') || msg.includes('seis meses')) {
+      const startDate = new Date(today);
+      startDate.setMonth(startDate.getMonth() - 6);
+      return { startDate: formatDate(startDate), endDate: formatDate(today) };
+    }
+  }
+
+  // ÚLTIMO MES/AÑO COMPLETO
+  if (msg.includes('último mes') || msg.includes('mes pasado')) {
+    const lastMonth = new Date(currentYear, currentMonth - 1, 1);
+    const lastMonthEnd = new Date(currentYear, currentMonth, 0);
+    return { startDate: formatDate(lastMonth), endDate: formatDate(lastMonthEnd) };
+  }
+
+  if (msg.includes('último año') || msg.includes('año pasado')) {
+    return { startDate: `${currentYear - 1}-01-01`, endDate: `${currentYear - 1}-12-31` };
+  }
+
+  // PERÍODOS ESPECÍFICOS DESDE/HASTA
+  if (msg.includes('desde enero') && !msg.includes('hasta')) {
+    return { startDate: `${currentYear}-01-01`, endDate: formatDate(today) };
+  }
+
+  if (msg.includes('hasta marzo') && !msg.includes('desde')) {
+    return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-03-31` };
+  }
+
+  if (msg.includes('enero a marzo') || msg.includes('de enero a marzo')) {
+    return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-03-31` };
+  }
+
+  // PERÍODOS POR MES ESPECÍFICO
+  const meses = {
+    'enero': { start: '01-01', end: '01-31' },
+    'febrero': { start: '02-01', end: '02-28' },
+    'marzo': { start: '03-01', end: '03-31' },
+    'abril': { start: '04-01', end: '04-30' },
+    'mayo': { start: '05-01', end: '05-31' },
+    'junio': { start: '06-01', end: '06-30' },
+    'julio': { start: '07-01', end: '07-31' },
+    'agosto': { start: '08-01', end: '08-31' },
+    'septiembre': { start: '09-01', end: '09-30' },
+    'octubre': { start: '10-01', end: '10-31' },
+    'noviembre': { start: '11-01', end: '11-30' },
+    'diciembre': { start: '12-01', end: '12-31' }
+  };
+
+  for (const [nombreMes, fechas] of Object.entries(meses)) {
+    if (msg.includes(nombreMes) && !msg.includes('últimos') && !msg.includes('desde') && !msg.includes('hasta')) {
+      // Determinar si es del año actual o pasado
+      let year = currentYear;
+      if (msg.includes('pasado') || msg.includes('anterior') || (msg.includes('del') && msg.includes('2024'))) {
+        year = currentYear - 1;
+      }
+      return {
+        startDate: `${year}-${fechas.start}`,
+        endDate: `${year}-${fechas.end}`
+      };
+    }
+  }
+
+  // CASOS ESPECIALES ADICIONALES
+  if (msg.includes('este año') || msg.includes('año actual')) {
+    return { startDate: `${currentYear}-01-01`, endDate: `${currentYear}-12-31` };
+  }
+
+  if (msg.includes('este mes') || msg.includes('mes actual')) {
+    const firstDay = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const lastDayFormatted = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${lastDay}`;
+    return { startDate: firstDay, endDate: lastDayFormatted };
+  }
+
+  if (msg.includes('hoy') || msg.includes('día de hoy')) {
+    return { startDate: formatDate(today), endDate: formatDate(today) };
+  }
+
+  if (msg.includes('ayer')) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return { startDate: formatDate(yesterday), endDate: formatDate(yesterday) };
+  }
+
+  if (msg.includes('esta semana') || msg.includes('semana actual')) {
+    const startOfWeek = new Date(today);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Lunes como inicio
+    startOfWeek.setDate(diff);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+    return { startDate: formatDate(startOfWeek), endDate: formatDate(endOfWeek) };
+  }
+
+  console.log(`⚠️ [${requestId}]: No se pudo determinar período específico para: "${message}"`);
+  return null;
+}
+
 // 🔥 FUNCIÓN PARA PROCESAR ACCIONES SUGERIDAS POR BRUNCHY
 async function processActionSuggestion(geminiResponse, requestId) {
   const { action, report_type, time_frame, api_call } = geminiResponse;
-  
+
+  // 🔥 NUEVO: Manejar acciones tipo api_call
+  if (action && typeof action === 'object' && action.type === 'api_call') {
+    console.log(`🎯 [${requestId}]: Procesando acción api_call: ${action.endpoint}`);
+
+    try {
+      const { endpoint, params } = action;
+
+      // Manejar endpoint de reportes de ventas por rango
+      if (endpoint === '/pedidos/ventas/rango' && params) {
+        let { startDate, endDate } = params;
+
+        // 🔥 NUEVA FUNCIONALIDAD: Si las fechas vienen como "AUTO_CALCULATE" o no están presentes,
+        // intentar calcular automáticamente basándose en el mensaje original
+        if (!startDate || !endDate || startDate === 'AUTO_CALCULATE' || endDate === 'AUTO_CALCULATE') {
+          console.log(`🤖 [${requestId}]: Intentando calcular fechas automáticamente...`);
+          const calculatedPeriod = calculateComplexPeriods(geminiResponse.original_message || '', requestId);
+
+          if (calculatedPeriod) {
+            startDate = calculatedPeriod.startDate;
+            endDate = calculatedPeriod.endDate;
+            console.log(`✅ [${requestId}]: Fechas calculadas automáticamente: ${startDate} a ${endDate}`);
+          } else {
+            // Fallback a mes actual si no se puede calcular
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = today.getMonth() + 1;
+            const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+            const lastDay = new Date(year, month, 0).getDate();
+            const lastDayFormatted = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+
+            startDate = firstDay;
+            endDate = lastDayFormatted;
+            console.log(`⚠️ [${requestId}]: Usando fallback al mes actual: ${startDate} a ${endDate}`);
+          }
+        }
+
+        console.log(`📊 [${requestId}]: Generando reporte de ventas desde ${startDate} hasta ${endDate}`);
+
+        // Ejecutar consulta de ventas por rango
+        const salesQuery = `
+          SELECT 
+            COALESCE(SUM(m.precio * pd.cantidad), 0) as total_ventas,
+            COUNT(DISTINCT p.idpedido) as total_pedidos,
+            COUNT(DISTINCT DATE(p.fecha)) as dias_con_ventas,
+            AVG(m.precio * pd.cantidad) as promedio_por_item,
+            MIN(p.fecha) as primera_venta,
+            MAX(p.fecha) as ultima_venta
+          FROM pedidos p 
+          JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+          JOIN menu m ON pd.idplato = m.idplato 
+          WHERE DATE(p.fecha) BETWEEN $1 AND $2 
+          AND p.estado = 'completado'
+        `;
+
+        const salesResult = await pool.query(salesQuery, [startDate, endDate]);
+        const salesData = salesResult.rows[0];
+
+        // Consulta adicional: platos más vendidos en el período
+        const topDishesQuery = `
+          SELECT 
+            m.nombre,
+            SUM(pd.cantidad) as cantidad_vendida,
+            SUM(m.precio * pd.cantidad) as ingresos_generados
+          FROM pedidos p 
+          JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+          JOIN menu m ON pd.idplato = m.idplato 
+          WHERE DATE(p.fecha) BETWEEN $1 AND $2 
+          AND p.estado = 'completado'
+          GROUP BY m.idplato, m.nombre, m.precio
+          ORDER BY cantidad_vendida DESC
+          LIMIT 5
+        `;
+
+        const topDishesResult = await pool.query(topDishesQuery, [startDate, endDate]);
+        const topDishes = topDishesResult.rows;
+
+        // Formatear respuesta mejorada
+        const totalVentas = parseFloat(salesData.total_ventas) || 0;
+        const totalPedidos = parseInt(salesData.total_pedidos) || 0;
+        const diasConVentas = parseInt(salesData.dias_con_ventas) || 0;
+        const promedioPorItem = parseFloat(salesData.promedio_por_item) || 0;
+
+        // 🔥 NUEVO: Determinar título inteligente basado en el período
+        let periodTitle = "REPORTE DE VENTAS";
+        const originalMsg = geminiResponse.original_message?.toLowerCase() || '';
+
+        if (originalMsg.includes('bimestre')) {
+          periodTitle = "REPORTE DE VENTAS DEL BIMESTRE";
+        } else if (originalMsg.includes('trimestre') || originalMsg.includes('q1') || originalMsg.includes('q2') || originalMsg.includes('q3') || originalMsg.includes('q4')) {
+          periodTitle = "REPORTE DE VENTAS DEL TRIMESTRE";
+        } else if (originalMsg.includes('semestre')) {
+          periodTitle = "REPORTE DE VENTAS DEL SEMESTRE";
+        } else if (originalMsg.includes('año') && !originalMsg.includes('mes')) {
+          periodTitle = "REPORTE DE VENTAS DEL AÑO";
+        } else if (originalMsg.includes('mes')) {
+          periodTitle = "REPORTE DE VENTAS DEL MES";
+        } else if (originalMsg.includes('último') && originalMsg.includes('3 meses')) {
+          periodTitle = "REPORTE DE VENTAS DE LOS ÚLTIMOS 3 MESES";
+        } else if (originalMsg.includes('último') && originalMsg.includes('6 meses')) {
+          periodTitle = "REPORTE DE VENTAS DE LOS ÚLTIMOS 6 MESES";
+        } else if (originalMsg.includes('semana')) {
+          periodTitle = "REPORTE DE VENTAS SEMANAL";
+        } else if (originalMsg.includes('hoy')) {
+          periodTitle = "REPORTE DE VENTAS DE HOY";
+        }
+
+        let enhancedText = `📊 **${periodTitle}** ✨\n\n`;
+        enhancedText += `📅 **Período:** ${startDate} al ${endDate}\n\n`;
+        enhancedText += `💰 **Total de Ventas:** $${totalVentas.toFixed(2)} 💸\n`;
+        enhancedText += `📋 **Total de Pedidos:** ${totalPedidos} pedidos\n`;
+        enhancedText += `📆 **Días con Ventas:** ${diasConVentas} días\n`;
+        enhancedText += `📊 **Promedio por Item:** $${promedioPorItem.toFixed(2)}\n\n`;
+
+        if (totalPedidos > 0) {
+          const promedioDiario = totalVentas / Math.max(diasConVentas, 1);
+          enhancedText += `📈 **Promedio Diario:** $${promedioDiario.toFixed(2)}\n\n`;
+        }
+
+        if (topDishes.length > 0) {
+          enhancedText += `🏆 **TOP 5 PLATOS MÁS VENDIDOS:**\n`;
+          topDishes.forEach((dish, index) => {
+            const emoji = index === 0 ? '👑' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐';
+            enhancedText += `${emoji} **${dish.nombre}** - ${dish.cantidad_vendida} vendidos ($${parseFloat(dish.ingresos_generados).toFixed(2)})\n`;
+          });
+          enhancedText += '\n';
+        }
+
+        enhancedText += totalVentas > 1000 ? '🎉 ¡Excelente período de ventas!' :
+          totalVentas > 500 ? '👍 Buen rendimiento en ventas' :
+            '💪 ¡Sigamos trabajando para mejorar!';
+
+        console.log(`✅ [${requestId}]: Reporte generado exitosamente via api_call`);
+
+        return {
+          text_response: enhancedText,
+          action: 'report_generated',
+          report_data: {
+            period: `${startDate} al ${endDate}`,
+            startDate: startDate,
+            endDate: endDate,
+            totalSales: totalVentas,
+            totalOrders: totalPedidos,
+            daysWithSales: diasConVentas,
+            averagePerItem: promedioPorItem,
+            topDishes: topDishes
+          }
+        };
+      }
+
+      console.log(`⚠️ [${requestId}]: Endpoint api_call no reconocido: ${endpoint}`);
+
+    } catch (error) {
+      console.error(`❌ [${requestId}]: Error procesando api_call:`, error);
+
+      return {
+        text_response: `❌ Lo siento, hubo un error al procesar tu solicitud de reporte: ${error.message}\n\nPuedes intentar preguntarme de nuevo o usar el panel de reportes en la administración. 😊`,
+        action: 'error',
+        error_details: error.message
+      };
+    }
+  }
+
+  // Mantener compatibilidad con el formato anterior
   if (action === 'generate_report' && report_type === 'sales') {
     console.log(`📊 [${requestId}]: Generando reporte de ventas automáticamente`);
-    
+
     try {
       // Calcular fechas según el time_frame solicitado
       const now = new Date();
       let startDate, endDate = now;
-      
+
       if (time_frame === 'last_three_months') {
         startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
       } else if (time_frame === 'last_month') {
@@ -1311,12 +1913,12 @@ async function processActionSuggestion(geminiResponse, requestId) {
         // Por defecto, último mes
         startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
       }
-      
+
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
-      
+
       console.log(`📅 [${requestId}]: Consultando ventas desde ${startDateStr} hasta ${endDateStr}`);
-      
+
       // Ejecutar consulta de ventas por rango
       const salesQuery = `
         SELECT 
@@ -1332,10 +1934,10 @@ async function processActionSuggestion(geminiResponse, requestId) {
         WHERE DATE(p.fecha) BETWEEN $1 AND $2 
         AND p.estado = 'completado'
       `;
-      
+
       const salesResult = await pool.query(salesQuery, [startDateStr, endDateStr]);
       const salesData = salesResult.rows[0];
-      
+
       // Consulta adicional: platos más vendidos en el período
       const topDishesQuery = `
         SELECT 
@@ -1347,36 +1949,36 @@ async function processActionSuggestion(geminiResponse, requestId) {
         JOIN menu m ON pd.idplato = m.idplato 
         WHERE DATE(p.fecha) BETWEEN $1 AND $2 
         AND p.estado = 'completado'
-        GROUP BY m.idplato, m.nombre, m.precio
-        ORDER BY cantidad_vendida DESC
-        LIMIT 5
+            GROUP BY m.idplato, m.nombre, m.precio
+            ORDER BY cantidad_vendida DESC
+            LIMIT 5
       `;
-      
+
       const topDishesResult = await pool.query(topDishesQuery, [startDateStr, endDateStr]);
       const topDishes = topDishesResult.rows;
-      
+
       // Formatear respuesta mejorada
       const totalVentas = parseFloat(salesData.total_ventas) || 0;
       const totalPedidos = parseInt(salesData.total_pedidos) || 0;
       const diasConVentas = parseInt(salesData.dias_con_ventas) || 0;
       const promedioPorItem = parseFloat(salesData.promedio_por_item) || 0;
-      
+
       const periodDescription = time_frame === 'last_three_months' ? 'últimos 3 meses' :
-                               time_frame === 'last_month' ? 'último mes' :
-                               time_frame === 'last_year' ? 'último año' : 'período solicitado';
-      
+        time_frame === 'last_month' ? 'último mes' :
+          time_frame === 'last_year' ? 'último año' : 'período solicitado';
+
       let enhancedText = `📊 **REPORTE DE VENTAS - ${periodDescription.toUpperCase()}** ✨\n\n`;
       enhancedText += `📅 **Período:** ${startDateStr} al ${endDateStr}\n\n`;
       enhancedText += `💰 **Total de Ventas:** $${totalVentas.toFixed(2)} 💸\n`;
       enhancedText += `📋 **Total de Pedidos:** ${totalPedidos} pedidos\n`;
       enhancedText += `📆 **Días con Ventas:** ${diasConVentas} días\n`;
       enhancedText += `📊 **Promedio por Item:** $${promedioPorItem.toFixed(2)}\n\n`;
-      
+
       if (totalPedidos > 0) {
         const promedioDiario = totalVentas / Math.max(diasConVentas, 1);
         enhancedText += `📈 **Promedio Diario:** $${promedioDiario.toFixed(2)}\n\n`;
       }
-      
+
       if (topDishes.length > 0) {
         enhancedText += `🏆 **TOP 5 PLATOS MÁS VENDIDOS:**\n`;
         topDishes.forEach((dish, index) => {
@@ -1385,13 +1987,13 @@ async function processActionSuggestion(geminiResponse, requestId) {
         });
         enhancedText += '\n';
       }
-      
-      enhancedText += totalVentas > 1000 ? '🎉 ¡Excelente período de ventas!' : 
-                     totalVentas > 500 ? '👍 Buen rendimiento en ventas' : 
-                     '💪 ¡Sigamos trabajando para mejorar!';
-      
+
+      enhancedText += totalVentas > 1000 ? '🎉 ¡Excelente período de ventas!' :
+        totalVentas > 500 ? '👍 Buen rendimiento en ventas' :
+          '💪 ¡Sigamos trabajando para mejorar!';
+
       console.log(`✅ [${requestId}]: Reporte generado exitosamente`);
-      
+
       return {
         text_response: enhancedText,
         action: 'report_generated',
@@ -1406,10 +2008,10 @@ async function processActionSuggestion(geminiResponse, requestId) {
           topDishes: topDishes
         }
       };
-      
+
     } catch (error) {
       console.error(`❌ [${requestId}]: Error generando reporte:`, error);
-      
+
       return {
         text_response: `❌ Lo siento, hubo un error al generar el reporte de ventas: ${error.message}\n\nPero puedes intentar preguntarme de nuevo o usar el panel de reportes en la administración. 😊`,
         action: 'error',
@@ -1417,7 +2019,7 @@ async function processActionSuggestion(geminiResponse, requestId) {
       };
     }
   }
-  
+
   // Si la acción no es reconocida, devolver la respuesta original
   console.log(`⚠️ [${requestId}]: Acción no reconocida: ${action}`);
   return geminiResponse;
@@ -1427,39 +2029,44 @@ async function processActionSuggestion(geminiResponse, requestId) {
 app.post('/chat', async (req, res) => {
   const { message, sessionId, isAdmin, clientId } = req.body;
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    
+
   console.log(`📝 Chat [${requestId}]: Mensaje recibido: "${String(message).substring(0, 50)}..."`);
   console.log(`📝 Chat [${requestId}]: Session ID: ${sessionId || 'No proporcionado'}`);
   console.log(`📝 Chat [${requestId}]: Es Admin: ${isAdmin || false}`);
   console.log(`📝 Chat [${requestId}]: Cliente ID: ${clientId || 'No proporcionado'}`);
-    
+
   if (!message || !sessionId) {
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Mensaje y sessionId son requeridos',
       requestId,
       timestamp: new Date().toISOString()
     });
   }
-      
+
   try {
     // 🔥 CAMBIO CLAVE: TODO va directamente a Brunchy para que use su inteligencia mejorada
     // Solo logueamos si es admin para debug, pero ya no interceptamos nada
     if (isAdmin) {
       console.log(`🔧 Chat [${requestId}]: Procesando mensaje de admin - ENVIANDO A BRUNCHY DIRECTAMENTE`);
     }
-    
+
     // Para TODOS los mensajes (admin o cliente), usar BrunchyMCP directamente
     // Pasar el clientId si está disponible para obtener recomendaciones personalizadas
     const geminiResponse = await brunchy.getGeminiResponse(message, sessionId, clientId);
     console.log(`📝 Chat [${requestId}]: Respuesta de BrunchyMCP:`, geminiResponse);
-    
+
     // 🔥 NUEVO: Procesar acciones sugeridas por Brunchy
     if (geminiResponse.action && isAdmin) {
       console.log(`🎯 Chat [${requestId}]: Procesando acción sugerida: ${geminiResponse.action}`);
-      
+
       try {
-        const enhancedResponse = await processActionSuggestion(geminiResponse, requestId);
-        
+        // Pasar el mensaje original para cálculo de fechas complejas
+        const enhancedGeminiResponse = {
+          ...geminiResponse,
+          original_message: message
+        };
+        const enhancedResponse = await processActionSuggestion(enhancedGeminiResponse, requestId);
+
         res.json({
           ...enhancedResponse,
           requestId,
@@ -1471,7 +2078,7 @@ app.post('/chat', async (req, res) => {
         // Si falla el procesamiento de la acción, enviar la respuesta original
       }
     }
-    
+
     res.json({
       ...geminiResponse,
       requestId,
@@ -1479,7 +2086,7 @@ app.post('/chat', async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Chat [${requestId}]: Error general en el endpoint de chat:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error al procesar el mensaje',
       details: error.message,
       requestId,
@@ -1500,7 +2107,7 @@ app.post('/mcp/validate', (req, res) => {
     // Este endpoint podría necesitar una reevaluación o ser deprecado.
     // Por ahora, se asume que si la respuesta es un string, es válida en el sentido simple.
     const isValid = typeof response === 'string' || (typeof response === 'object' && response.text_response);
-    
+
     if (isValid) {
       return res.status(200).json({
         valid: true,
@@ -1527,7 +2134,7 @@ app.get('/mcp/status', async (req, res) => {
     const availableResult = await pool.query("SELECT COUNT(*) as available_count FROM menu WHERE disponibilidad = true");
     const availableDishCount = parseInt(availableResult.rows[0].available_count);
     const modelInfo = brunchy.getModelInfo();
-    
+
     return res.status(200).json({
       status: 'active',
       version: '1.4.1', // Versión con manejo robusto de errores
@@ -1562,16 +2169,16 @@ app.get('/mcp/status', async (req, res) => {
 app.post('/mcp/model', (req, res) => {
   try {
     const { model } = req.body;
-    
+
     if (!model) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Se requiere especificar el modelo',
         availableModels: brunchy.getModelInfo().availableModels
       });
     }
-    
+
     const success = brunchy.setModel(model);
-    
+
     if (success) {
       return res.status(200).json({
         success: true,
@@ -1589,8 +2196,8 @@ app.post('/mcp/model', (req, res) => {
     }
   } catch (error) {
     console.error('Error al cambiar modelo de Gemini:', error);
-    return res.status(500).json({ 
-      error: 'Error interno al cambiar modelo', 
+    return res.status(500).json({
+      error: 'Error interno al cambiar modelo',
       details: error.message,
       timestamp: new Date().toISOString()
     });
@@ -1607,8 +2214,8 @@ app.get('/mcp/model', (req, res) => {
     });
   } catch (error) {
     console.error('Error al obtener información del modelo:', error);
-    return res.status(500).json({ 
-      error: 'Error al obtener información del modelo', 
+    return res.status(500).json({
+      error: 'Error al obtener información del modelo',
       details: error.message,
       timestamp: new Date().toISOString()
     });
@@ -1618,10 +2225,10 @@ app.get('/mcp/model', (req, res) => {
 // Endpoint para procesar audio con Gemini
 app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
   const requestId = `audio_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  
+
   try {
     console.log(`🎵 Audio [${requestId}]: Procesando audio`);
-    
+
     // Verificar que se subió un archivo
     if (!req.file) {
       return res.status(400).json({
@@ -1652,17 +2259,17 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
 
     // Procesar audio con Gemini usando sistema de reintentos
     console.log(`🤖 Audio [${requestId}]: Iniciando procesamiento con Gemini...`);
-    
+
     // Función para intentar el procesamiento con rotación automática de claves
     const attemptAudioProcessing = async (retryCount = 0) => {
       const maxRetries = keyManager.apiKeys.length;
-      
+
       try {
         // Obtener instancia de Gemini con rotación de claves
         const genAI = keyManager.getGenAIInstance();
         console.log(`🔑 Audio [${requestId}]: Usando clave API #${keyManager.currentKeyIndex + 1}`);
-        
-        const model = genAI.getGenerativeModel({ 
+
+        const model = genAI.getGenerativeModel({
           model: brunchy.currentModel,
         });
 
@@ -1701,7 +2308,7 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
         // Enviar a Gemini con timeout
         const result = await Promise.race([
           model.generateContent([prompt, audioPart]),
-          new Promise((_, reject) => 
+          new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Timeout de Gemini')), 45000)
           )
         ]);
@@ -1712,10 +2319,10 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
         console.log(`✅ Audio [${requestId}]: Transcrito: "${transcribedText.substring(0, 50)}..."`);
 
         // Verificar si la transcripción fue exitosa
-        if (transcribedText && 
-            transcribedText.trim() !== '' && 
-            !transcribedText.toLowerCase().includes('no se pudo transcribir')) {
-          
+        if (transcribedText &&
+          transcribedText.trim() !== '' &&
+          !transcribedText.toLowerCase().includes('no se pudo transcribir')) {
+
           return {
             success: true,
             transcribed_text: transcribedText.trim(),
@@ -1739,16 +2346,16 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
 
       } catch (geminiError) {
         console.error(`❌ Audio [${requestId}]: Error de Gemini (intento ${retryCount + 1}):`, geminiError);
-        
+
         // Intentar manejar el error con rotación de claves
         const newGenAI = keyManager.handleApiError(geminiError);
-        
+
         if (newGenAI && retryCount < maxRetries - 1) {
           console.log(`🔄 Audio [${requestId}]: Reintentando con nueva clave API`);
           await new Promise(resolve => setTimeout(resolve, 1000 + (retryCount * 500)));
           return attemptAudioProcessing(retryCount + 1);
         }
-        
+
         return {
           success: false,
           error: 'gemini_error',
@@ -1762,7 +2369,7 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
 
     try {
       const result = await attemptAudioProcessing();
-      
+
       // Limpiar el archivo temporal
       try {
         fs.unlinkSync(audioFilePath);
@@ -1775,7 +2382,7 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
 
     } catch (processingError) {
       console.error(`❌ Audio [${requestId}]: Error general en procesamiento:`, processingError);
-      
+
       // Limpiar archivo temporal en caso de error
       try {
         if (fs.existsSync(audioFilePath)) {
@@ -1797,7 +2404,7 @@ app.post('/audio/process', audioUpload.single('audio'), async (req, res) => {
 
   } catch (error) {
     console.error(`❌ Audio [${requestId}]: Error general:`, error);
-    
+
     // Limpiar archivo temporal en caso de error
     try {
       if (req.file && fs.existsSync(req.file.path)) {
@@ -1840,15 +2447,15 @@ app.get('/config/global', (req, res) => {
 app.post('/config/global', (req, res) => {
   try {
     console.log('🔧 Solicitud de actualización de configuración global:', req.body);
-    
-    const { 
+
+    const {
       serverIp,
-      model, 
-      enableReports, 
-      enablePopularDishes, 
+      model,
+      enableReports,
+      enablePopularDishes,
       showSystemMessages,
       debugMode,
-      systemPrompt 
+      systemPrompt
     } = req.body;
 
     // Actualizar configuración global
@@ -1886,7 +2493,7 @@ app.post('/config/global', (req, res) => {
 app.post('/config/test-connection', (req, res) => {
   try {
     const { serverIp } = req.body;
-    
+
     if (!serverIp) {
       return res.status(400).json({
         success: false,
@@ -1896,7 +2503,7 @@ app.post('/config/test-connection', (req, res) => {
 
     // Simular prueba de conexión (en un caso real, harías ping o verificación)
     const isValidIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(serverIp);
-    
+
     if (isValidIp) {
       console.log(`🔗 Prueba de conexión exitosa para IP: ${serverIp}`);
       res.json({
@@ -1955,7 +2562,7 @@ app.get('/pedidos/tiempo/:id', async (req, res) => {
 app.get('/db-status', async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
-    res.status(200).json({ 
+    res.status(200).json({
       status: 'ok', message: 'Conexión a PostgreSQL correcta',
       timestamp: result.rows[0].now, timezone: process.env.TZ || 'No configurada'
     });
@@ -2004,7 +2611,7 @@ app.post('/pedidos-direct', async (req, res) => {
 app.post('/admin/fix-super-admin-role', async (req, res) => {
   try {
     console.log('🔧 Solicitud para corregir rol del Super Admin');
-    
+
     // Buscar usuario luis luis
     const findResult = await pool.query(`
       SELECT p.nombre, p.apellido, u.rol, p.email, p.idpersonas
@@ -2012,34 +2619,34 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
       JOIN personas p ON u.idpersona = p.idpersonas 
       WHERE LOWER(p.nombre) LIKE '%luis%' AND LOWER(p.apellido) LIKE '%luis%'
     `);
-    
+
     if (findResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'No se encontró el usuario luis luis',
-        success: false 
+        success: false
       });
     }
-    
+
     const luisUser = findResult.rows[0];
     console.log(`📋 Usuario encontrado: ${luisUser.nombre} ${luisUser.apellido}, rol actual: "${luisUser.rol}"`);
-    
+
     if (luisUser.rol === '00') {
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: 'El usuario ya tiene rol de Super Admin (00)',
         success: true,
         rolActual: luisUser.rol
       });
     }
-    
+
     // Actualizar el rol a "00"
     const updateResult = await pool.query(`
       UPDATE usuario 
       SET rol = '00' 
       WHERE idpersona = $1
     `, [luisUser.idpersonas]);
-    
+
     console.log(`✅ Filas actualizadas: ${updateResult.rowCount}`);
-    
+
     // Verificar el cambio
     const verificationResult = await pool.query(`
       SELECT p.nombre, p.apellido, u.rol, p.email
@@ -2047,9 +2654,9 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
       JOIN personas p ON u.idpersona = p.idpersonas 
       WHERE p.idpersonas = $1
     `, [luisUser.idpersonas]);
-    
+
     const updatedUser = verificationResult.rows[0];
-    
+
     // Mostrar estado de todos los admins
     const allAdminsResult = await pool.query(`
       SELECT p.nombre, p.apellido, u.rol, p.email
@@ -2058,9 +2665,9 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
       WHERE u.rol IN ('00', '0')
       ORDER BY u.rol, p.nombre
     `);
-    
+
     console.log('✅ Corrección completada');
-    
+
     return res.status(200).json({
       success: true,
       message: 'Rol del Super Admin corregido exitosamente',
@@ -2076,7 +2683,7 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
         tipo: user.rol === '00' ? 'Super Admin' : 'Admin'
       }))
     });
-    
+
   } catch (error) {
     console.error('❌ Error al corregir rol del Super Admin:', error);
     return res.status(500).json({
@@ -2120,17 +2727,17 @@ app.listen(port, ip, () => {
 app.get('/config/sync', (req, res) => {
   try {
     console.log('🔄 Solicitud de sincronización inicial del frontend');
-    
+
     const currentBrunchyModel = brunchy.currentModel;
     const globalConfigModel = globalAssistantConfig.model;
-    
+
     // Verificar que ambos estén sincronizados
     if (currentBrunchyModel !== globalConfigModel) {
       console.warn(`⚠️ Desincronización detectada: BrunchyMCP(${currentBrunchyModel}) vs Global(${globalConfigModel})`);
       brunchy.setModel(globalConfigModel);
       console.log(`🔄 BrunchyMCP resincronizado a: ${globalConfigModel}`);
     }
-    
+
     const syncData = {
       serverConfig: {
         ...globalAssistantConfig,
@@ -2145,7 +2752,7 @@ app.get('/config/sync', (req, res) => {
       serverTime: new Date().toISOString(),
       version: '1.4.1'
     };
-    
+
     console.log('✅ Datos de sincronización enviados al frontend');
     res.json({
       success: true,
@@ -2199,7 +2806,7 @@ app.get('/discover', (req, res) => {
         baseUrl: `http://${realServerIP}:${port}`,
         capabilities: [
           'chat',
-          'menu-management', 
+          'menu-management',
           'order-management',
           'user-management',
           'audio-processing'
@@ -2229,7 +2836,7 @@ app.get('/discover', (req, res) => {
     res.setHeader('X-Server-Type', 'le-brunch-app');
     res.setHeader('X-Server-Version', '1.4.1');
     res.setHeader('X-Discovery-Protocol', 'http');
-    
+
     res.json(discoveryInfo);
   } catch (error) {
     console.error('❌ Error en endpoint de descubrimiento:', error);
@@ -2244,46 +2851,46 @@ app.get('/discover', (req, res) => {
 app.post('/admin/fix-image-urls', async (req, res) => {
   try {
     console.log('🔧 Iniciando corrección de URLs de imágenes...');
-    
+
     // Obtener la URL actual del servidor
     const currentServerUrl = config.getServerUrl();
     console.log(`🌐 URL actual del servidor: ${currentServerUrl}`);
-    
+
     // Obtener todos los platos con imagen_url
     const platos = await pool.query(
       'SELECT idplato, imagen_url FROM menu WHERE imagen_url IS NOT NULL AND imagen_url != \'\''
     );
-    
+
     let corregidos = 0;
     let noNecesitanCorreccion = 0;
-    
+
     for (const plato of platos.rows) {
       const urlOriginal = plato.imagen_url;
-      
+
       // Si la URL ya es correcta o es relativa, no hacer nada
       if (urlOriginal.startsWith(currentServerUrl) || !urlOriginal.startsWith('http')) {
         noNecesitanCorreccion++;
         continue;
       }
-      
+
       // Extraer solo la parte del archivo de la URL
       const match = urlOriginal.match(/\/uploads\/(.+)$/);
       if (match) {
         const filename = match[1];
         const nuevaUrl = `${currentServerUrl}/uploads/${filename}`;
-        
+
         await pool.query(
           'UPDATE menu SET imagen_url = $1 WHERE idplato = $2',
           [nuevaUrl, plato.idplato]
         );
-        
+
         console.log(`✅ Corregido: ${urlOriginal} → ${nuevaUrl}`);
         corregidos++;
       }
     }
-    
+
     console.log(`🎯 Corrección completada: ${corregidos} URLs corregidas, ${noNecesitanCorreccion} no necesitaban corrección`);
-    
+
     res.json({
       success: true,
       message: 'URLs de imágenes corregidas exitosamente',
@@ -2292,7 +2899,7 @@ app.post('/admin/fix-image-urls', async (req, res) => {
       serverUrl: currentServerUrl,
       timestamp: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Error al corregir URLs de imágenes:', error);
     res.status(500).json({
@@ -2307,25 +2914,25 @@ app.post('/admin/fix-image-urls', async (req, res) => {
 app.get('/menu-with-corrected-urls', async (req, res) => {
   try {
     const { disponibilidad } = req.query;
-    
+
     let query = "SELECT * FROM menu WHERE isDelete = FALSE";
     const queryParams = [];
-    
+
     if (disponibilidad !== undefined) {
       const isAvailable = disponibilidad === 'true';
       query += " AND disponibilidad = $1";
       queryParams.push(isAvailable);
     }
-    
+
     query += " ORDER BY nombre";
-    
+
     const result = await pool.query(query, queryParams);
     const currentServerUrl = config.getServerUrl();
-    
+
     // Corregir URLs dinámicamente
     const platosCorregidos = result.rows.map(plato => {
       let imagenUrlCorregida = plato.imagen_url;
-      
+
       if (imagenUrlCorregida) {
         // Si la URL no contiene el servidor actual
         if (imagenUrlCorregida.startsWith('http') && !imagenUrlCorregida.startsWith(currentServerUrl)) {
@@ -2336,18 +2943,18 @@ app.get('/menu-with-corrected-urls', async (req, res) => {
           }
         } else if (!imagenUrlCorregida.startsWith('http')) {
           // Si es una URL relativa, convertirla a absoluta
-          imagenUrlCorregida = imagenUrlCorregida.startsWith('/') 
+          imagenUrlCorregida = imagenUrlCorregida.startsWith('/')
             ? `${currentServerUrl}${imagenUrlCorregida}`
             : `${currentServerUrl}/${imagenUrlCorregida}`;
         }
       }
-      
+
       return {
         ...plato,
         imagen_url: imagenUrlCorregida
       };
     });
-    
+
     res.json(platosCorregidos);
   } catch (error) {
     console.error('❌ Error al obtener menú con URLs corregidas:', error);
@@ -2360,10 +2967,10 @@ app.get('/menu-completo-corrected', async (req, res) => {
   try {
     const result = await pool.query('SELECT idplato, nombre, categoria, precio, disponibilidad, ingredientes, imagen_url, tipo FROM menu WHERE disponibilidad = TRUE AND isDelete = FALSE');
     const currentServerUrl = config.getServerUrl();
-    
+
     const platosCorregidos = result.rows.map(plato => {
       let imagenUrlCorregida = plato.imagen_url;
-      
+
       if (imagenUrlCorregida) {
         if (imagenUrlCorregida.startsWith('http') && !imagenUrlCorregida.startsWith(currentServerUrl)) {
           const match = imagenUrlCorregida.match(/\/uploads\/(.+)$/);
@@ -2371,18 +2978,18 @@ app.get('/menu-completo-corrected', async (req, res) => {
             imagenUrlCorregida = `${currentServerUrl}/uploads/${match[1]}`;
           }
         } else if (!imagenUrlCorregida.startsWith('http')) {
-          imagenUrlCorregida = imagenUrlCorregida.startsWith('/') 
+          imagenUrlCorregida = imagenUrlCorregida.startsWith('/')
             ? `${currentServerUrl}${imagenUrlCorregida}`
             : `${currentServerUrl}/${imagenUrlCorregida}`;
         }
       }
-      
+
       return {
         ...plato,
         imagen_url: imagenUrlCorregida
       };
     });
-    
+
     res.json(platosCorregidos);
   } catch (error) {
     console.error('❌ Error al obtener el menú completo con URLs corregidas:', error);

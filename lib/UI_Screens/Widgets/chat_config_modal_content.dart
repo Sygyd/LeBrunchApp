@@ -381,68 +381,52 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     }
   }
 
-  // 🔥 ACTUALIZADO: Forzar sincronización manual
-  Future<void> _forceSyncWithServer() async {
-    setState(() => _isLoading = true);
-    try {
-      // Guardar configuración actual al servidor
-      final success = await _globalConfig.updateServerConfig(
-        model: _currentModel,
-        enableReports: _enableReports,
-        enablePopularDishes: _enablePopularDishes,
-        showSystemMessages: _showSystemMessages,
-        debugMode: _debugMode,
-      );
+  // 🔥 ELIMINADO: Método de sincronización ya no necesario
+  // Future<void> _forceSyncWithServer() async { ... }
 
-      if (success) {
-        await _loadCurrentSettings();
-        // Verificar estado del servidor
-        final serverStatus = await _globalConfig.getServerStatus();
+  // ACTUALIZADO: Método mejorado para diagnóstico que usa AppConfig correctamente
+  void _openNetworkDiagnostic() async {
+    // Antes de abrir el diagnóstico, asegurar que AppConfig esté actualizado
+    final currentIp =
+        _serverIpController.text.isNotEmpty
+            ? _serverIpController.text
+            : AppConfig.serverIp;
 
-        if (mounted) {
-          String message = '✅ Sincronización completada';
-          if (serverStatus != null && serverStatus['connected'] == true) {
-            final geminiModel = serverStatus['geminiModel'];
-            final currentServerModel = geminiModel?['current'] ?? 'desconocido';
+    // Actualizar AppConfig si es necesario
+    if (currentIp != AppConfig.serverIp) {
+      AppConfig.updateServerIp(currentIp);
+      print('📡 Diagnóstico: AppConfig actualizado con IP: $currentIp');
+    }
 
-            message += '\n🤖 Modelo en servidor: $currentServerModel';
-            message += '\n🌐 URL: ${AppConfig.serverUrl}';
-
-            if (currentServerModel != _currentModel) {
-              message +=
-                  '\n⚠️ Modelos diferentes: servidor ($currentServerModel) vs local ($_currentModel)';
-            }
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Error en sincronización manual'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error en sincronización: $e'),
-            backgroundColor: Colors.red,
+    // Mostrar información actual antes de abrir diagnóstico
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '🔍 Abriendo diagnóstico para IP: ${AppConfig.serverIp}',
           ),
-        );
-      }
-    } finally {
-      setState(() => _isLoading = false);
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    // Abrir el widget de diagnóstico
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (context) => const NetworkDiagnosticWidget()),
+    );
+
+    // Si el diagnóstico devolvió éxito, recargar configuración
+    if (result == true && mounted) {
+      await _loadCurrentSettings();
+      await _checkServerStatus();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('✅ Configuración actualizada desde diagnóstico'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
     }
   }
 
@@ -934,24 +918,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isLoading ? null : _forceSyncWithServer,
-                icon: const Icon(Icons.sync_alt),
-                label: const Text('Sincronizar'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  side: BorderSide(
-                    color: Theme.of(context).colorScheme.secondary,
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
                 onPressed: _openNetworkDiagnostic,
                 icon: const Icon(Icons.network_check),
                 label: const Text('Diagnóstico'),
@@ -984,12 +950,6 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
           ),
         ),
       ],
-    );
-  }
-
-  void _openNetworkDiagnostic() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const NetworkDiagnosticWidget()),
     );
   }
 }

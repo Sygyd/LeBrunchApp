@@ -7,6 +7,7 @@ import '/UI_Screens/Widgets/background_scaffold.dart';
 import '../../Api_services/menu/get_dishes_service.dart';
 import 'package:intl/intl.dart';
 import '../../Api_services/network_config_service.dart';
+import '../../config.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   final String userName;
@@ -130,12 +131,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
-  // Método para obtener la URL del servidor
+  // Método para obtener la URL del servidor usando AppConfig
   Future<String> getServerUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverIp =
-        prefs.getString('serverIp') ?? NetworkConfigService().serverIp;
-    return 'http://$serverIp:3000';
+    // Usar AppConfig en lugar de SharedPreferences directamente
+    print('🌐 AdminHomeScreen: Usando IP centralizada: ${AppConfig.serverIp}');
+    return AppConfig.serverUrl;
   }
 
   @override

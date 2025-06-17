@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../Api_services/network_config_service.dart';
+import '../../config.dart';
 import '../../theme/theme.dart';
 
 class NetworkDiagnosticWidget extends StatefulWidget {
@@ -31,12 +32,78 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
     }
 
     try {
-      final diagnosticInfo = _networkService.getDiagnosticInfo();
+      final networkDiagnosticInfo = _networkService.getDiagnosticInfo();
+      final appConfigInfo = AppConfig.getConfigInfo();
       final serverStatus = await _networkService.checkServerStatus();
+
+      // 🔥 NUEVO: Crear información organizada y útil sin N/A
+      final combinedDiagnosticInfo = <String, dynamic>{};
+
+      // Información esencial del servidor (siempre disponible)
+      combinedDiagnosticInfo['Server IP'] = appConfigInfo['currentIp'];
+      combinedDiagnosticInfo['Server Port'] = appConfigInfo['serverPort'];
+      combinedDiagnosticInfo['Base URL'] = appConfigInfo['serverUrl'];
+
+      // Solo agregar configuración de red si tiene valores útiles
+      final networkIp = networkDiagnosticInfo['serverIp'];
+      if (networkIp != null &&
+          networkIp.toString().isNotEmpty &&
+          networkIp != appConfigInfo['currentIp']) {
+        combinedDiagnosticInfo['Network Service IP'] = networkIp;
+      }
+
+      final networkPort = networkDiagnosticInfo['serverPort'];
+      if (networkPort != null &&
+          networkPort.toString().isNotEmpty &&
+          networkPort != appConfigInfo['serverPort']) {
+        combinedDiagnosticInfo['Network Service Port'] = networkPort;
+      }
+
+      // Estado de configuración
+      combinedDiagnosticInfo['Is Configured'] =
+          networkDiagnosticInfo['isConfigured'] == true ? 'true' : 'false';
+      combinedDiagnosticInfo['Is Using Default'] =
+          appConfigInfo['isUsingDefault'] == true ? 'true' : 'false';
+
+      // Solo mostrar información de descubrimiento si existe
+      final lastDiscovery = networkDiagnosticInfo['lastDiscovery'];
+      if (lastDiscovery != null) {
+        try {
+          final discoveryDate = DateTime.parse(lastDiscovery);
+          final now = DateTime.now();
+          final difference = now.difference(discoveryDate);
+
+          if (difference.inDays > 0) {
+            combinedDiagnosticInfo['Last Discovery'] =
+                '${difference.inDays} días atrás';
+          } else if (difference.inHours > 0) {
+            combinedDiagnosticInfo['Last Discovery'] =
+                '${difference.inHours} horas atrás';
+          } else if (difference.inMinutes > 0) {
+            combinedDiagnosticInfo['Last Discovery'] =
+                '${difference.inMinutes} minutos atrás';
+          } else {
+            combinedDiagnosticInfo['Last Discovery'] = 'Hace poco';
+          }
+        } catch (e) {
+          // Si no se puede parsear la fecha, no mostrar nada
+        }
+      }
+
+      // Solo mostrar cache age si es útil
+      final cacheAge = networkDiagnosticInfo['cacheAge'];
+      if (cacheAge != null && cacheAge > 0) {
+        if (cacheAge > 60) {
+          combinedDiagnosticInfo['Cache Age'] =
+              '${(cacheAge / 60).toStringAsFixed(1)} horas';
+        } else {
+          combinedDiagnosticInfo['Cache Age'] = '$cacheAge minutos';
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _diagnosticInfo = diagnosticInfo;
+          _diagnosticInfo = combinedDiagnosticInfo;
           _serverStatus = serverStatus;
           _isLoading = false;
         });
@@ -65,15 +132,17 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
 
         if (success) {
           _showSnackBar('✅ Servidor re-descubierto exitosamente', Colors.green);
-          await _loadDiagnosticInfo();
+          await _loadDiagnosticInfo(); // ✅ Recargar información después de éxito
         } else {
           _showSnackBar('❌ No se pudo encontrar el servidor', Colors.orange);
+          await _loadDiagnosticInfo(); // ✅ Recargar incluso si no tuvo éxito para mostrar estado actual
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isRediscovering = false);
         _showSnackBar('Error durante re-descubrimiento: $e', Colors.red);
+        await _loadDiagnosticInfo(); // ✅ Recargar incluso en caso de error
       }
     }
   }
@@ -104,6 +173,7 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showSnackBar('Error al refrescar configuración: $e', Colors.red);
+        await _loadDiagnosticInfo(); // ✅ Recargar incluso en caso de error
       }
     }
   }
@@ -124,12 +194,14 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
           await _loadDiagnosticInfo();
         } else {
           _showSnackBar('❌ No se pudo recuperar la conexión', Colors.orange);
+          await _loadDiagnosticInfo(); // ✅ Recargar incluso si no tuvo éxito
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSmartRecovering = false);
         _showSnackBar('Error en recuperación inteligente: $e', Colors.red);
+        await _loadDiagnosticInfo(); // ✅ Recargar incluso en caso de error
       }
     }
   }
@@ -157,6 +229,7 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showSnackBar('Error verificando conexión: $e', Colors.red);
+        await _loadDiagnosticInfo(); // ✅ Recargar incluso en caso de error
       }
     }
   }
@@ -166,7 +239,10 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            fontFamily: 'MADE TOMMY', // 🔥 AGREGADO: MADE TOMMY para contenido
+            fontWeight: FontWeight.w500,
+          ),
         ),
         backgroundColor: color,
         duration: const Duration(seconds: 3),
@@ -222,7 +298,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
             label,
             style: TextStyle(
               color: color,
-              fontFamily: 'LightHouse',
+              fontFamily:
+                  'MADE TOMMY', // 🔥 CAMBIADO: Usar MADE TOMMY para contenido
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),
@@ -233,6 +310,24 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
   }
 
   Widget _buildInfoCard(String title, Map<String, dynamic> data) {
+    // 🔥 NUEVO: Filtrar datos antes de construir la tarjeta
+    final filteredData = <String, dynamic>{};
+
+    data.forEach((key, value) {
+      final stringValue = value?.toString() ?? '';
+      // Solo incluir valores que no estén vacíos, sean N/A o null
+      if (stringValue.isNotEmpty &&
+          stringValue != 'N/A' &&
+          stringValue != 'null') {
+        filteredData[key] = value;
+      }
+    });
+
+    // Si no hay datos útiles, no mostrar la tarjeta
+    if (filteredData.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -251,7 +346,7 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
               ),
             ),
             const SizedBox(height: 12),
-            ...data.entries.map(
+            ...filteredData.entries.map(
               (entry) => _buildInfoRow(entry.key, entry.value),
             ),
           ],
@@ -261,9 +356,21 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
   }
 
   Widget _buildInfoRow(String key, dynamic value) {
-    String displayValue = value?.toString() ?? 'N/A';
+    String displayValue = value?.toString() ?? '';
+
+    // 🔥 NUEVO: No mostrar filas con valores vacíos, nulos o N/A
+    if (displayValue.isEmpty ||
+        displayValue == 'N/A' ||
+        displayValue == 'null') {
+      return const SizedBox.shrink();
+    }
+
     bool isClickable =
-        key.contains('url') || key.contains('ip') || key.contains('baseUrl');
+        key.contains('url') ||
+        key.contains('ip') ||
+        key.contains('baseUrl') ||
+        key.contains('URL') ||
+        key.contains('IP');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -275,7 +382,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
             child: Text(
               _formatKey(key),
               style: const TextStyle(
-                fontFamily: 'LightHouse',
+                fontFamily:
+                    'MADE TOMMY', // 🔥 CAMBIADO: Usar MADE TOMMY para contenido
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
                 color: Colors.grey,
@@ -307,14 +415,7 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                         displayValue,
                         style: TextStyle(
                           fontFamily:
-                              key.contains('Time') ||
-                                      key.contains('Count') ||
-                                      key.contains('Port') ||
-                                      key.contains('IP') ||
-                                      key.contains('Version') ||
-                                      displayValue.contains(RegExp(r'\d'))
-                                  ? 'MADE TOMMY'
-                                  : 'LightHouse',
+                              'MADE TOMMY', // 🔥 CAMBIADO: Siempre usar MADE TOMMY para contenido
                           fontSize: 13,
                           color: isClickable ? Colors.blue : Colors.black87,
                           fontWeight:
@@ -396,7 +497,10 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                     SizedBox(height: 16),
                     Text(
                       'Cargando información de red...',
-                      style: TextStyle(fontFamily: 'LightHouse', fontSize: 16),
+                      style: TextStyle(
+                        fontFamily: 'MADE TOMMY',
+                        fontSize: 16,
+                      ), // 🔥 CAMBIADO: MADE TOMMY para contenido
                     ),
                   ],
                 ),
@@ -470,7 +574,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                             label: Text(
                               _isRediscovering ? 'Buscando...' : 'Re-descubrir',
                               style: const TextStyle(
-                                fontFamily: 'LightHouse',
+                                fontFamily:
+                                    'MADE TOMMY', // 🔥 CAMBIADO: MADE TOMMY para contenido
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -493,7 +598,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                             label: const Text(
                               'Refrescar',
                               style: TextStyle(
-                                fontFamily: 'LightHouse',
+                                fontFamily:
+                                    'MADE TOMMY', // 🔥 CAMBIADO: MADE TOMMY para contenido
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -534,7 +640,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                                   ? 'Recuperando...'
                                   : 'Recuperación Inteligente',
                               style: const TextStyle(
-                                fontFamily: 'LightHouse',
+                                fontFamily:
+                                    'MADE TOMMY', // 🔥 CAMBIADO: MADE TOMMY para contenido
                                 fontWeight: FontWeight.w600,
                                 fontSize: 12,
                               ),
@@ -558,7 +665,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                             label: const Text(
                               'Verificar Conexión',
                               style: TextStyle(
-                                fontFamily: 'LightHouse',
+                                fontFamily:
+                                    'MADE TOMMY', // 🔥 CAMBIADO: MADE TOMMY para contenido
                                 fontWeight: FontWeight.w600,
                                 fontSize: 12,
                               ),
@@ -586,18 +694,95 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                     if (_serverStatus != null)
                       _buildInfoCard('Estado del Servidor', _serverStatus!),
 
-                    // Información adicional del servidor si está disponible
-                    if (_networkService.serverInfo != null) ...[
+                    // 🔥 MEJORADO: Solo mostrar información adicional del servidor si tiene datos útiles
+                    if (_networkService.serverInfo != null &&
+                        _networkService.serverInfo!['server'] != null) ...[
                       const SizedBox(height: 8),
-                      _buildInfoCard(
-                        'Información del Servidor',
-                        _networkService.serverInfo!['server'] ?? {},
+                      // Filtrar datos del servidor para mostrar solo información útil
+                      Builder(
+                        builder: (context) {
+                          final serverData =
+                              _networkService.serverInfo!['server']
+                                  as Map<String, dynamic>? ??
+                              {};
+                          final filteredServerData = <String, dynamic>{};
+
+                          // Solo agregar campos que tengan valores útiles
+                          if (serverData['name'] != null)
+                            filteredServerData['Name'] = serverData['name'];
+                          if (serverData['version'] != null)
+                            filteredServerData['Version'] =
+                                serverData['version'];
+                          if (serverData['type'] != null)
+                            filteredServerData['Type'] = serverData['type'];
+                          if (serverData['capabilities'] != null) {
+                            final capabilities =
+                                serverData['capabilities'] as List<dynamic>?;
+                            if (capabilities != null &&
+                                capabilities.isNotEmpty) {
+                              filteredServerData['Capabilities'] = capabilities
+                                  .join(', ');
+                            }
+                          }
+
+                          // Solo mostrar la tarjeta si hay datos útiles
+                          if (filteredServerData.isNotEmpty) {
+                            return _buildInfoCard(
+                              'Información del Servidor',
+                              filteredServerData,
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
 
+                      // Estado detallado solo si tiene información relevante
                       if (_networkService.serverInfo!['status'] != null)
-                        _buildInfoCard(
-                          'Estado Detallado',
-                          _networkService.serverInfo!['status'] ?? {},
+                        Builder(
+                          builder: (context) {
+                            final statusData =
+                                _networkService.serverInfo!['status']
+                                    as Map<String, dynamic>? ??
+                                {};
+                            final filteredStatusData = <String, dynamic>{};
+
+                            // Solo agregar campos que tengan valores útiles
+                            if (statusData['online'] != null)
+                              filteredStatusData['Online'] =
+                                  statusData['online'].toString();
+                            if (statusData['healthy'] != null)
+                              filteredStatusData['Healthy'] =
+                                  statusData['healthy'].toString();
+                            if (statusData['uptime'] != null) {
+                              final uptime = statusData['uptime'] as num?;
+                              if (uptime != null) {
+                                final hours = (uptime / 3600).floor();
+                                final minutes = ((uptime % 3600) / 60).floor();
+                                filteredStatusData['Uptime'] =
+                                    '${hours}h ${minutes}m';
+                              }
+                            }
+                            if (statusData['timestamp'] != null) {
+                              try {
+                                final timestamp = DateTime.parse(
+                                  statusData['timestamp'],
+                                );
+                                filteredStatusData['Last Update'] =
+                                    '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+                              } catch (e) {
+                                // Si no se puede parsear, no mostrar
+                              }
+                            }
+
+                            // Solo mostrar la tarjeta si hay datos útiles
+                            if (filteredStatusData.isNotEmpty) {
+                              return _buildInfoCard(
+                                'Estado Detallado',
+                                filteredStatusData,
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
                         ),
                     ],
 
@@ -627,7 +812,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                                 Text(
                                   'Ayuda',
                                   style: TextStyle(
-                                    fontFamily: 'LightHouse',
+                                    fontFamily:
+                                        'LightHouse', // 🔥 MANTENER: LightHouse para títulos
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue,
                                     fontSize: 16,
@@ -644,7 +830,8 @@ class _NetworkDiagnosticWidgetState extends State<NetworkDiagnosticWidget> {
                               '• "Verificar Conexión" prueba con reintentos automáticos\n'
                               '• La configuración se guarda automáticamente',
                               style: TextStyle(
-                                fontFamily: 'LightHouse',
+                                fontFamily:
+                                    'MADE TOMMY', // 🔥 CAMBIADO: MADE TOMMY para contenido
                                 fontSize: 13,
                                 height: 1.4,
                               ),
