@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/user.dart';
@@ -8,6 +9,7 @@ import './filter_chip.dart';
 import '../../../UI_Screens/Widgets/background_scaffold.dart';
 import '../../../UI_Screens/Widgets/custom_modal.dart';
 import 'package:http/http.dart' as http;
+import '../../../services/restoration_event_bus.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -19,6 +21,9 @@ class AdminUsersScreen extends StatefulWidget {
 class _AdminUsersScreenState extends State<AdminUsersScreen> {
   final UserService _userService = UserService();
   final TextEditingController _searchController = TextEditingController();
+  final RestorationEventBus _restorationEventBus = RestorationEventBus();
+  StreamSubscription<RestorationEvent>? _restorationSubscription;
+
   List<User> _users = [];
   List<User> _filteredUsers = [];
   bool _isLoading = true;
@@ -46,12 +51,73 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       print('   ID actual: $_currentUserId');
       print('   Es Super Admin: $_currentUserIsSuperAdmin');
       _loadUsers();
+
+      // 🔄 NUEVO: Configurar listener para eventos de restauración
+      _setupRestorationListener();
     });
+  }
+
+  /// Configurar listener para eventos de restauración de usuarios
+  void _setupRestorationListener() {
+    _restorationSubscription = _restorationEventBus.onRestoration.listen((
+      event,
+    ) {
+      print(
+        '🔄 AdminUsersScreen: Recibido evento de restauración: ${event.type}',
+      );
+
+      switch (event.type) {
+        case RestorationEventType.batchRestorationsCompleted:
+          // Solo recargar cuando se complete el lote de restauraciones
+          final data = event.data as Map<String, dynamic>?;
+          final restoredUsers =
+              (data?['restoredUsers'] as List?)?.cast<String>() ?? [];
+
+          if (restoredUsers.isNotEmpty) {
+            print(
+              '🔄 AdminUsersScreen: Recargando usuarios por ${restoredUsers.length} usuarios restaurados',
+            );
+            _refreshUsersData();
+          }
+          break;
+        default:
+          // Ignorar otros eventos para evitar múltiples recargas
+          break;
+      }
+    });
+  }
+
+  /// Recargar datos de usuarios de forma optimizada
+  Future<void> _refreshUsersData() async {
+    print('👥 AdminUsersScreen: Iniciando recarga de datos de usuarios...');
+
+    await _loadUsers();
+
+    print('✅ AdminUsersScreen: Datos de usuarios recargados exitosamente');
+
+    // Mostrar feedback visual al usuario solo una vez
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.refresh, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Usuarios restaurados - Lista actualizada'),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _restorationSubscription?.cancel(); // 🔄 Limpiar subscription
     super.dispose();
   }
 

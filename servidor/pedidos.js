@@ -304,12 +304,47 @@ router.get("/pedidos/pendientes/count", async (req, res) => {
 // Obtener ventas del día actual
 router.get("/pedidos/ventas/hoy", async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT COALESCE(SUM(m.precio * pd.cantidad), 0) as total FROM pedidos p JOIN pedido_detalle pd ON p.idpedido = pd.idpedido JOIN menu m ON pd.idplato = m.idplato WHERE DATE(p.fecha) = CURRENT_DATE AND p.estado = 'completado'"
-    );
+    // 🔥 CORREGIDO: Incluir pedidos que representan ventas reales (no cancelados)
+    const { rows } = await pool.query(`
+      SELECT 
+        COALESCE(SUM(m.precio * pd.cantidad), 0) as total,
+        COUNT(DISTINCT p.idpedido) as pedidos_count
+      FROM pedidos p 
+      JOIN pedido_detalle pd ON p.idpedido = pd.idpedido 
+      JOIN menu m ON pd.idplato = m.idplato 
+      WHERE DATE(p.fecha) = CURRENT_DATE 
+      AND p.estado != 'cancelado'
+    `);
+    
+    // También obtener estadísticas por estado para debugging
+    const { rows: estadisticas } = await pool.query(`
+      SELECT 
+        estado,
+        COUNT(*) as cantidad,
+        COALESCE(SUM(pd_stats.total_pedido), 0) as total_por_estado
+      FROM pedidos p
+      LEFT JOIN (
+        SELECT 
+          pd.idpedido,
+          SUM(pd.cantidad * m.precio) as total_pedido
+        FROM pedido_detalle pd
+        JOIN menu m ON pd.idplato = m.idplato
+        GROUP BY pd.idpedido
+      ) pd_stats ON p.idpedido = pd_stats.idpedido
+      WHERE DATE(p.fecha) = CURRENT_DATE
+      GROUP BY estado
+      ORDER BY estado
+    `);
+    
+    console.log('📊 Ventas del día - Estadísticas por estado:');
+    estadisticas.forEach(stat => {
+      console.log(`  ${stat.estado}: ${stat.cantidad} pedidos, $${stat.total_por_estado}`);
+    });
     
     return res.status(200).json({
       total: parseFloat(rows[0].total),
+      pedidos_count: parseInt(rows[0].pedidos_count),
+      estadisticas: estadisticas,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -638,69 +673,70 @@ router.get("/pedidos/stats/ventas-por-hora", async (req, res) => {
   }
 });
 
-// Obtener resumen de pedidos por período
+// Endpoint para obtener resumen de pedidos con filtros avanzados
 router.get("/pedidos/resumen", async (req, res) => {
   try {
-    const { period, startDate, endDate, categoria } = req.query;
-    
-    console.log(`📊 Solicitud de resumen de pedidos: período=${period || 'N/A'}, fechas=${startDate || 'N/A'} a ${endDate || 'N/A'}, categoría=${categoria || 'todos'}`);
+    console.log("📊 Solicitud de resumen de pedidos recibida");
+    console.log("📊 Query params:", req.query);
 
-    // Determinar fechas según el periodo
+    const { 
+      period, 
+      customStartDate, 
+      customEndDate, 
+      categoria,
+      estado = 'completado' // 🔄 NUEVO: Por defecto solo pedidos completados
+    } = req.query;
+
     let fechaInicio, fechaFin;
     const hoy = new Date();
-    
-    // Si se proporcionan fechas específicas
-    if (startDate) {
-      fechaInicio = new Date(`${startDate}T00:00:00`);
-      if (fechaInicio > hoy) {
-        console.log('⚠️ Fecha de inicio futura detectada, ajustando a los últimos 30 días');
-        fechaInicio = new Date(hoy);
-        fechaInicio.setDate(hoy.getDate() - 30);
-      }
-    }
-    
-    if (endDate) {
-      fechaFin = new Date(`${endDate}T23:59:59`);
-      if (fechaFin > hoy) {
-        console.log('⚠️ Fecha fin futura detectada, ajustando al día actual');
-        fechaFin = new Date(hoy);
-        fechaFin.setHours(23, 59, 59, 999);
-      }
-    } else {
-      fechaFin = new Date(hoy);
-      fechaFin.setHours(23, 59, 59, 999);
-    }
+    hoy.setHours(23, 59, 59, 999);
 
-    // Si no se proporcionaron fechas, usar el periodo
-    if (!startDate && !endDate) {
+    // Usar fechas personalizadas si se proporcionan
+    if (customStartDate && customEndDate) {
+      fechaInicio = new Date(`${customStartDate}T00:00:00`);
+      fechaFin = new Date(`${customEndDate}T23:59:59`);
+      console.log(`📅 Usando fechas personalizadas: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
+    } else {
+      // Lógica existente para períodos predefinidos
       switch (period) {
         case 'day':
           fechaInicio = new Date(hoy);
           fechaInicio.setHours(0, 0, 0, 0);
+          fechaFin = new Date(hoy);
+          console.log(`📅 Período día: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
           break;
         case 'week':
           fechaInicio = new Date(hoy);
-          fechaInicio.setDate(hoy.getDate() - 7);
+          fechaInicio.setDate(hoy.getDate() - 6);
+          fechaInicio.setHours(0, 0, 0, 0);
+          fechaFin = new Date(hoy);
+          console.log(`📅 Período semana: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
           break;
         case 'month':
           fechaInicio = new Date(hoy);
-          fechaInicio.setMonth(hoy.getMonth() - 1);
+          fechaInicio.setDate(hoy.getDate() - 29);
+          fechaInicio.setHours(0, 0, 0, 0);
+          fechaFin = new Date(hoy);
+          console.log(`📅 Período mes: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
           break;
         case 'year':
           fechaInicio = new Date(hoy);
-          fechaInicio.setFullYear(hoy.getFullYear() - 1);
+          fechaInicio.setDate(hoy.getDate() - 364);
+          fechaInicio.setHours(0, 0, 0, 0);
+          fechaFin = new Date(hoy);
+          console.log(`📅 Período año: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`);
           break;
         case 'all':
-        case 'todos':
-          // Para "todos", obtener desde el primer pedido en la BD
-          console.log('📊 Período "todos" detectado - obteniendo rango completo de la BD');
+          console.log('📊 Período "all" - obteniendo rango completo de la BD');
           try {
+            // 🔄 NUEVO: Usar el estado en la consulta de rango
+            const estadoCondition = estado === 'todos' ? "estado != 'cancelado'" : `estado = '${estado}'`;
             const rangoResult = await pool.query(`
               SELECT 
                 MIN(DATE(fecha)) as fecha_minima,
                 MAX(DATE(fecha)) as fecha_maxima
               FROM pedidos 
-              WHERE estado = 'completado'
+              WHERE ${estadoCondition}
             `);
             
             if (rangoResult.rows[0].fecha_minima && rangoResult.rows[0].fecha_maxima) {
@@ -725,12 +761,14 @@ router.get("/pedidos/resumen", async (req, res) => {
           // Para período no especificado o desconocido, también usar todos los datos
           console.log(`📊 Período no reconocido "${period}" - usando todos los datos disponibles`);
           try {
+            // 🔄 NUEVO: Usar el estado en la consulta de rango
+            const estadoCondition = estado === 'todos' ? "estado != 'cancelado'" : `estado = '${estado}'`;
             const rangoResult = await pool.query(`
               SELECT 
                 MIN(DATE(fecha)) as fecha_minima,
                 MAX(DATE(fecha)) as fecha_maxima
               FROM pedidos 
-              WHERE estado = 'completado'
+              WHERE ${estadoCondition}
             `);
             
             if (rangoResult.rows[0].fecha_minima && rangoResult.rows[0].fecha_maxima) {
@@ -755,13 +793,19 @@ router.get("/pedidos/resumen", async (req, res) => {
     }
 
     console.log(`📅 Fechas ajustadas: inicio=${fechaInicio.toISOString()}, fin=${fechaFin.toISOString()}`);
+    console.log(`📦 Estado de pedidos a incluir: ${estado}`);
 
     // Condición para filtrar por categoría
     const categoriaCondition = categoria && categoria !== 'todos'
       ? `AND LOWER(m.tipo) = '${categoria.toLowerCase()}'`
       : '';
 
-    // Consulta para el resumen general
+    // 🔄 NUEVO: Condición para filtrar por estado
+    const estadoCondition = estado === 'todos' 
+      ? "AND p.estado != 'cancelado'" 
+      : `AND p.estado = '${estado}'`;
+
+    // 🔥 CORREGIDO: Consulta para el resumen general con filtro de estado
     const resumenQuery = `
       WITH pedidos_totales AS (
         SELECT 
@@ -773,7 +817,7 @@ router.get("/pedidos/resumen", async (req, res) => {
           INNER JOIN menu m ON pd.idplato = m.idplato
         WHERE 
           p.fecha >= $1 AND p.fecha <= $2
-          AND p.estado = 'completado'
+          ${estadoCondition}
           ${categoriaCondition}
         GROUP BY 
           p.idpedido
@@ -786,7 +830,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       FROM 
         pedidos_totales pt`;
 
-    // Consulta para ventas por hora
+    // 🔥 CORREGIDO: Consulta para ventas por hora con filtro de estado
     const ventasPorHoraQuery = `
       SELECT 
         EXTRACT(HOUR FROM p.fecha)::integer as hora,
@@ -798,14 +842,14 @@ router.get("/pedidos/resumen", async (req, res) => {
         INNER JOIN menu m ON pd.idplato = m.idplato
       WHERE 
         p.fecha >= $1 AND p.fecha <= $2
-        AND p.estado = 'completado'
+        ${estadoCondition}
         ${categoriaCondition}
       GROUP BY 
         hora
       ORDER BY 
         hora`;
 
-    // Consulta para ventas por categoría
+    // 🔥 CORREGIDO: Consulta para ventas por categoría con filtro de estado
     const ventasPorCategoriaQuery = `
       SELECT 
         m.categoria,
@@ -817,14 +861,14 @@ router.get("/pedidos/resumen", async (req, res) => {
         INNER JOIN menu m ON pd.idplato = m.idplato
       WHERE 
         p.fecha >= $1 AND p.fecha <= $2
-        AND p.estado = 'completado'
+        ${estadoCondition}
         ${categoriaCondition}
       GROUP BY 
         m.categoria
       ORDER BY 
         total_ventas DESC`;
 
-    // Consulta para ticket promedio por día
+    // Consulta para ticket promedio por día con filtro de estado
     const ticketPromedioPorDiaQuery = `
       SELECT 
         EXTRACT(DOW FROM p.fecha) as dia_semana,
@@ -845,10 +889,10 @@ router.get("/pedidos/resumen", async (req, res) => {
           GROUP BY 
             pd2.idpedido
         ) subquery ON p.idpedido = subquery.idpedido
-      WHERE 
-        p.fecha >= $1 AND p.fecha <= $2
-        AND p.estado = 'completado'
-        ${categoriaCondition}
+              WHERE 
+          p.fecha >= $1 AND p.fecha <= $2
+          ${estadoCondition}
+          ${categoriaCondition}
       GROUP BY 
         dia_semana
       ORDER BY 
@@ -889,7 +933,7 @@ router.get("/pedidos/resumen", async (req, res) => {
       resumen.ticketPromedio = parseFloat((resumen.totalVentas / resumen.totalPedidos).toFixed(2));
     }
 
-    console.log('✅ Resumen generado con éxito:', resumen);
+    console.log(`✅ Resumen generado con éxito (estado: ${estado}):`, resumen);
     return res.status(200).json(resumen);
 
   } catch (error) {
@@ -1134,7 +1178,6 @@ router.get("/pedidos/cliente/:clienteId/recomendaciones", async (req, res) => {
         p.idpersona = $1 
         AND p.estado = 'completado'
         AND m.isDelete = FALSE
-        AND m.disponibilidad = TRUE
       GROUP BY 
         m.idplato, m.nombre, m.categoria, m.precio, m.tipo
       ORDER BY 

@@ -311,7 +311,7 @@ class OrdersService {
                 pd.idpedido, 
                 pd.idplato, 
                 pd.cantidad, 
-                pd.precio_unitario,
+                m.precio as precio_unitario,
                 pd.notas,
                 pd.completado_cocinero,
                 pd.completado_barista,
@@ -538,7 +538,7 @@ class OrdersService {
                 pd.idpedido, 
                 pd.idplato, 
                 pd.cantidad, 
-                pd.precio_unitario, 
+                m.precio as precio_unitario, 
                 pd.notas,
                 pd.completado_cocinero,
                 pd.completado_barista,
@@ -686,10 +686,11 @@ class OrdersService {
     String? customStartDate,
     String? customEndDate,
     String? categoria,
+    String? estado, // 🔄 NUEVO: Filtro por estado de pedido
   }) async {
     try {
       print(
-        '📊 Obteniendo resumen de pedidos: period=$period, startDate=$customStartDate, endDate=$customEndDate, categoria=$categoria',
+        '📊 Obteniendo resumen de pedidos: period=$period, startDate=$customStartDate, endDate=$customEndDate, categoria=$categoria, estado=$estado',
       );
 
       final queryParams = <String, String>{};
@@ -699,6 +700,8 @@ class OrdersService {
       if (categoria != null && categoria != 'todos') {
         queryParams['categoria'] = categoria == 'comida' ? 'comida' : 'bebida';
       }
+      if (estado != null)
+        queryParams['estado'] = estado; // 🔄 NUEVO: Filtro por estado
 
       final baseUrl = await getBaseUrl;
       final uri = Uri.parse(
@@ -1434,7 +1437,7 @@ class OrdersService {
           pd.idpedido, 
           pd.idplato, 
           pd.cantidad, 
-          pd.precio_unitario,
+          m.precio as precio_unitario,
           pd.notas,
           pd.completado_cocinero,
           pd.completado_barista,

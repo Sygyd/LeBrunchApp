@@ -193,13 +193,34 @@ router.patch("/menu/:id/restore", async (req, res) => {
   const { id } = req.params;
 
   try {
+    console.log(`🔄 Iniciando restauración de plato con ID: ${id}`);
+
     // Verificar que el plato existe y está eliminado
     const checkResult = await pool.query(
       "SELECT * FROM menu WHERE idplato = $1 AND isDelete = TRUE", 
       [id]
     );
 
+    console.log(`🔍 Platos encontrados con isDelete = TRUE: ${checkResult.rows.length}`);
+    if (checkResult.rows.length > 0) {
+      console.log(`📝 Plato encontrado: ${JSON.stringify(checkResult.rows[0], null, 2)}`);
+    }
+
     if (checkResult.rows.length === 0) {
+      // Verificar también si el plato existe pero ya está restaurado
+      const alreadyRestoredCheck = await pool.query(
+        "SELECT * FROM menu WHERE idplato = $1 AND isDelete = FALSE", 
+        [id]
+      );
+      
+      if (alreadyRestoredCheck.rows.length > 0) {
+        console.log(`⚠️ Plato ${id} ya está restaurado`);
+        return res.status(400).json({ 
+          error: "El plato ya está restaurado",
+          dish: alreadyRestoredCheck.rows[0]
+        });
+      }
+      
       return res.status(404).json({ error: "Plato no encontrado en elementos eliminados" });
     }
 
@@ -215,10 +236,26 @@ router.patch("/menu/:id/restore", async (req, res) => {
       [id]
     );
 
-    console.log(`✅ Plato ${id} restaurado exitosamente`);
+    console.log(`✅ Restauración completada. Filas afectadas: ${result.rowCount}`);
+    if (result.rows.length > 0) {
+      console.log(`📋 Plato restaurado: ${JSON.stringify(result.rows[0], null, 2)}`);
+    }
+
+    // Verificar que el plato ahora aparece en consultas normales
+    const verifyResult = await pool.query(
+      "SELECT * FROM menu WHERE idplato = $1 AND isDelete = FALSE", 
+      [id]
+    );
+    
+    console.log(`🔍 Verificación post-restauración: ${verifyResult.rows.length} platos encontrados`);
+
     res.status(200).json({ 
       message: "Plato restaurado exitosamente", 
-      restoredDish: result.rows[0]
+      restoredDish: result.rows[0],
+      verification: {
+        found: verifyResult.rows.length > 0,
+        dish: verifyResult.rows[0]
+      }
     });
   } catch (err) {
     console.error('❌ Error al restaurar plato:', err);
@@ -229,6 +266,8 @@ router.patch("/menu/:id/restore", async (req, res) => {
 // NUEVO: Endpoint para obtener platos eliminados (solo para administradores)
 router.get("/menu/deleted/list", async (req, res) => {
   try {
+    console.log('🗑️ Obteniendo lista de platos eliminados...');
+    
     const result = await pool.query(
       `SELECT m.*, p.nombre as deleted_by_name, p.apellido as deleted_by_lastname
        FROM menu m
@@ -237,12 +276,72 @@ router.get("/menu/deleted/list", async (req, res) => {
        ORDER BY m.deleted_at DESC`
     );
     
+    console.log(`📊 Platos eliminados encontrados: ${result.rows.length}`);
+    
+    // Log adicional para debug
+    if (result.rows.length > 0) {
+      console.log('📝 Primeros 3 platos eliminados:');
+      result.rows.slice(0, 3).forEach((dish, index) => {
+        console.log(`  ${index + 1}. ID: ${dish.idplato}, Nombre: ${dish.nombre}, isDelete: ${dish.isdelete}, deleted_at: ${dish.deleted_at}`);
+      });
+    }
+    
     res.json({
       deletedItems: result.rows,
       count: result.rows.length
     });
   } catch (err) {
     console.error('❌ Error al obtener platos eliminados:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// TEMPORAL: Endpoint de debug para verificar estado de platos
+router.get("/menu/debug/:id", async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    console.log(`🔍 Debug: Verificando estado del plato ID: ${id}`);
+    
+    // Consulta completa sin filtros
+    const allStatesResult = await pool.query(
+      "SELECT idplato, nombre, categoria, precio, disponibilidad, isdelete, deleted_at, deleted_by FROM menu WHERE idplato = $1", 
+      [id]
+    );
+    
+    // Consulta solo eliminados
+    const deletedResult = await pool.query(
+      "SELECT idplato, nombre, categoria, precio, disponibilidad, isdelete, deleted_at, deleted_by FROM menu WHERE idplato = $1 AND isDelete = TRUE", 
+      [id]
+    );
+    
+    // Consulta solo activos
+    const activeResult = await pool.query(
+      "SELECT idplato, nombre, categoria, precio, disponibilidad, isdelete, deleted_at, deleted_by FROM menu WHERE idplato = $1 AND isDelete = FALSE", 
+      [id]
+    );
+    
+    console.log(`📊 Debug resultados para plato ${id}:`);
+    console.log(`  - Total encontrados: ${allStatesResult.rows.length}`);
+    console.log(`  - Eliminados: ${deletedResult.rows.length}`);
+    console.log(`  - Activos: ${activeResult.rows.length}`);
+    
+    if (allStatesResult.rows.length > 0) {
+      console.log(`📝 Estado actual: ${JSON.stringify(allStatesResult.rows[0], null, 2)}`);
+    }
+    
+    res.json({
+      dishId: id,
+      found: allStatesResult.rows.length > 0,
+      totalFound: allStatesResult.rows.length,
+      deletedFound: deletedResult.rows.length,
+      activeFound: activeResult.rows.length,
+      currentState: allStatesResult.rows[0] || null,
+      deletedState: deletedResult.rows[0] || null,
+      activeState: activeResult.rows[0] || null
+    });
+  } catch (err) {
+    console.error('❌ Error en debug:', err);
     res.status(500).json({ error: err.message });
   }
 });

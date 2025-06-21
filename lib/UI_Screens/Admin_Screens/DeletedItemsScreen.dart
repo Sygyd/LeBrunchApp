@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '/Api_services/soft_delete_service.dart';
 import '/UI_Screens/Widgets/background_scaffold.dart';
 import '/theme/theme.dart';
+import '/services/restoration_event_bus.dart';
 
 /// Pantalla para administradores que muestra elementos eliminados
 /// y permite restaurarlos usando el sistema de soft delete
@@ -16,6 +17,7 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final SoftDeleteService _softDeleteService = SoftDeleteService();
+  final RestorationEventBus _restorationEventBus = RestorationEventBus();
 
   // Estados de carga
   bool _isLoadingDishes = false;
@@ -28,6 +30,10 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
   // Estadísticas
   Map<String, int> _stats = {};
 
+  // Rastrear elementos restaurados durante esta sesión
+  final Set<String> _restoredDishIds = <String>{};
+  final Set<String> _restoredUserIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -37,8 +43,25 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
 
   @override
   void dispose() {
+    // Notificar restauraciones en lote antes de cerrar la pantalla
+    _notifyBatchRestorations();
+
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Notificar todas las restauraciones realizadas durante esta sesión
+  void _notifyBatchRestorations() {
+    if (_restoredDishIds.isNotEmpty || _restoredUserIds.isNotEmpty) {
+      print('🔄 DeletedItemsScreen: Notificando restauraciones en lote');
+      print('   - Platos restaurados: ${_restoredDishIds.length}');
+      print('   - Usuarios restaurados: ${_restoredUserIds.length}');
+
+      _restorationEventBus.notifyBatchRestorationsCompleted(
+        _restoredDishIds.toList(),
+        _restoredUserIds.toList(),
+      );
+    }
   }
 
   /// Cargar todos los datos
@@ -117,12 +140,80 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
 
     if (confirm == true) {
       try {
-        await _softDeleteService.restoreDish(dishId);
-        _showSuccessSnackBar('Plato "$dishName" restaurado exitosamente');
-        await _loadDeletedDishes();
-        await _loadStats();
+        print(
+          '🔄 DeletedItemsScreen: Iniciando restauración de plato $dishId ($dishName)',
+        );
+
+        // Mostrar indicador de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Text('Restaurando "$dishName"...'),
+              ],
+            ),
+            duration: Duration(seconds: 10),
+            backgroundColor: Colors.blue,
+          ),
+        );
+
+        final success = await _softDeleteService.restoreDish(dishId);
+
+        // Limpiar el SnackBar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        if (success) {
+          print('✅ DeletedItemsScreen: Plato restaurado exitosamente');
+
+          // 🔄 NUEVO: Rastrear plato restaurado (notificación solo al salir)
+          _restoredDishIds.add(dishId);
+
+          _showSuccessSnackBar('Plato "$dishName" restaurado exitosamente');
+
+          // Recargar datos con un pequeño delay para dar tiempo al servidor
+          await Future.delayed(Duration(milliseconds: 500));
+          await Future.wait([_loadDeletedDishes(), _loadStats()]);
+
+          print(
+            '📊 DeletedItemsScreen: Datos recargados después de restauración',
+          );
+        } else {
+          print(
+            '⚠️ DeletedItemsScreen: Restauración reportada como no exitosa',
+          );
+          _showErrorSnackBar('No se pudo restaurar el plato "$dishName"');
+        }
       } catch (e) {
-        _showErrorSnackBar('Error al restaurar plato: $e');
+        print('❌ DeletedItemsScreen: Error al restaurar plato: $e');
+
+        // Limpiar el SnackBar de carga si está visible
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        String errorMessage = 'Error al restaurar plato: $e';
+
+        // Personalizar mensajes de error más amigables
+        if (e.toString().contains('Tiempo de espera')) {
+          errorMessage = 'La operación tardó demasiado. Intenta nuevamente.';
+        } else if (e.toString().contains('Error de conexión')) {
+          errorMessage =
+              'No se pudo conectar al servidor. Verifica tu conexión.';
+        } else if (e.toString().contains('ya está restaurado')) {
+          errorMessage = 'El plato ya había sido restaurado anteriormente.';
+          // En este caso, recargar los datos para actualizar la UI
+          await Future.delayed(Duration(milliseconds: 300));
+          await Future.wait([_loadDeletedDishes(), _loadStats()]);
+        }
+
+        _showErrorSnackBar(errorMessage);
       }
     }
   }
@@ -137,9 +228,12 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
     if (confirm == true) {
       try {
         await _softDeleteService.restoreUser(userId);
+
+        // 🔄 NUEVO: Rastrear usuario restaurado (notificación solo al salir)
+        _restoredUserIds.add(userId);
+
         _showSuccessSnackBar('Usuario "$userName" restaurado exitosamente');
-        await _loadDeletedUsers();
-        await _loadStats();
+        await Future.wait([_loadDeletedUsers(), _loadStats()]);
       } catch (e) {
         _showErrorSnackBar('Error al restaurar usuario: $e');
       }

@@ -92,16 +92,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         pendingOrdersCount = data['count'] ?? 0;
       }
 
-      // Consultar ventas del día usando el endpoint del resumen con período 'day'
+      // Consultar ventas del día usando el endpoint del resumen con período 'day' (SOLO COMPLETADOS)
       final salesResponse = await http.get(
-        Uri.parse('$baseUrl/pedidos/resumen?period=day'),
+        Uri.parse('$baseUrl/pedidos/resumen?period=day&estado=completado'),
       );
       double salesAmount = 0.0;
       if (salesResponse.statusCode == 200) {
         final data = jsonDecode(salesResponse.body);
         // Usar el campo totalVentas del resumen que es más preciso y en tiempo real
         salesAmount = (data['totalVentas'] as num?)?.toDouble() ?? 0.0;
-        print('💰 Ventas del día actualizadas: $salesAmount');
+        print(
+          '💰 Ventas del día actualizadas (solo completados): $salesAmount',
+        );
       } else {
         // Fallback: si falla, intentar con el endpoint original
         final fallbackResponse = await http.get(
@@ -136,6 +138,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     // Usar AppConfig en lugar de SharedPreferences directamente
     print('🌐 AdminHomeScreen: Usando IP centralizada: ${AppConfig.serverIp}');
     return AppConfig.serverUrl;
+  }
+
+  // 🔄 NUEVO: Método para formatear moneda de manera consistente
+  String _formatCurrency(double amount) {
+    if (amount >= 1000) {
+      return '\$${(amount / 1000).toStringAsFixed(1)}K';
+    }
+    return '\$${amount.toStringAsFixed(0)}';
   }
 
   @override
@@ -255,7 +265,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _buildFeatureCard(
           context,
           'Reportes',
-          'Ventas hoy: \$${todaySales.toStringAsFixed(2)}',
+          'Hoy: ${_formatCurrency(todaySales)}',
           Icons.bar_chart,
           const Color(0xFF81C784),
           () => Navigator.pushNamed(context, '/admin-reports'),
@@ -346,12 +356,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     Color color,
     VoidCallback onTap,
   ) {
-    // Formatear ventas del día si se trata del botón de reportes
+    // 🔄 SIMPLIFICADO: No necesitamos formateo especial aquí ya que se maneja al llamar la función
     String displaySubtitle = subtitle;
-    if (title == 'Reportes' && subtitle.contains('Ventas hoy')) {
-      final formatter = NumberFormat.currency(symbol: '\$');
-      displaySubtitle = 'Ventas hoy: ${formatter.format(todaySales)}';
-    }
 
     return Card(
       elevation: 6,
@@ -413,7 +419,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
+                        horizontal: 6, // 🔄 REDUCIDO: De 8 a 6 para más espacio
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
@@ -424,11 +430,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         displaySubtitle,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: color.withOpacity(0.8),
-                          fontSize: 11,
+                          fontSize:
+                              10, // 🔄 REDUCIDO: De 11 a 10 para evitar overflow
                           fontWeight: FontWeight.w600,
                         ),
                         textAlign: TextAlign.center,
-                        maxLines: 2,
+                        maxLines:
+                            1, // 🔄 REDUCIDO: De 2 a 1 para evitar overflow
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

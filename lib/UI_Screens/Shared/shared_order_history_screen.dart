@@ -296,7 +296,7 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
             pd.idpedido, 
             pd.idplato, 
             pd.cantidad, 
-            pd.precio_unitario, 
+            m.precio as precio_unitario, 
             m.nombre as nombre 
           FROM 
             pedido_detalle pd 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '/Api_services/menu/get_dishes_service.dart';
 import '/Api_services/menu/get_drinks_service.dart';
 import '/UI_Screens/Widgets/search_bar.dart' as custom;
@@ -6,6 +7,7 @@ import '/UI_Screens/Widgets/category_carousel.dart';
 import '/UI_Screens/Widgets/dish_card.dart';
 import '/UI_Screens/Admin_Screens/add_dish_modal.dart';
 import '/Api_services/menu/add_dish_service.dart';
+import '/services/restoration_event_bus.dart';
 
 /// Widget compartido para visualizar el menú tanto por administradores como por clientes
 class MenuView extends StatefulWidget {
@@ -31,6 +33,9 @@ class MenuView extends StatefulWidget {
 
 class _MenuViewState extends State<MenuView> {
   final TextEditingController _searchController = TextEditingController();
+  final RestorationEventBus _restorationEventBus = RestorationEventBus();
+  StreamSubscription<RestorationEvent>? _restorationSubscription;
+
   List<Map<String, dynamic>> _dishes = [];
   List<Map<String, dynamic>> _drinks = [];
   String? _expandedItemId;
@@ -71,11 +76,71 @@ class _MenuViewState extends State<MenuView> {
         // Solo trigger rebuild cuando cambie el texto
       });
     });
+
+    // 🔄 NUEVO: Listener para eventos de restauración
+    _setupRestorationListener();
+  }
+
+  /// Configurar listener para eventos de restauración
+  void _setupRestorationListener() {
+    _restorationSubscription = _restorationEventBus.onRestoration.listen((
+      event,
+    ) {
+      print('🔄 MenuView: Recibido evento de restauración: ${event.type}');
+
+      switch (event.type) {
+        case RestorationEventType.batchRestorationsCompleted:
+          // Solo recargar cuando se complete el lote de restauraciones
+          final data = event.data as Map<String, dynamic>?;
+          final restoredDishes =
+              (data?['restoredDishes'] as List?)?.cast<String>() ?? [];
+
+          if (restoredDishes.isNotEmpty) {
+            print(
+              '🔄 MenuView: Recargando menú por ${restoredDishes.length} platos restaurados',
+            );
+            _refreshMenuData();
+          }
+          break;
+        default:
+          // Ignorar otros eventos para evitar múltiples recargas
+          break;
+      }
+    });
+  }
+
+  /// Recargar datos del menú de forma optimizada
+  Future<void> _refreshMenuData() async {
+    print('📋 MenuView: Iniciando recarga de datos del menú...');
+
+    // Usar Future.wait para cargar platos y bebidas en paralelo
+    await Future.wait([_fetchDishes(), _fetchDrinks()]);
+
+    print('✅ MenuView: Datos del menú recargados exitosamente');
+
+    // Mostrar feedback visual al usuario solo una vez
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.refresh, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Elementos restaurados - Menú actualizado'),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _restorationSubscription?.cancel(); // 🔄 Limpiar subscription
     super.dispose();
   }
 

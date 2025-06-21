@@ -11,15 +11,25 @@ class SoftDeleteService {
   // Método para obtener la URL base del servidor
   Future<String> _getBaseUrl() async {
     try {
-      // Usar la configuración estática como primera opción
+      // Intentar obtener la IP actual de SharedPreferences primero
+      final prefs = await SharedPreferences.getInstance();
+      final currentIp = prefs.getString('serverIp');
+
+      if (currentIp != null && currentIp.isNotEmpty) {
+        final url = 'http://$currentIp:3000';
+        print('🌐 SoftDeleteService - Usando IP de SharedPreferences: $url');
+        return url;
+      }
+
+      // Usar la configuración estática como segunda opción
       print(
         '🌐 SoftDeleteService - Usando configuración estática: ${AppConfig.serverUrl}',
       );
       return AppConfig.serverUrl;
     } catch (e) {
       print('❌ Error al obtener URL base: $e');
-      // Fallback solo en caso de error crítico
-      return 'http://192.168.1.85:3000';
+      // Usar configuración estática como fallback final
+      return AppConfig.serverUrl;
     }
   }
 
@@ -108,25 +118,58 @@ class SoftDeleteService {
       final headers = await _getAuthHeaders();
 
       print('🔄 SoftDeleteService: Restaurando plato ID: $dishId');
+      print('🌐 SoftDeleteService: URL: $baseUrl/menu/$dishId/restore');
+      print('🗂️ SoftDeleteService: Headers: $headers');
 
-      final response = await http.patch(
-        Uri.parse('$baseUrl/menu/$dishId/restore'),
-        headers: headers,
+      final response = await http
+          .patch(Uri.parse('$baseUrl/menu/$dishId/restore'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+
+      print(
+        '📊 SoftDeleteService: Código de respuesta: ${response.statusCode}',
       );
+      print('📝 SoftDeleteService: Cuerpo de respuesta: ${response.body}');
 
       if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
         print('✅ SoftDeleteService: Plato $dishId restaurado exitosamente');
+        print(
+          '📋 SoftDeleteService: Datos del plato restaurado: ${responseData['restoredDish']}',
+        );
+
+        // Agregar verificación adicional si está disponible en la respuesta
+        if (responseData['verification'] != null) {
+          final verification = responseData['verification'];
+          print(
+            '🔍 SoftDeleteService: Verificación post-restauración: ${verification['found']}',
+          );
+        }
+
         return true;
+      } else if (response.statusCode == 400) {
+        final errorData = json.decode(response.body);
+        print(
+          '⚠️ SoftDeleteService: Plato ya restaurado: ${errorData['error']}',
+        );
+        return true; // Consideramos esto como éxito ya que el plato está restaurado
       } else {
         print(
           '❌ SoftDeleteService: Error al restaurar plato: ${response.statusCode}',
         );
+        print('📝 SoftDeleteService: Mensaje de error: ${response.body}');
         final errorData = json.decode(response.body);
         throw Exception(errorData['error'] ?? 'Error al restaurar plato');
       }
     } catch (e) {
-      print('❌ SoftDeleteService: Error al restaurar plato: $e');
-      throw Exception('Error al restaurar plato: $e');
+      print('❌ SoftDeleteService: Error crítico al restaurar plato: $e');
+
+      if (e.toString().contains('TimeoutException')) {
+        throw Exception('Tiempo de espera agotado al restaurar el plato');
+      } else if (e.toString().contains('SocketException')) {
+        throw Exception('Error de conexión al servidor');
+      } else {
+        throw Exception('Error al restaurar plato: $e');
+      }
     }
   }
 

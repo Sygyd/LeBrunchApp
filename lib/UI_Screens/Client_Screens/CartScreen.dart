@@ -468,10 +468,11 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   // Genera recomendaciones basadas en el carrito actual
   Future<List<Map<String, dynamic>>> _generateRecommendations() async {
     try {
-      // Obtener los platos más populares usando el servicio especializado
+      // Obtener los platos más populares usando el servicio especializado (SOLO COMPLETADOS)
       final popularDishes = await _popularDishesService.getPopularDishesDirect(
         period: 'month', // Usar datos del último mes
         limit: 6, // Obtener más platos de los necesarios para filtrado
+        estado: 'completado', // 🔄 NUEVO: Solo pedidos completados
       );
 
       print(

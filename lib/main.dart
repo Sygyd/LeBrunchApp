@@ -38,166 +38,50 @@ Future<void> main() async {
   await _cleanObsoleteConfigurations();
   print('✅ No se encontraron configuraciones obsoletas');
 
-  // Inicializar configuración de red con timeout mejorado
-  print('🌐 Iniciando configuración de red inteligente...');
+  // OPTIMIZACIÓN: Inicialización rápida de red
+  print('🌐 Inicializando configuración de red (optimizada)...');
   final networkService = NetworkConfigService();
 
   try {
-    // Dar más tiempo para el auto-discovery inteligente
-    try {
+    // NUEVO: Verificar primero si ya tenemos configuración válida
+    final prefs = await SharedPreferences.getInstance();
+    final savedIp =
+        prefs.getString('serverIp') ??
+        prefs.getString('network_server_ip') ??
+        prefs.getString('global_server_ip');
+
+    if (savedIp != null && savedIp.isNotEmpty && _isValidIpFormat(savedIp)) {
+      print('✅ IP ya configurada: $savedIp, saltando auto-discovery');
+      // Solo hacer una verificación rápida y continuar
+      print('🚀 Usando IP guardada para inicio rápido');
+    } else {
+      print('🔍 No hay IP configurada, iniciando auto-discovery rápido...');
+      // Solo hacer auto-discovery si no hay configuración previa
       await networkService.initialize().timeout(
-        const Duration(
-          seconds: 45,
-        ), // Aumentado para dar tiempo al nuevo sistema
+        const Duration(seconds: 5), // Reducido drásticamente
         onTimeout: () {
           print(
-            '⏰ Timeout en inicialización de red, intentando recuperación...',
+            '⏰ Timeout en auto-discovery, usando configuración por defecto',
           );
-          return;
         },
       );
-    } catch (e) {
-      print('❌ Error en inicialización de red: $e');
-    }
-
-    // Verificar si la configuración fue exitosa
-    if (!networkService.isConfigured) {
-      print(
-        '! Configuración inicial fallida, intentando recuperación inteligente...',
-      );
-      // Intentar recuperación inteligente con timeout RÁPIDO
-      final recovered = await networkService.smartRecovery().timeout(
-        const Duration(seconds: 8), // Timeout más rápido
-        onTimeout: () {
-          print('⏰ Timeout en recuperación inteligente (8s)');
-          return false;
-        },
-      );
-
-      if (!recovered) {
-        print('❌ No se pudo establecer conexión automática');
-        print(
-          '🔧 Red configurada con valores por defecto: ${networkService.baseUrl}',
-        );
-        print(
-          '💡 Usa el diagnóstico de red en configuración de chat para conectar automáticamente',
-        );
-      }
     }
   } catch (e) {
     print('❌ Error en configuración de red: $e');
     print('🔧 Continuando con configuración por defecto');
   }
 
-  // Verificar que NetworkConfigService esté completamente configurado (optimizado)
-  print('🔍 Verificando que NetworkConfigService esté configurado...');
-  int attempts = 0;
-  const maxAttempts = 3; // Reducido para ser más rápido
-
-  while (!networkService.isConfigured && attempts < maxAttempts) {
-    attempts++;
-    print(
-      '⏳ Esperando configuración completa (intento $attempts/$maxAttempts)...',
-    );
-    await Future.delayed(const Duration(seconds: 1)); // Reducido a 1 segundo
-  }
-
-  if (!networkService.isConfigured) {
-    print(
-      '! NetworkConfigService no está completamente configurado, continuando de todos modos',
-    );
-  } else {
-    print('✅ NetworkConfigService configurado correctamente');
-  }
+  // Simplemente continuar - no forzar más configuración
+  print('⚡ Configuración de red completada, continuando...');
 
   // PASO 3: Inicializar el servicio de notificaciones (no requiere red)
   await NotificationService.initialize();
 
-  // PASO 3.5: Inicializar GlobalConfigService temprano para sincronización
-  print('⚙️ Inicializando GlobalConfigService...');
-  try {
-    final globalConfig = await Future.delayed(Duration.zero, () {
-      final service = GlobalConfigService();
-      return service;
-    });
+  // OPTIMIZACIÓN: Todas las demás operaciones se mueven a segundo plano para no bloquear la UI
+  print('🚀 Iniciando aplicación con inicio ultra-rápido...');
 
-    // NUEVO: Migrar configuración de modelo antes de cargar
-    await _migrateObsoleteModelConfiguration();
-
-    // Cargar configuración de forma no bloqueante
-    unawaited(
-      globalConfig
-          .loadConfig()
-          .then((_) {
-            print('✅ GlobalConfigService inicializado exitosamente');
-          })
-          .catchError((e) {
-            print('⚠️ Error al inicializar GlobalConfigService: $e');
-          }),
-    );
-  } catch (e) {
-    print('❌ Error al crear GlobalConfigService: $e');
-  }
-
-  // PASO 4: Inicializar otros servicios que dependen de la red
-  print('🤖 Inicializando servicios que requieren conectividad...');
-
-  // Inicializar el servicio de Gemini (precarga) pero sin bloquear
-  final geminiService = GeminiService();
-
-  // PASO 5: Siempre verificar conexión con el servidor (mejorado)
-  print('🔌 Verificando conexión con el servidor...');
-
-  // Verificar conexión con el servidor (en segundo plano, sin bloquear la UI)
-  unawaited(
-    geminiService
-        .checkServerConnection()
-        .then((isConnected) {
-          print(
-            'Conexión con el servidor: ${isConnected ? 'EXITOSA' : 'FALLIDA'}',
-          );
-
-          if (isConnected) {
-            // Intentar cargar el menú para tenerlo precargado (en segundo plano)
-            unawaited(
-              geminiService.getFullMenu().then((menu) {
-                if (menu != null) {
-                  print('Menú precargado con ${menu.length} platos');
-                } else {
-                  print('⚠️ No se pudo precargar el menú');
-                }
-              }),
-            );
-          } else {
-            // Si no hay conexión, intentar recovery después de unos segundos
-            print('🔄 Programando reintento de conexión...');
-            unawaited(
-              Future.delayed(const Duration(seconds: 10)).then((_) async {
-                print('🔄 Reintentando conexión automática...');
-                await networkService.refreshConfiguration();
-                final retryConnected =
-                    await geminiService.checkServerConnection();
-                print(
-                  'Reintento de conexión: ${retryConnected ? 'EXITOSO' : 'FALLÓ'}',
-                );
-              }),
-            );
-          }
-        })
-        .catchError((e) {
-          print('❌ Error en verificación de conexión: $e');
-          // Programar reintento en caso de error
-          unawaited(
-            Future.delayed(const Duration(seconds: 15)).then((_) async {
-              print('🔄 Reintentando después de error...');
-              await networkService.refreshConfiguration();
-            }),
-          );
-        }),
-  );
-
-  // PASO 6: Configurar callback de logout
-  setupLogoutCallback();
+  // Ejecutar toda la configuración pesada en segundo plano DESPUÉS de que se inicie la app
+  unawaited(_initializeBackgroundServices(networkService));
 
   print('🚀 Iniciando aplicación...');
 
@@ -375,6 +259,93 @@ Future<void> _cleanObsoleteConfigurations() async {
     }
   } catch (error) {
     print('⚠️ Error al limpiar configuraciones obsoletas: $error');
+  }
+}
+
+// Función para validar formato de IP
+bool _isValidIpFormat(String ip) {
+  final ipRegex = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
+  if (!ipRegex.hasMatch(ip)) return false;
+
+  final parts = ip.split('.');
+  return parts.every((part) {
+    final num = int.tryParse(part);
+    return num != null && num >= 0 && num <= 255;
+  });
+}
+
+// Función para inicializar servicios pesados en segundo plano
+Future<void> _initializeBackgroundServices(
+  NetworkConfigService networkService,
+) async {
+  print('⚙️ Inicializando servicios en segundo plano...');
+
+  try {
+    // Paso 1: GlobalConfigService
+    print('⚙️ Inicializando GlobalConfigService en segundo plano...');
+    final globalConfig = GlobalConfigService();
+
+    // Migrar configuración de modelo
+    await _migrateObsoleteModelConfiguration();
+
+    // Cargar configuración
+    await globalConfig.loadConfig().catchError((e) {
+      print('⚠️ Error al cargar GlobalConfigService: $e');
+    });
+    print('✅ GlobalConfigService inicializado');
+
+    // Paso 2: Inicializar Gemini Service
+    print('🤖 Inicializando GeminiService en segundo plano...');
+    final geminiService = GeminiService();
+
+    // Paso 3: Verificar conexión (con timeout corto)
+    print('🔌 Verificando conexión en segundo plano...');
+    final isConnected = await geminiService.checkServerConnection().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        print('⏰ Timeout en verificación de conexión');
+        return false;
+      },
+    );
+
+    print('Conexión con el servidor: ${isConnected ? 'EXITOSA' : 'FALLIDA'}');
+
+    if (isConnected) {
+      // Paso 4: Precargar menú si hay conexión
+      print('📋 Precargando menú en segundo plano...');
+      final menu = await geminiService.getFullMenu().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏰ Timeout en precarga de menú');
+          return null;
+        },
+      );
+
+      if (menu != null) {
+        print('✅ Menú precargado con ${menu.length} platos');
+      } else {
+        print('⚠️ No se pudo precargar el menú');
+      }
+    } else {
+      // Programar reintento para más tarde
+      print('🔄 Programando reintento de conexión para más tarde...');
+      Future.delayed(const Duration(seconds: 30), () async {
+        print('🔄 Reintentando conexión automática...');
+        try {
+          await networkService.refreshConfiguration();
+          final retryConnected = await geminiService.checkServerConnection();
+          print(
+            'Reintento de conexión: ${retryConnected ? 'EXITOSO' : 'FALLÓ'}',
+          );
+        } catch (e) {
+          print('❌ Error en reintento: $e');
+        }
+      });
+    }
+
+    print('✅ Inicialización de servicios en segundo plano completada');
+  } catch (e) {
+    print('❌ Error en inicialización de servicios en segundo plano: $e');
   }
 }
 

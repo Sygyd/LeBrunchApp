@@ -29,6 +29,9 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
   String _selectedPeriod =
       'all'; // Período seleccionado: day, week, month, year
 
+  // 🔄 NUEVO: Variable para debugging del estado
+  String _debugEstado = 'completado';
+
   // ✨ OPTIMIZACIÓN: Estructura mejorada para categorías jerárquicas
   Map<String, List<Map<String, dynamic>>> _categoriesByType = {
     'comida': [],
@@ -271,7 +274,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         print('   ⏰ Rango de fechas activo: No (todos los datos)');
       }
 
-      // ✨ OPTIMIZACIÓN: Aumentar límite a 50 items o sin límite
+      // ✨ OPTIMIZACIÓN: Aumentar límite a 50 items o sin límite (SOLO COMPLETADOS)
       List<Map<String, dynamic>> result = await popularDishesService
           .getPopularDishesDirect(
             period: period,
@@ -279,6 +282,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
             endDate: endDateStr,
             categoria: selectedCategory,
             limit: 50, // Aumentado de 20 a 50
+            estado: _debugEstado, // 🔄 NUEVO: Usar estado de debug
           );
 
       if (mounted) {
@@ -729,6 +733,28 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
             ),
           ),
         ),
+        actions: [
+          // 🧪 BOTÓN TEMPORAL DE DEBUG - ELIMINAR DESPUÉS
+          PopupMenuButton<String>(
+            icon: Icon(Icons.bug_report, color: Colors.white),
+            onSelected: (String estado) {
+              setState(() {
+                _debugEstado = estado;
+              });
+              _loadPopularDishes();
+            },
+            itemBuilder:
+                (BuildContext context) => [
+                  PopupMenuItem(value: 'todos', child: Text('Todos')),
+                  PopupMenuItem(value: 'pendiente', child: Text('Pendientes')),
+                  PopupMenuItem(
+                    value: 'completado',
+                    child: Text('Completados'),
+                  ),
+                  PopupMenuItem(value: 'cancelado', child: Text('Cancelados')),
+                ],
+          ),
+        ],
       ),
       body:
           _isLoading &&

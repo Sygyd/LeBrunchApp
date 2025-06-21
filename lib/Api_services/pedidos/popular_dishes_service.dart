@@ -27,6 +27,7 @@ class PopularDishesService {
     String? endDate,
     String? category,
     int limit = 20,
+    String? estado, // 🔄 NUEVO: Filtro por estado de pedido
   }) async {
     try {
       // Construir los parámetros de consulta de forma optimizada
@@ -54,6 +55,11 @@ class PopularDishesService {
           category != 'todos') {
         queryParams['categoria'] = category;
         print('🔧 [OPTIMIZADO] Agregando categoría: $category');
+      }
+
+      if (estado != null && estado.isNotEmpty && estado != 'null') {
+        queryParams['estado'] = estado;
+        print('🔧 [OPTIMIZADO] Agregando estado: $estado');
       }
 
       // Obtener la URL base del servidor
@@ -238,12 +244,14 @@ class PopularDishesService {
     String? endDate,
     int limit = 5,
     String? categoria,
+    String? estado, // 🔄 NUEVO: Filtro por estado de pedido
   }) async {
     try {
       print('🔄 [OPTIMIZADO] PopularDishesService: Solicitud optimizada');
       print('   📅 Período: ${period ?? 'null'}');
       print('   📅 Fechas: ${startDate ?? 'null'} a ${endDate ?? 'null'}');
       print('   🎯 Categoría: ${categoria ?? 'null'}');
+      print('   📦 Estado: ${estado ?? 'null'}');
       print('   📊 Límite: $limit');
 
       // Usar el método estándar optimizado
@@ -253,6 +261,7 @@ class PopularDishesService {
         endDate: endDate,
         category: categoria,
         limit: limit,
+        estado: estado, // 🔄 NUEVO: Pasar el estado al método getPopularDishes
       );
 
       print(

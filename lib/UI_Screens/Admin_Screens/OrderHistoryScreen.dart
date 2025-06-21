@@ -34,6 +34,10 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   String _currentPeriod = 'todos';
   String? _customStartDate;
   String? _customEndDate;
+  Set<int> _expandedOrders = {};
+
+  // 🔄 NUEVO: Variable para debugging del estado
+  String _debugEstado = 'completado';
 
   @override
   void initState() {
@@ -59,13 +63,17 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
       print('🔍 [OrderHistory] Cargando pedidos con filtros:');
       print('  📅 Período: $_currentPeriod -> $servicePeriod');
-      print('  📦 Estado: $status');
+      print('  📦 Estado inicial: $status');
       print('  📆 Fechas custom: $_customStartDate - $_customEndDate');
+
+      // 🔄 NUEVO: Si no se especifica estado, usar el estado de debug
+      final finalStatus = status ?? _debugEstado;
+      print('  📦 Estado final aplicado: $finalStatus');
 
       final orders = await _ordersService.getOrders(
         startDate: _customStartDate,
         endDate: _customEndDate,
-        estado: status,
+        estado: finalStatus,
       );
 
       print('📊 [OrderHistory] Pedidos recibidos: ${orders.length}');
@@ -253,9 +261,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                 color: Colors.white.withOpacity(0.9),
                 shadows: [
                   Shadow(
-                    color: Colors.black.withOpacity(0.2),
-                    offset: const Offset(0.5, 0.5),
-                    blurRadius: 2,
+                    color: Colors.black.withOpacity(0.3),
+                    offset: const Offset(1, 1),
+                    blurRadius: 3,
                   ),
                 ],
               ),
@@ -288,6 +296,26 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadOrders,
             tooltip: 'Actualizar',
+          ),
+          // 🧪 BOTÓN TEMPORAL DE DEBUG - ELIMINAR DESPUÉS
+          PopupMenuButton<String>(
+            icon: Icon(Icons.bug_report, color: Colors.white),
+            onSelected: (String estado) {
+              setState(() {
+                _debugEstado = estado;
+              });
+              _loadOrders();
+            },
+            itemBuilder:
+                (BuildContext context) => [
+                  PopupMenuItem(value: 'todos', child: Text('Todos')),
+                  PopupMenuItem(value: 'pendiente', child: Text('Pendientes')),
+                  PopupMenuItem(
+                    value: 'completado',
+                    child: Text('Completados'),
+                  ),
+                  PopupMenuItem(value: 'cancelado', child: Text('Cancelados')),
+                ],
           ),
         ],
       ),
@@ -368,12 +396,22 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                         itemCount: _filteredOrders.length,
                         itemBuilder: (context, index) {
                           final order = _filteredOrders[index];
+                          final orderId = order['idpedido'];
+
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: OrderDetailCard(
                               order: order,
-                              isExpanded: false,
-                              onTap: () {}, // No expandir en historial
+                              isExpanded: _expandedOrders.contains(orderId),
+                              onTap: () {
+                                setState(() {
+                                  if (_expandedOrders.contains(orderId)) {
+                                    _expandedOrders.remove(orderId);
+                                  } else {
+                                    _expandedOrders.add(orderId);
+                                  }
+                                });
+                              },
                               onStatusChange:
                                   null, // No cambiar estado en historial
                               role: 'admin',

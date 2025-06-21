@@ -155,22 +155,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       if (!mounted) return;
 
-      // Obtener resumen de pedidos con fechas específicas
+      // Obtener resumen de pedidos con fechas específicas (SOLO COMPLETADOS)
       final ordersSummary = await _ordersService.getOrdersSummary(
         period: servicePeriod,
         customStartDate: startDateCalculated,
         customEndDate: endDateCalculated,
         categoria: selectedCategory,
+        estado: 'completado', // 🔄 NUEVO: Solo pedidos completados
       );
 
-      print('📊 Resumen de pedidos recibido: $ordersSummary');
+      print(
+        '📊 Resumen de pedidos recibido (solo completados): $ordersSummary',
+      );
 
-      // Obtener platos populares con fechas específicas
+      // Obtener platos populares con fechas específicas (SOLO COMPLETADOS)
       final dishes = await _popularDishesService.getPopularDishesDirect(
         period: servicePeriod,
         startDate: startDateCalculated,
         endDate: endDateCalculated,
         categoria: selectedCategory,
+        estado: 'completado', // 🔄 NUEVO: Solo pedidos completados
       );
 
       print('📊 Platos populares recibidos: ${dishes.length}');
