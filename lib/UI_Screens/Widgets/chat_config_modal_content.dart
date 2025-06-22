@@ -158,9 +158,22 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
     try {
       print('🔄 Modal: Cargando configuración actual...');
 
-      // 🔥 NUEVO: SIEMPRE refrescar desde el servidor primero
+      // 🔥 PASO 1: Obtener estado del servidor PRIMERO
+      Map<String, dynamic>? serverStatus;
       try {
-        final serverStatus = await _globalConfig.getServerStatus();
+        serverStatus = await _globalConfig.getServerStatus();
+        if (mounted) {
+          setState(() {
+            _serverStatus = serverStatus;
+          });
+        }
+        print('✅ Modal: Estado del servidor obtenido');
+      } catch (e) {
+        print('⚠️ Modal: Error al obtener estado del servidor: $e');
+      }
+
+      // 🔥 PASO 2: Recargar configuración desde servidor si es posible
+      try {
         if (serverStatus != null && serverStatus['connected'] == true) {
           // Si hay conexión con el servidor, recargar configuración desde allí
           await _globalConfig.loadConfig();
@@ -197,10 +210,25 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
       setState(() {
         _serverIpController.text = ipToUse;
-        // 🔥 CORREGIDO: Cargar el modelo actual desde el servidor/configuración
-        _currentModel = _globalConfig.currentModel;
 
-        print('📋 Modal: Modelo cargado desde configuración: $_currentModel');
+        // 🔥 PASO 3: Decidir qué modelo usar basado en el estado del servidor
+        String modelToUse = _globalConfig.currentModel;
+
+        // Si tenemos estado del servidor, usar el modelo actual del servidor
+        if (serverStatus != null) {
+          final geminiModel =
+              serverStatus['geminiModel'] as Map<String, dynamic>?;
+          if (geminiModel != null && geminiModel['current'] != null) {
+            final serverModel = geminiModel['current'] as String;
+            print(
+              '🔄 Modal: Modelo en servidor: $serverModel vs Local: $modelToUse',
+            );
+            modelToUse = serverModel; // 🔥 USAR EL MODELO DEL SERVIDOR
+          }
+        }
+
+        _currentModel = modelToUse;
+        print('📋 Modal: Modelo final seleccionado: $_currentModel');
 
         _enableReports = _globalConfig.enableReports;
         _enablePopularDishes = _globalConfig.enablePopularDishes;
@@ -631,7 +659,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _currentModel,
+              value: _currentModel.isEmpty ? null : _currentModel,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Modelo de Gemini',
@@ -697,6 +725,39 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                   value: 'gemini-1.5-flash',
                   child: Text('Flash 1.5'),
                 ),
+                if (_currentModel.isNotEmpty &&
+                    ![
+                      'gemini-2.5-flash-preview-05-20',
+                      'gemini-2.0-flash',
+                      'gemini-1.5-flash',
+                    ].contains(_currentModel))
+                  DropdownMenuItem(
+                    value: _currentModel,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'ACTUAL',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_currentModel)),
+                      ],
+                    ),
+                  ),
               ],
               onChanged: (value) {
                 if (value != null) {
