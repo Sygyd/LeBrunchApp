@@ -20,6 +20,7 @@ import '../../Api_services/pedidos/popular_dishes_service.dart';
 import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
 
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -30,6 +31,7 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   final OrdersService _ordersService = OrdersService();
   final PopularDishesService _popularDishesService = PopularDishesService();
+
   final GlobalKey<DateFilterBarState> _filterBarKey =
       GlobalKey<DateFilterBarState>();
 
@@ -570,6 +572,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+
                               _buildStatisticsCards(theme),
                               const SizedBox(height: 16),
                               _buildDistributionSection(theme),
@@ -2655,6 +2658,92 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     }
   }
+
+  // 🔥 NUEVO: Widget para mostrar el estado de las configuraciones
+  Widget _buildConfigStatusCard(ThemeData theme) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.settings, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Estado de Configuraciones',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildConfigStatusItem(
+                    'Reportes',
+                    _globalConfig.enableReports,
+                    Icons.analytics,
+                    theme,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildConfigStatusItem(
+                    'Platos Populares',
+                    _globalConfig.enablePopularDishes,
+                    Icons.trending_up,
+                    theme,
+                  ),
+                ),
+              ],
+            ),
+            if (!_globalConfig.enableReports || !_globalConfig.enablePopularDishes) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Algunas funciones están desactivadas. Puedes activarlas desde el modal de configuración del chat.',
+                        style: TextStyle(
+                          color: Colors.orange[700],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfigStatusItem(String title, bool isEnabled, IconData icon, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isEnabled 
+          ? Colors.green.withOpacity(0.1) 
+          : Colors.red.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isEnabled 
 }
 
 // Clase para dibujar el gráfico de pastel

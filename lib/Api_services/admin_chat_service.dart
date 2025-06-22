@@ -112,9 +112,41 @@ class AdminChatService {
   // Procesar mensaje normal con capacidades especiales
   Future<Map<String, dynamic>> _processNormalMessage(String message) async {
     try {
-      // Detectar si el mensaje solicita información especial
+      // 🔥 NUEVO: Verificar configuraciones antes de procesar
       final lowerMessage = message.toLowerCase();
 
+      // Verificar si solicita reportes pero están desactivados
+      if (!_globalConfig.enableReports &&
+          (lowerMessage.contains('reporte') ||
+              lowerMessage.contains('ventas') ||
+              lowerMessage.contains('estadística') ||
+              lowerMessage.contains('estadisticas'))) {
+        print('📊 Solicitud de reportes detectada pero función desactivada');
+        return {
+          'text_response':
+              '¡Hola! 😊 Me encantaría ayudarte con reportes y estadísticas, pero esta función está temporalmente desactivada. 📊❌\n\nPuedes activar los reportes desde el modal de configuración. ¡Mientras tanto, puedo ayudarte con nuestro delicioso menú! 🍳✨',
+          'type': 'reports_disabled',
+        };
+      }
+
+      // Verificar si solicita platos populares pero están desactivados
+      if (!_globalConfig.enablePopularDishes &&
+          (lowerMessage.contains('popular') ||
+              lowerMessage.contains('más vendido') ||
+              lowerMessage.contains('favorito') ||
+              lowerMessage.contains('recomendación') ||
+              lowerMessage.contains('recomendaciones'))) {
+        print(
+          '🏆 Solicitud de platos populares detectada pero función desactivada',
+        );
+        return {
+          'text_response':
+              '¡Hola! 😊 Me gustaría recomendarte nuestros platos más populares, pero esta función está temporalmente desactivada. 🏆❌\n\nPuedes activar los platos populares desde el modal de configuración. ¡Pero puedo ayudarte a explorar todo nuestro delicioso menú! ¿Qué tipo de comida te provoca hoy? 🍳✨',
+          'type': 'popular_dishes_disabled',
+        };
+      }
+
+      // Detectar si el mensaje solicita información especial
       // 🔥 NUEVO: Dejar que Brunchy maneje TODOS los reportes inteligentemente
       // Solo interceptar solicitudes de configuración local
       if (lowerMessage.contains('configuración') ||
