@@ -156,8 +156,28 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
   Future<void> _loadCurrentSettings() async {
     try {
-      // MEJORADO: Cargar configuración pero usar IP del NetworkConfigService si está disponible
-      await _globalConfig.loadConfig();
+      print('🔄 Modal: Cargando configuración actual...');
+
+      // 🔥 NUEVO: SIEMPRE refrescar desde el servidor primero
+      try {
+        final serverStatus = await _globalConfig.getServerStatus();
+        if (serverStatus != null && serverStatus['connected'] == true) {
+          // Si hay conexión con el servidor, recargar configuración desde allí
+          await _globalConfig.loadConfig();
+          print('✅ Modal: Configuración refrescada desde servidor');
+        } else {
+          // Si no hay conexión, usar configuración local
+          await _globalConfig.loadConfig();
+          print(
+            '⚠️ Modal: Usando configuración local (sin conexión al servidor)',
+          );
+        }
+      } catch (e) {
+        print(
+          '⚠️ Modal: Error al conectar con servidor, usando configuración local: $e',
+        );
+        await _globalConfig.loadConfig();
+      }
 
       // Usar IP del NetworkConfigService si está disponible y es más actualizada
       String ipToUse = _globalConfig.serverIp;
@@ -177,26 +197,8 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
       setState(() {
         _serverIpController.text = ipToUse;
-        // 🔥 CORREGIDO: Cargar el modelo actual guardado sin validaciones restrictivas
+        // 🔥 CORREGIDO: Cargar el modelo actual desde el servidor/configuración
         _currentModel = _globalConfig.currentModel;
-
-        // 🔄 NUEVO: Solo logear advertencia si el modelo no está en la lista disponible, pero mantenerlo
-        const availableModels = [
-          'gemini-2.5-flash-preview-05-20',
-          'gemini-2.0-flash',
-          'gemini-1.5-flash',
-          'gemini-1.5-pro',
-          'gemini-1.0-pro',
-          'gemini-2.5-flash',
-          'gemini-2.0-flash-exp',
-        ];
-
-        if (!availableModels.contains(_currentModel)) {
-          print(
-            '⚠️ Modal: Modelo "$_currentModel" no está en la lista del dropdown, pero manteniendo el valor guardado',
-          );
-          // NO resetear el modelo - mantener el valor guardado
-        }
 
         print('📋 Modal: Modelo cargado desde configuración: $_currentModel');
 
@@ -693,23 +695,7 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                 ),
                 const DropdownMenuItem(
                   value: 'gemini-1.5-flash',
-                  child: Text('Flash 1.5 (Legacy)'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-1.5-pro',
-                  child: Text('Pro 1.5 (Avanzado)'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-1.0-pro',
-                  child: Text('Pro 1.0 (Legacy)'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-2.5-flash',
-                  child: Text('Flash 2.5 (Estable)'),
-                ),
-                const DropdownMenuItem(
-                  value: 'gemini-2.0-flash-exp',
-                  child: Text('Flash 2.0 Experimental'),
+                  child: Text('Flash 1.5'),
                 ),
               ],
               onChanged: (value) {
