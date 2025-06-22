@@ -177,24 +177,28 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
       setState(() {
         _serverIpController.text = ipToUse;
-        // 🔥 CORREGIDO: Cargar el modelo actual sin forzar cambios, pero validar que esté en las opciones disponibles
+        // 🔥 CORREGIDO: Cargar el modelo actual guardado sin validaciones restrictivas
         _currentModel = _globalConfig.currentModel;
 
-        // Validar que el modelo cargado esté en las opciones disponibles del dropdown
+        // 🔄 NUEVO: Solo logear advertencia si el modelo no está en la lista disponible, pero mantenerlo
         const availableModels = [
           'gemini-2.5-flash-preview-05-20',
           'gemini-2.0-flash',
           'gemini-1.5-flash',
+          'gemini-1.5-pro',
+          'gemini-1.0-pro',
+          'gemini-2.5-flash',
+          'gemini-2.0-flash-exp',
         ];
 
         if (!availableModels.contains(_currentModel)) {
           print(
-            '⚠️ Modal: Modelo "$_currentModel" no está en las opciones disponibles, usando por defecto',
+            '⚠️ Modal: Modelo "$_currentModel" no está en la lista del dropdown, pero manteniendo el valor guardado',
           );
-          _currentModel = "gemini-2.5-flash-preview-05-20";
+          // NO resetear el modelo - mantener el valor guardado
         }
 
-        print('📋 Modal: Modelo final configurado: $_currentModel');
+        print('📋 Modal: Modelo cargado desde configuración: $_currentModel');
 
         _enableReports = _globalConfig.enableReports;
         _enablePopularDishes = _globalConfig.enablePopularDishes;
@@ -690,6 +694,22 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
                 const DropdownMenuItem(
                   value: 'gemini-1.5-flash',
                   child: Text('Flash 1.5 (Legacy)'),
+                ),
+                const DropdownMenuItem(
+                  value: 'gemini-1.5-pro',
+                  child: Text('Pro 1.5 (Avanzado)'),
+                ),
+                const DropdownMenuItem(
+                  value: 'gemini-1.0-pro',
+                  child: Text('Pro 1.0 (Legacy)'),
+                ),
+                const DropdownMenuItem(
+                  value: 'gemini-2.5-flash',
+                  child: Text('Flash 2.5 (Estable)'),
+                ),
+                const DropdownMenuItem(
+                  value: 'gemini-2.0-flash-exp',
+                  child: Text('Flash 2.0 Experimental'),
                 ),
               ],
               onChanged: (value) {
