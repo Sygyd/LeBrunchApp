@@ -7,6 +7,7 @@ import '../Widgets/background_scaffold.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
 import '../../Api_services/menu/menu_service.dart';
+import '../../Api_services/global_config_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class PopularDishesScreen extends StatefulWidget {
@@ -19,6 +20,8 @@ class PopularDishesScreen extends StatefulWidget {
 class _PopularDishesScreenState extends State<PopularDishesScreen> {
   final PopularDishesService _popularDishesService = PopularDishesService();
   final MenuService _menuService = MenuService();
+  final GlobalConfigService _globalConfig = GlobalConfigService();
+
   // Clave global para acceder al DateFilterBar
   final GlobalKey<DateFilterBarState> _dateFilterKey = GlobalKey();
   bool _isLoading = true;
@@ -29,8 +32,13 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
   String _selectedPeriod =
       'all'; // Período seleccionado: day, week, month, year
 
-  // 🔄 NUEVO: Variable para debugging del estado
+  // 🔄 MEJORADO: Variable para debugging del estado con configuración inteligente
   String _debugEstado = 'completado';
+
+  // 🔄 NUEVO: Variables para configuración global del asistente
+  bool _isPopularDishesEnabled = true;
+  bool _isDebugMode = false;
+  Map<String, dynamic>? _serverStatus;
 
   // ✨ OPTIMIZACIÓN: Estructura mejorada para categorías jerárquicas
   Map<String, List<Map<String, dynamic>>> _categoriesByType = {
@@ -56,8 +64,48 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     _startDate = DateTime.now().subtract(const Duration(days: 7));
     _endDate = DateTime.now();
 
-    // Cargar datos iniciales
-    _loadCategoriesAndDishes();
+    // 🔄 NUEVO: Cargar configuración global y datos
+    _initializeScreen();
+  }
+
+  // 🔄 NUEVO: Método para inicializar la pantalla con configuración global
+  Future<void> _initializeScreen() async {
+    try {
+      // Cargar configuración global del asistente
+      await _loadGlobalConfig();
+
+      // Cargar datos iniciales
+      await _loadCategoriesAndDishes();
+    } catch (e) {
+      print('❌ Error al inicializar pantalla: $e');
+      setState(() {
+        _error = 'Error al inicializar: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 🔄 NUEVO: Cargar configuración global del asistente
+  Future<void> _loadGlobalConfig() async {
+    try {
+      await _globalConfig.loadConfig();
+      final serverStatus = await _globalConfig.getServerStatus();
+
+      if (mounted) {
+        setState(() {
+          _isPopularDishesEnabled = _globalConfig.enablePopularDishes;
+          _isDebugMode = _globalConfig.debugMode;
+          _serverStatus = serverStatus;
+        });
+
+        print('🔧 Configuración global cargada:');
+        print('   📊 Platos populares habilitados: $_isPopularDishesEnabled');
+        print('   🐛 Modo debug: $_isDebugMode');
+      }
+    } catch (e) {
+      print('⚠️ Error al cargar configuración global: $e');
+      // Continuar con valores por defecto
+    }
   }
 
   // ✨ OPTIMIZACIÓN: Método mejorado para cargar categorías jerárquicas
@@ -682,6 +730,26 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
         _categoriesByType['comida']!.isNotEmpty ||
         _categoriesByType['bebida']!.isNotEmpty;
 
+    // 🔄 NUEVO: Verificar si la funcionalidad está deshabilitada
+    if (!_isPopularDishesEnabled) {
+      return BackgroundScaffold(
+        appBar: AppBar(
+          title: Text(
+            'Platos Populares',
+            style: TextStyle(
+              fontFamily: 'Lighthouse',
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: const Color(0xFF3ea69b),
+          foregroundColor: Colors.white,
+        ),
+        body: _buildDisabledState(theme),
+      );
+    }
+
     return BackgroundScaffold(
       appBar: AppBar(
         title: Column(
@@ -704,7 +772,7 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
               ),
             ),
             Text(
-              'Análisis de ventas',
+              _buildSubtitleText(),
               style: TextStyle(
                 fontFamily: 'Lighthouse',
                 fontSize: 16,
@@ -734,25 +802,42 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
           ),
         ),
         actions: [
-          // 🧪 BOTÓN TEMPORAL DE DEBUG - ELIMINAR DESPUÉS
-          PopupMenuButton<String>(
-            icon: Icon(Icons.bug_report, color: Colors.white),
-            onSelected: (String estado) {
-              setState(() {
-                _debugEstado = estado;
-              });
-              _loadPopularDishes();
-            },
-            itemBuilder:
-                (BuildContext context) => [
-                  PopupMenuItem(value: 'todos', child: Text('Todos')),
-                  PopupMenuItem(value: 'pendiente', child: Text('Pendientes')),
-                  PopupMenuItem(
-                    value: 'completado',
-                    child: Text('Completados'),
-                  ),
-                  PopupMenuItem(value: 'cancelado', child: Text('Cancelados')),
-                ],
+          // 🔄 MEJORADO: Solo mostrar debug si está habilitado
+          if (_isDebugMode)
+            PopupMenuButton<String>(
+              icon: Icon(Icons.bug_report, color: Colors.white),
+              tooltip: 'Modo Debug: Filtrar por estado',
+              onSelected: (String estado) {
+                setState(() {
+                  _debugEstado = estado;
+                });
+                _loadPopularDishes();
+              },
+              itemBuilder:
+                  (BuildContext context) => [
+                    PopupMenuItem(
+                      value: 'todos',
+                      child: Text('Todos los estados'),
+                    ),
+                    PopupMenuItem(
+                      value: 'pendiente',
+                      child: Text('Pendientes'),
+                    ),
+                    PopupMenuItem(
+                      value: 'completado',
+                      child: Text('Completados'),
+                    ),
+                    PopupMenuItem(
+                      value: 'cancelado',
+                      child: Text('Cancelados'),
+                    ),
+                  ],
+            ),
+          // 🔄 NUEVO: Botón de información/configuración
+          IconButton(
+            icon: Icon(Icons.info_outline, color: Colors.white),
+            tooltip: 'Información del sistema',
+            onPressed: () => _showSystemInfoDialog(context),
           ),
         ],
       ),
@@ -1701,5 +1786,202 @@ class _PopularDishesScreenState extends State<PopularDishesScreen> {
     });
 
     print('✅ Categorías cargadas');
+  }
+
+  // 🔄 NUEVO: Construir texto del subtítulo con más contexto
+  String _buildSubtitleText() {
+    if (_filteredDishes.isEmpty) {
+      return 'Análisis de ventas';
+    }
+
+    final totalPlatos = _filteredDishes.length;
+    final totalVentas = _filteredDishes.fold<int>(
+      0,
+      (sum, dish) =>
+          sum +
+          (int.tryParse(dish['cantidad_vendida']?.toString() ?? '0') ?? 0),
+    );
+
+    String periodText = '';
+    switch (_selectedPeriod) {
+      case 'day':
+        periodText = 'hoy';
+        break;
+      case 'week':
+        periodText = 'esta semana';
+        break;
+      case 'month':
+        periodText = 'este mes';
+        break;
+      case 'year':
+        periodText = 'este año';
+        break;
+      case 'custom':
+        periodText = 'período personalizado';
+        break;
+      default:
+        periodText = 'todos los tiempos';
+    }
+
+    return '$totalPlatos platos • $totalVentas ventas $periodText';
+  }
+
+  // 🔄 NUEVO: Estado cuando la funcionalidad está deshabilitada
+  Widget _buildDisabledState(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.trending_down,
+                size: 64,
+                color: Colors.orange.shade600,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Platos Populares Deshabilitados',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.orange.shade700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Esta funcionalidad está temporalmente desactivada en la configuración del asistente.',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Para activarla, ve a la configuración global del asistente y habilita "Platos Populares".',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.grey.shade500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _loadGlobalConfig(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Verificar Estado'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Volver'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🔄 NUEVO: Mostrar diálogo con información del sistema
+  void _showSystemInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.info, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('Información del Sistema'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildInfoRow(
+                  'Platos Populares',
+                  _isPopularDishesEnabled ? 'Habilitado' : 'Deshabilitado',
+                ),
+                _buildInfoRow(
+                  'Modo Debug',
+                  _isDebugMode ? 'Activo' : 'Inactivo',
+                ),
+                _buildInfoRow('Estado de Debug', _debugEstado.toUpperCase()),
+                _buildInfoRow('Período Actual', _selectedPeriod),
+                _buildInfoRow('Total de Platos', '${_filteredDishes.length}'),
+                if (_serverStatus != null) ...[
+                  const Divider(),
+                  const Text(
+                    'Estado del Servidor:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoRow(
+                    'Conexión',
+                    _serverStatus!['connected'] == true
+                        ? 'Conectado'
+                        : 'Desconectado',
+                  ),
+                  if (_serverStatus!['database'] != null)
+                    _buildInfoRow(
+                      'Base de Datos',
+                      _serverStatus!['database']['connected'] == true
+                          ? 'Conectada'
+                          : 'Desconectada',
+                    ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 🔄 NUEVO: Widget helper para mostrar información
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -307,18 +307,10 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
 
       if (mounted) {
         if (success) {
-          // 🔥 NUEVO: Mensaje dinámico basado en las configuraciones
-          String statusMessage = '✅ Configuración guardada exitosamente\n\n';
-          statusMessage +=
-              '📊 Reportes: ${_enableReports ? "ACTIVADOS" : "DESACTIVADOS"}\n';
-          statusMessage +=
-              '🏆 Platos Populares: ${_enablePopularDishes ? "ACTIVADOS" : "DESACTIVADOS"}';
-
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(statusMessage),
+              content: const Text('✅ Configuración guardada exitosamente'),
               backgroundColor: Theme.of(context).colorScheme.primary,
-              duration: const Duration(seconds: 4),
             ),
           );
 
@@ -776,40 +768,22 @@ class _ChatConfigModalContentState extends State<ChatConfigModalContent> {
             const SizedBox(height: 16),
             SwitchListTile(
               title: const Text('Reportes'),
-              subtitle: Text(
-                _enableReports
-                    ? 'Habilitar reportes de ventas y estadísticas'
-                    : 'Los reportes están desactivados - el chat no proporcionará estadísticas',
-                style: TextStyle(
-                  color: _enableReports ? null : Colors.orange[700],
-                  fontWeight: _enableReports ? null : FontWeight.w500,
-                ),
+              subtitle: const Text(
+                'Habilitar reportes de ventas y estadísticas',
               ),
               value: _enableReports,
               onChanged: (value) => setState(() => _enableReports = value),
-              secondary: Icon(
-                Icons.analytics,
-                color: _enableReports ? null : Colors.orange[700],
-              ),
+              secondary: const Icon(Icons.analytics),
             ),
             SwitchListTile(
               title: const Text('Platos Populares'),
-              subtitle: Text(
-                _enablePopularDishes
-                    ? 'Mostrar información de platos más vendidos'
-                    : 'Las recomendaciones populares están desactivadas',
-                style: TextStyle(
-                  color: _enablePopularDishes ? null : Colors.orange[700],
-                  fontWeight: _enablePopularDishes ? null : FontWeight.w500,
-                ),
+              subtitle: const Text(
+                'Mostrar información de platos más vendidos',
               ),
               value: _enablePopularDishes,
               onChanged:
                   (value) => setState(() => _enablePopularDishes = value),
-              secondary: Icon(
-                Icons.trending_up,
-                color: _enablePopularDishes ? null : Colors.orange[700],
-              ),
+              secondary: const Icon(Icons.trending_up),
             ),
           ],
         ),

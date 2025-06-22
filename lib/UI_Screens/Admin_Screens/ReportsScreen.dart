@@ -17,9 +17,9 @@ import 'package:fl_chart/fl_chart.dart';
 import '../../Api_services/pedidos/orders_service.dart';
 import '../Widgets/date_filter_bar.dart';
 import '../../Api_services/pedidos/popular_dishes_service.dart';
+import '../../Api_services/global_config_service.dart'; // 🔄 NUEVO: Configuración global
 import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
-
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -31,13 +31,19 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   final OrdersService _ordersService = OrdersService();
   final PopularDishesService _popularDishesService = PopularDishesService();
-
+  final GlobalConfigService _globalConfig =
+      GlobalConfigService(); // 🔄 NUEVO: Configuración global
   final GlobalKey<DateFilterBarState> _filterBarKey =
       GlobalKey<DateFilterBarState>();
 
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
+
+  // 🔄 NUEVO: Variables para configuración global
+  bool _isReportsEnabled = true;
+  bool _isDebugMode = false;
+  Map<String, dynamic>? _serverStatus;
 
   // Estado para el filtro de categoría con enum para mejor tipo de datos
   String _selectedCategory = 'todos';
@@ -62,7 +68,48 @@ class _ReportsScreenState extends State<ReportsScreen> {
     super.initState();
     _currentPeriod = 'hoy';
     _selectedCategory = 'todos';
-    _loadReportData();
+    _initializeScreen(); // 🔄 NUEVO: Inicialización mejorada
+  }
+
+  // 🔄 NUEVO: Inicializar pantalla con configuración global
+  Future<void> _initializeScreen() async {
+    try {
+      // Cargar configuración global
+      await _loadGlobalConfig();
+
+      // Cargar datos del reporte
+      await _loadReportData();
+    } catch (e) {
+      print('❌ Error al inicializar pantalla de reportes: $e');
+      setState(() {
+        _hasError = true;
+        _errorMessage = 'Error al inicializar: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 🔄 NUEVO: Cargar configuración global
+  Future<void> _loadGlobalConfig() async {
+    try {
+      await _globalConfig.loadConfig();
+      final serverStatus = await _globalConfig.getServerStatus();
+
+      if (mounted) {
+        setState(() {
+          _isReportsEnabled = _globalConfig.enableReports;
+          _isDebugMode = _globalConfig.debugMode;
+          _serverStatus = serverStatus;
+        });
+
+        print('🔧 Configuración global de reportes cargada:');
+        print('   📊 Reportes habilitados: $_isReportsEnabled');
+        print('   🐛 Modo debug: $_isDebugMode');
+      }
+    } catch (e) {
+      print('⚠️ Error al cargar configuración global: $e');
+      // Continuar con valores por defecto
+    }
   }
 
   @override
@@ -259,6 +306,24 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // 🔄 NUEVO: Obtener subtítulo con más contexto
+  String _getReportSubtitle() {
+    if (_summaryData.isEmpty) {
+      return categoryLabels[_selectedCategory] ?? 'Todos los items';
+    }
+
+    final totalPedidos = _summaryData['totalPedidos'] ?? 0;
+    final totalVentas = _summaryData['totalVentas'] ?? 0.0;
+
+    String baseText = categoryLabels[_selectedCategory] ?? 'Todos los items';
+
+    if (totalPedidos > 0) {
+      return '$baseText • $totalPedidos pedidos • ${_formatCurrency(totalVentas)}';
+    }
+
+    return baseText;
+  }
+
   void _navigateToOrderHistory() {
     String? startDate;
     String? endDate;
@@ -385,6 +450,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // 🔄 NUEVO: Verificar si los reportes están deshabilitados
+    if (!_isReportsEnabled) {
+      return BackgroundScaffold(
+        appBar: AppBar(
+          title: Text(
+            'Reportes',
+            style: TextStyle(
+              fontFamily: 'Lighthouse',
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: const Color(0xFF3ea69b),
+          foregroundColor: Colors.white,
+        ),
+        body: _buildDisabledState(theme),
+      );
+    }
+
     return BackgroundScaffold(
       appBar: AppBar(
         title: Row(
@@ -410,12 +495,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ),
                   ),
                   Text(
-                    categoryLabels[_selectedCategory] ?? 'Todos los items',
+                    _getReportSubtitle(), // 🔄 MEJORADO: Usar subtítulo con más contexto
                     style: TextStyle(
                       fontFamily: 'Lighthouse',
                       fontSize: 16,
                       color: Colors.white.withOpacity(0.9),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -572,7 +659,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-
                               _buildStatisticsCards(theme),
                               const SizedBox(height: 16),
                               _buildDistributionSection(theme),
@@ -606,12 +692,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               ),
                               const SizedBox(height: 12),
                               // BOTÓN TEMPORAL DE PRUEBA - ELIMINAR DESPUÉS
+                              // 🔄 MEJORADO: Solo mostrar botón de debug si está habilitado
+                              if (_isDebugMode)
+                                ElevatedButton.icon(
+                                  onPressed: _testNotification,
+                                  icon: const Icon(Icons.notifications),
+                                  label: const Text('🧪 Probar notificación'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(
+                                      double.infinity,
+                                      48,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              // 🔄 NUEVO: Botón de información del sistema
+                              const SizedBox(height: 12),
                               ElevatedButton.icon(
-                                onPressed: _testNotification,
-                                icon: const Icon(Icons.notifications),
-                                label: const Text('🧪 Probar notificación'),
+                                onPressed: () => _showSystemInfoDialog(context),
+                                icon: const Icon(Icons.info_outline),
+                                label: const Text('Información del Sistema'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
+                                  backgroundColor: Colors.blue,
                                   foregroundColor: Colors.white,
                                   minimumSize: const Size(double.infinity, 48),
                                   shape: RoundedRectangleBorder(
@@ -2659,91 +2765,201 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  // 🔥 NUEVO: Widget para mostrar el estado de las configuraciones
-  Widget _buildConfigStatusCard(ThemeData theme) {
-    return Card(
-      elevation: 2,
+  // 🔄 NUEVO: Estado cuando los reportes están deshabilitados
+  Widget _buildDisabledState(ThemeData theme) {
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(32.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(
-              children: [
-                Icon(Icons.settings, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'Estado de Configuraciones',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.red.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.analytics_outlined,
+                size: 64,
+                color: Colors.red.shade600,
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
+            Text(
+              'Reportes Deshabilitados',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Esta funcionalidad está temporalmente desactivada en la configuración del asistente.',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Para activarla, ve a la configuración global del asistente y habilita "Reportes".',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.grey.shade500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: _buildConfigStatusItem(
-                    'Reportes',
-                    _globalConfig.enableReports,
-                    Icons.analytics,
-                    theme,
+                ElevatedButton.icon(
+                  onPressed: () => _loadGlobalConfig(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Verificar Estado'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
                   ),
                 ),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: _buildConfigStatusItem(
-                    'Platos Populares',
-                    _globalConfig.enablePopularDishes,
-                    Icons.trending_up,
-                    theme,
-                  ),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Volver'),
                 ),
               ],
             ),
-            if (!_globalConfig.enableReports || !_globalConfig.enablePopularDishes) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Algunas funciones están desactivadas. Puedes activarlas desde el modal de configuración del chat.',
-                        style: TextStyle(
-                          color: Colors.orange[700],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildConfigStatusItem(String title, bool isEnabled, IconData icon, ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isEnabled 
-          ? Colors.green.withOpacity(0.1) 
-          : Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isEnabled 
+  // 🔄 NUEVO: Mostrar diálogo con información del sistema
+  void _showSystemInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.info, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('Información del Sistema'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildInfoRow(
+                  'Reportes Habilitados',
+                  _isReportsEnabled ? 'Sí' : 'No',
+                ),
+                _buildInfoRow(
+                  'Modo Debug',
+                  _isDebugMode ? 'Activo' : 'Inactivo',
+                ),
+                _buildInfoRow('Período Actual', _currentPeriod),
+                _buildInfoRow(
+                  'Categoría',
+                  categoryLabels[_selectedCategory] ?? 'Desconocida',
+                ),
+                _buildInfoRow(
+                  'Total Pedidos',
+                  '${_summaryData['totalPedidos'] ?? 0}',
+                ),
+                _buildInfoRow(
+                  'Total Ventas',
+                  _formatCurrency(_summaryData['totalVentas'] ?? 0.0),
+                ),
+                _buildInfoRow('Platos Populares', '${_popularDishes.length}'),
+                if (_serverStatus != null) ...[
+                  const Divider(),
+                  const Text(
+                    'Estado del Servidor:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoRow(
+                    'Conexión',
+                    _serverStatus!['connected'] == true
+                        ? 'Conectado'
+                        : 'Desconectado',
+                  ),
+                  if (_serverStatus!['database'] != null)
+                    _buildInfoRow(
+                      'Base de Datos',
+                      _serverStatus!['database']['connected'] == true
+                          ? 'Conectada'
+                          : 'Desconectada',
+                    ),
+                  if (_serverStatus!['geminiModel'] != null)
+                    _buildInfoRow(
+                      'Modelo Gemini',
+                      _serverStatus!['geminiModel']['current'] ?? 'Desconocido',
+                    ),
+                ],
+                const Divider(),
+                const Text(
+                  'Rango de Fechas:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (_customStartDate != null && _customEndDate != null) ...[
+                  _buildInfoRow('Fecha Inicio', _customStartDate!),
+                  _buildInfoRow('Fecha Fin', _customEndDate!),
+                ] else ...[
+                  _buildInfoRow('Tipo', 'Período predefinido'),
+                  _buildInfoRow('Período', _currentPeriod),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+            if (_isDebugMode)
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadReportData(); // Recargar datos
+                },
+                child: const Text('Recargar Datos'),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 🔄 NUEVO: Widget helper para mostrar información
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // Clase para dibujar el gráfico de pastel
