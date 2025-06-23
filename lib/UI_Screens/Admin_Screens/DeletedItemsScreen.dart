@@ -436,7 +436,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
             Text(
               label,
               style: TextStyle(
-                fontFamily: 'Lighthouse',
+                fontFamily:
+                    'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para labels que pueden contener números
                 fontSize: 12,
                 color: Colors.grey[600],
               ),
@@ -634,7 +635,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                       Text(
                         dish['nombre'] ?? 'Sin nombre',
                         style: const TextStyle(
-                          fontFamily: 'Lighthouse',
+                          fontFamily:
+                              'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para nombres de platos que pueden contener números
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF3ea69b),
@@ -643,7 +645,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                       Text(
                         dish['categoria'] ?? 'Sin categoría',
                         style: TextStyle(
-                          fontFamily: 'Lighthouse',
+                          fontFamily:
+                              'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para categorías que pueden contener números
                           fontSize: 14,
                           color: Colors.grey[600],
                         ),
@@ -660,7 +663,9 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                   icon: const Icon(Icons.restore, size: 16),
                   label: const Text(
                     'Restaurar',
-                    style: TextStyle(fontFamily: 'Lighthouse'),
+                    style: TextStyle(
+                      fontFamily: 'MADE TOMMY',
+                    ), // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para consistencia
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3ea69b),
@@ -708,7 +713,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                 Text(
                   _softDeleteService.formatDeletedDate(dish['deleted_at']),
                   style: TextStyle(
-                    fontFamily: 'Lighthouse',
+                    fontFamily:
+                        'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para fechas con números
                     fontSize: 12,
                     color: Colors.grey[600],
                   ),
@@ -726,7 +732,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                   Text(
                     'Eliminado por: ${_softDeleteService.getDeletedByName(dish)}',
                     style: TextStyle(
-                      fontFamily: 'Lighthouse',
+                      fontFamily:
+                          'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para nombres que pueden contener números
                       fontSize: 12,
                       color: Colors.grey[600],
                     ),
@@ -775,7 +782,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                         '${user['nombre'] ?? ''} ${user['apellido'] ?? ''}'
                             .trim(),
                         style: const TextStyle(
-                          fontFamily: 'Lighthouse',
+                          fontFamily:
+                              'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para nombres que pueden contener números
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF3ea69b),
@@ -786,7 +794,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                           int.tryParse(user['rol']?.toString() ?? '1') ?? 1,
                         ),
                         style: TextStyle(
-                          fontFamily: 'Lighthouse',
+                          fontFamily:
+                              'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para roles que pueden contener números
                           fontSize: 14,
                           color: Colors.grey[600],
                         ),
@@ -804,7 +813,9 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                   icon: const Icon(Icons.restore, size: 16),
                   label: const Text(
                     'Restaurar',
-                    style: TextStyle(fontFamily: 'Lighthouse'),
+                    style: TextStyle(
+                      fontFamily: 'MADE TOMMY',
+                    ), // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para consistencia
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3ea69b),
@@ -833,7 +844,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                   child: Text(
                     user['email'] ?? 'Sin email',
                     style: TextStyle(
-                      fontFamily: 'Lighthouse',
+                      fontFamily:
+                          'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para emails que pueden contener números
                       fontSize: 14,
                       color: Colors.grey[600],
                     ),
@@ -855,7 +867,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                 Text(
                   _softDeleteService.formatDeletedDate(user['deleted_at']),
                   style: TextStyle(
-                    fontFamily: 'Lighthouse',
+                    fontFamily:
+                        'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para fechas con números
                     fontSize: 12,
                     color: Colors.grey[600],
                   ),
@@ -873,7 +886,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen>
                   Text(
                     'Eliminado por: ${_softDeleteService.getDeletedByName(user)}',
                     style: TextStyle(
-                      fontFamily: 'Lighthouse',
+                      fontFamily:
+                          'MADE TOMMY', // 🔧 CAMBIADO: Lighthouse → MADE TOMMY para nombres que pueden contener números
                       fontSize: 12,
                       color: Colors.grey[600],
                     ),

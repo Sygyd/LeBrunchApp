@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../Api_services/network_config_service.dart';
 import '/models/user.dart';
 import '/UI_Screens/Widgets/custom_modal.dart';
+import '/UI_Screens/Widgets/password_requirements_widget.dart';
 import '/Api_services/password_reset_service.dart';
 import 'dart:convert';
 import '/Api_services/cart_service.dart';
@@ -99,42 +100,61 @@ class _LoginModalContentState extends State<_LoginModalContent> {
         String errorMessage;
         try {
           final errorData = jsonDecode(response.body);
-          final serverMessage =
-              errorData['message'] ?? errorData['error'] ?? '';
+          final serverMessage = errorData['message'] ?? '';
+          final errorCode = errorData['error'] ?? '';
 
-          switch (response.statusCode) {
-            case 401:
-              errorMessage = "Email o contraseña incorrectos";
-              break;
-            case 403:
-              if (serverMessage.toLowerCase().contains('eliminado') ||
-                  serverMessage.toLowerCase().contains('deleted')) {
+          // 🆕 NUEVO: Manejo específico para usuarios eliminados/baneados
+          if (response.statusCode == 403 && errorCode == 'usuario_eliminado') {
+            errorMessage =
+                serverMessage.isNotEmpty
+                    ? serverMessage
+                    : "Esta cuenta ha sido eliminada o suspendida. Contacta al administrador para más información.";
+          } else {
+            // Manejo existente para otros errores
+            switch (response.statusCode) {
+              case 401:
+                if (errorCode == 'credenciales_invalidas') {
+                  errorMessage =
+                      serverMessage.isNotEmpty
+                          ? serverMessage
+                          : "Email o contraseña incorrectos";
+                } else {
+                  errorMessage = "Email o contraseña incorrectos";
+                }
+                break;
+              case 403:
+                if (serverMessage.toLowerCase().contains('eliminado') ||
+                    serverMessage.toLowerCase().contains('deleted') ||
+                    serverMessage.toLowerCase().contains('suspendida')) {
+                  errorMessage =
+                      serverMessage.isNotEmpty
+                          ? serverMessage
+                          : "Esta cuenta ha sido eliminada o suspendida. Contacta al administrador.";
+                } else {
+                  errorMessage =
+                      "Acceso denegado. Tu cuenta puede estar inactiva.";
+                }
+                break;
+              case 404:
+                errorMessage = "No existe una cuenta con este email";
+                break;
+              case 422:
                 errorMessage =
-                    "Esta cuenta ha sido eliminada. Contacta al administrador.";
-              } else {
+                    "Datos de login inválidos. Verifica tu email y contraseña.";
+                break;
+              case 429:
                 errorMessage =
-                    "Acceso denegado. Tu cuenta puede estar inactiva.";
-              }
-              break;
-            case 404:
-              errorMessage = "No existe una cuenta con este email";
-              break;
-            case 422:
-              errorMessage =
-                  "Datos de login inválidos. Verifica tu email y contraseña.";
-              break;
-            case 429:
-              errorMessage =
-                  "Demasiados intentos de login. Espera unos minutos.";
-              break;
-            case 500:
-              errorMessage = "Error interno del servidor. Intenta más tarde.";
-              break;
-            default:
-              errorMessage =
-                  serverMessage.isNotEmpty
-                      ? serverMessage
-                      : "Error en el servidor (${response.statusCode})";
+                    "Demasiados intentos de login. Espera unos minutos.";
+                break;
+              case 500:
+                errorMessage = "Error interno del servidor. Intenta más tarde.";
+                break;
+              default:
+                errorMessage =
+                    serverMessage.isNotEmpty
+                        ? serverMessage
+                        : "Error en el servidor (${response.statusCode})";
+            }
           }
         } catch (e) {
           errorMessage = "Error en el servidor (${response.statusCode})";
@@ -599,8 +619,8 @@ class _VerifyCredentialsStepState extends State<_VerifyCredentialsStep> {
     if (value == null || value.isEmpty) {
       return 'Por favor ingresa tu número de cédula';
     }
-    if (value.length < 5 || value.length > 10) {
-      return 'La cédula debe tener entre 5 y 10 dígitos';
+    if (value.length < 3 || value.length > 10) {
+      return 'La cédula debe tener entre 3 y 10 dígitos';
     }
     if (!RegExp(r'^\d+$').hasMatch(value)) {
       return 'La cédula debe contener solo números';
@@ -721,7 +741,7 @@ class _VerifyCredentialsStepState extends State<_VerifyCredentialsStep> {
                 (value) =>
                     PasswordResetService.isValidCedula(value ?? '')
                         ? null
-                        : 'La cédula debe tener entre 5 y 10 dígitos',
+                        : 'La cédula debe tener entre 3 y 10 dígitos',
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(10),
@@ -823,7 +843,11 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
   }
 
   String? _validatePassword(String? value) {
-    return ValidationUtils.validateRegisterPassword(value);
+    if (value == null || value.isEmpty) {
+      return 'La contraseña es obligatoria';
+    }
+    // Usar la validación del widget reutilizable
+    return PasswordRequirementsWidget.getValidationError(value);
   }
 
   String? _validateConfirmPassword(String? value) {
@@ -832,41 +856,6 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
       _passwordController.text,
     );
   }
-
-  Widget _buildPasswordRequirement(String text, bool isCompleted) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        children: [
-          Icon(
-            isCompleted ? Icons.check_circle : Icons.cancel,
-            size: 16,
-            color: isCompleted ? Colors.green : Colors.red,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: isCompleted ? Colors.green : Colors.red,
-                fontWeight: isCompleted ? FontWeight.w500 : FontWeight.normal,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Métodos para verificar cada requisito individualmente
-  bool _hasMinLength(String password) => password.length >= 8;
-
-  bool _hasUppercase(String password) => RegExp(r'[A-Z]').hasMatch(password);
-
-  bool _hasNumber(String password) => RegExp(r'[0-9]').hasMatch(password);
-
-  bool _hasSymbol(String password) =>
-      RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(password);
 
   Future<void> _resetPassword() async {
     if (!_formKey.currentState!.validate()) return;
@@ -978,49 +967,13 @@ class _ResetPasswordStepState extends State<_ResetPasswordStep> {
             ),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
 
-          // Requisitos de contraseña
-          Container(
+          // 🆕 NUEVO: Widget de requisitos de contraseña reutilizable
+          PasswordRequirementsWidget(
+            password: _passwordController.text,
+            fontSize: 12,
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceVariant,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Requisitos de la contraseña:',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                _buildPasswordRequirement(
-                  'Mínimo 8 caracteres',
-                  _hasMinLength(_passwordController.text),
-                ),
-                const SizedBox(height: 2),
-                _buildPasswordRequirement(
-                  'Al menos 1 mayúscula (A-Z)',
-                  _hasUppercase(_passwordController.text),
-                ),
-                const SizedBox(height: 2),
-                _buildPasswordRequirement(
-                  'Al menos 1 número (0-9)',
-                  _hasNumber(_passwordController.text),
-                ),
-                const SizedBox(height: 2),
-                _buildPasswordRequirement(
-                  'Al menos 1 símbolo (!@#\$%^&*)',
-                  _hasSymbol(_passwordController.text),
-                ),
-              ],
-            ),
           ),
 
           const SizedBox(height: 16),
@@ -1183,32 +1136,14 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
     return null;
   }
 
-  /// Validar contraseña robusta
+  /// Validar contraseña robusta usando el widget reutilizable
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'La contraseña es obligatoria';
     }
 
-    if (value.length < 8) {
-      return 'La contraseña debe tener al menos 8 caracteres';
-    }
-
-    // Verificar que tenga al menos una mayúscula
-    if (!RegExp(r'[A-Z]').hasMatch(value)) {
-      return 'La contraseña debe tener al menos una mayúscula';
-    }
-
-    // Verificar que tenga al menos un número
-    if (!RegExp(r'[0-9]').hasMatch(value)) {
-      return 'La contraseña debe tener al menos un número';
-    }
-
-    // Verificar que tenga al menos un símbolo
-    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
-      return 'La contraseña debe tener al menos un símbolo (!@#\$%^&*(),.?":{}|<>)';
-    }
-
-    return null;
+    // Usar la validación del widget reutilizable
+    return PasswordRequirementsWidget.getValidationError(value);
   }
 
   /// Validar nombre/apellido
@@ -1480,6 +1415,10 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                   FocusScope.of(context).requestFocus(_confirmContrasenaFocus);
                 },
                 obscureText: _obscurePassword,
+                onChanged: (value) {
+                  // Actualizar la UI cuando cambie la contraseña
+                  setState(() {});
+                },
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
                   prefixIcon: Icon(Icons.lock),
@@ -1498,12 +1437,15 @@ class _RegisterModalContentState extends State<_RegisterModalContent> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Ingresa tu contraseña';
-                  if (value.length < 6) return 'Mínimo 6 caracteres';
-                  return null;
-                },
+                validator: _validatePassword,
+              ),
+              const SizedBox(height: 12),
+
+              // 🆕 NUEVO: Widget de requisitos de contraseña
+              PasswordRequirementsWidget(
+                password: _contrasenaController.text,
+                fontSize: 11,
+                padding: const EdgeInsets.all(10),
               ),
               const SizedBox(height: 15),
               // Campo Confirmar Contraseña

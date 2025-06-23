@@ -1667,13 +1667,23 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               if (canDelete && !isSuperAdmin && !isCurrentUser)
                 ElevatedButton(
                   onPressed: () async {
-                    Navigator.pop(context); // Cerrar el diálogo
+                    // 🔄 SOLUCION: Capturar el context antes de las operaciones asíncronas
+                    final dialogContext = context;
+                    final navigatorState = Navigator.of(
+                      context,
+                      rootNavigator: true,
+                    );
+
+                    Navigator.pop(dialogContext); // Cerrar el diálogo
+
+                    // Verificar que el widget sigue montado antes de continuar
+                    if (!mounted) return;
 
                     // Mostrar indicador de carga
                     showDialog(
                       context: context,
                       barrierDismissible: false,
-                      builder: (BuildContext context) {
+                      builder: (BuildContext loadingContext) {
                         return const Dialog(
                           child: Padding(
                             padding: EdgeInsets.all(20.0),
@@ -1699,8 +1709,18 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       // Verificar si el widget sigue montado antes de usar Navigator
                       if (!mounted) return;
 
-                      // Cerrar el diálogo de carga
-                      Navigator.of(context, rootNavigator: true).pop();
+                      // Cerrar el diálogo de carga de forma segura
+                      try {
+                        Navigator.of(context, rootNavigator: true).pop();
+                      } catch (navError) {
+                        print('⚠️ Error cerrando diálogo de carga: $navError');
+                        // Intentar con el navegador principal si falla
+                        try {
+                          Navigator.of(context).pop();
+                        } catch (navError2) {
+                          print('⚠️ Error con navegador principal: $navError2');
+                        }
+                      }
 
                       if (success) {
                         // Actualizar la lista de usuarios
@@ -1715,8 +1735,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       // Verificar si el widget sigue montado antes de usar Navigator
                       if (!mounted) return;
 
-                      // Cerrar el diálogo de carga
-                      Navigator.of(context, rootNavigator: true).pop();
+                      // Cerrar el diálogo de carga de forma segura
+                      try {
+                        Navigator.of(context, rootNavigator: true).pop();
+                      } catch (navError) {
+                        print('⚠️ Error cerrando diálogo en catch: $navError');
+                        // Intentar con el navegador principal si falla
+                        try {
+                          Navigator.of(context).pop();
+                        } catch (navError2) {
+                          print(
+                            '⚠️ Error con navegador principal en catch: $navError2',
+                          );
+                        }
+                      }
 
                       // Manejo de errores específicos basados en los códigos del servidor
                       String errorMessage = 'Error al eliminar el usuario';
@@ -2111,7 +2143,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       await _userService.updateUser(userId.toString(), userData);
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+
+      // Cerrar el diálogo de carga de forma segura
+      try {
+        Navigator.of(context, rootNavigator: true).pop();
+      } catch (navError) {
+        print('⚠️ Error cerrando diálogo de actualización: $navError');
+        try {
+          Navigator.of(context).pop();
+        } catch (navError2) {
+          print(
+            '⚠️ Error con navegador principal en actualización: $navError2',
+          );
+        }
+      }
 
       // Recargar la lista de usuarios
       await _loadUsers();
@@ -2121,7 +2166,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+
+      // Cerrar el diálogo de carga de forma segura
+      try {
+        Navigator.of(context, rootNavigator: true).pop();
+      } catch (navError) {
+        print('⚠️ Error cerrando diálogo en catch de actualización: $navError');
+        try {
+          Navigator.of(context).pop();
+        } catch (navError2) {
+          print(
+            '⚠️ Error con navegador principal en catch de actualización: $navError2',
+          );
+        }
+      }
 
       String errorMessage = 'Error al actualizar usuario';
 

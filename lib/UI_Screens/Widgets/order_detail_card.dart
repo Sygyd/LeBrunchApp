@@ -263,32 +263,53 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
         if (!confirm) return; // El usuario canceló la acción
       }
 
-      final success = await _ordersService.updateItemStatus(
+      // 🆕 NUEVO: Manejar el nuevo valor de retorno que incluye información de mesa
+      final result = await _ordersService.updateItemStatus(
         widget.order['idpedido'],
         platoId,
         completado,
         roleForUpdate, // Usar el rol correcto
       );
 
-      if (success && mounted) {
-        await CustomModal.showSuccess(
-          context: context,
-          message:
-              completado
-                  ? 'Ítem marcado como completado'
-                  : 'Ítem marcado como pendiente',
-          buttonText: 'Aceptar',
-        );
+      final bool isSuccess = result['success'] as bool? ?? false;
+      final bool orderCompleted = result['orderCompleted'] as bool? ?? false;
 
-        // Verificar si la orden está completamente lista usando el método adecuado
-        await _ordersService.checkAndUpdateOrderCompletion(
-          widget.order['idpedido'],
-        );
+      if (isSuccess && mounted) {
+        // 🆕 NUEVO: Verificar si el pedido se completó automáticamente
+        if (orderCompleted) {
+          // Mostrar mensaje especial con información de la mesa
+          final orderMessage =
+              result['orderCompletionMessage'] ??
+              'Pedido completado exitosamente';
+
+          await CustomModal.showSuccess(
+            context: context,
+            message: orderMessage,
+            buttonText: 'Aceptar',
+          );
+
+          print('🎯 ${orderMessage}');
+        } else {
+          // Mostrar mensaje normal para el ítem individual
+          await CustomModal.showSuccess(
+            context: context,
+            message:
+                completado
+                    ? 'Ítem marcado como completado'
+                    : 'Ítem marcado como pendiente',
+            buttonText: 'Aceptar',
+          );
+        }
 
         // Refrescar la interfaz
         if (widget.onRefresh != null) {
           widget.onRefresh!();
         }
+      } else if (!isSuccess && mounted) {
+        await CustomModal.showError(
+          context: context,
+          message: result['message'] ?? 'Error al actualizar estado',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -346,14 +367,15 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
 
           // Solo actualizar los que no están completados
           if (!isAlreadyCompleted) {
-            final success = await _ordersService.updateItemStatus(
+            final result = await _ordersService.updateItemStatus(
               widget.order['idpedido'],
               item['idplato'],
               true,
               roleToUse, // Usar siempre el rol correcto según el tipo
             );
 
-            if (success) {
+            final bool itemSuccess = result['success'] as bool? ?? false;
+            if (itemSuccess) {
               atLeastOneUpdated = true;
             }
           }
@@ -382,12 +404,24 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
           }
         }
 
-        await CustomModal.showSuccess(context: context, message: mensaje);
+        // 🆕 NUEVO: Verificar si el pedido se completa automáticamente y capturar resultado
+        final completionResult = await _ordersService
+            .checkAndUpdateOrderCompletion(widget.order['idpedido']);
 
-        // Verificar el estado del pedido para posible actualización automática
-        await _ordersService.checkAndUpdateOrderCompletion(
-          widget.order['idpedido'],
-        );
+        // Mostrar mensaje apropiado según si se completó el pedido o no
+        if (completionResult['success'] == true &&
+            completionResult['completed'] == true) {
+          // 🆕 NUEVO: Si se completó el pedido, mostrar mensaje con mesa
+          final orderMessage =
+              completionResult['message'] ?? 'Pedido completado exitosamente';
+          await CustomModal.showSuccess(
+            context: context,
+            message: orderMessage,
+          );
+        } else {
+          // Si no se completó, mostrar mensaje normal
+          await CustomModal.showSuccess(context: context, message: mensaje);
+        }
 
         // Actualizar la UI para reflejar los cambios
         if (widget.onRefresh != null) {
@@ -1238,11 +1272,26 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
       }
 
       // 4. Verificar si todo está listo para completar el pedido
-      await _ordersService.checkAndUpdateOrderCompletion(
-        widget.order['idpedido'],
-      );
+      final completionResult = await _ordersService
+          .checkAndUpdateOrderCompletion(widget.order['idpedido']);
 
-      // 5. Refrescar interfaz
+      // 🆕 NUEVO: Mostrar mensaje con información de mesa si el pedido se completó
+      if (completionResult['success'] == true &&
+          completionResult['completed'] == true &&
+          mounted) {
+        final orderMessage =
+            completionResult['message'] ?? 'Pedido completado exitosamente';
+
+        await CustomModal.showSuccess(
+          context: context,
+          message: orderMessage,
+          buttonText: 'Aceptar',
+        );
+
+        print('🎯 ${orderMessage}');
+      }
+
+      // Refrescar interfaz
       if (widget.onRefresh != null) {
         widget.onRefresh!();
       }

@@ -12,6 +12,7 @@ import 'dart:async';
 import '../../services/cart_event_bus.dart';
 import 'dart:convert';
 import '../../services/user_preferences_service.dart';
+import '../../Api_services/pedidos/orders_service.dart'; // 🆕 NUEVO: Importar OrdersService
 
 class CartScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -29,6 +30,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   final PopularDishesService _popularDishesService = PopularDishesService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final OrdersService _ordersService =
+      OrdersService(); // 🆕 NUEVO: Añadir OrdersService
   // Lista modificable de items del carrito
   List<CartItem> _cartItems = [];
   List<Map<String, dynamic>> _recommendedDishes = [];
@@ -729,21 +732,6 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                     if (_recommendedDishes.isNotEmpty)
                       _buildRecommendedSection(),
 
-                    // Mover el botón de actualizar después de las recomendaciones
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16.0),
-                      child: TextButton.icon(
-                        icon: Icon(Icons.refresh),
-                        label: Text('Actualizar recomendaciones'),
-                        onPressed: () async {
-                          setState(() {
-                            _isLoading = true;
-                          });
-                          await _forceRefreshCart();
-                        },
-                      ),
-                    ),
-
                     // Mostrar indicador de carga si no hay recomendaciones todavía
                     if (_recommendedDishes.isEmpty)
                       Padding(
@@ -1122,11 +1110,63 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         await _cartService.forceNotifyListeners();
 
         if (context.mounted) {
+          // 🆕 NUEVO: Obtener información de la mesa
+          String successMessage =
+              'Tu pedido ${orderId != null ? "#$orderId" : ""} ha sido confirmado con éxito.';
+
+          print('🎯🎯🎯 CartScreen: ===== INICIO DEBUG MESA =====');
+          print('🎯 CartScreen: orderId recibido: $orderId');
+          print('🎯 CartScreen: Tipo de orderId: ${orderId.runtimeType}');
+          print('🎯 CartScreen: orderId es null? ${orderId == null}');
+
+          if (orderId != null) {
+            try {
+              print(
+                '🎯 CartScreen: Llamando _ordersService.getTableForOrder($orderId)',
+              );
+              print('🎯 CartScreen: Instancia _ordersService: $_ordersService');
+
+              final mesaInfo = await _ordersService.getTableForOrder(orderId);
+
+              print('🎯 CartScreen: Resultado getTableForOrder: $mesaInfo');
+              print('🎯 CartScreen: Tipo de mesaInfo: ${mesaInfo.runtimeType}');
+              print('🎯 CartScreen: mesaInfo es null? ${mesaInfo == null}');
+              print(
+                '🎯 CartScreen: mesaInfo es vacío? ${mesaInfo?.isEmpty ?? "null"}',
+              );
+
+              if (mesaInfo != null && mesaInfo.isNotEmpty) {
+                successMessage =
+                    'Tu pedido #$orderId ha sido confirmado con éxito, enviando a $mesaInfo.';
+                print(
+                  '🎯✅ CartScreen: Mensaje ACTUALIZADO con mesa - $successMessage',
+                );
+              } else {
+                print(
+                  '🎯⚠️ CartScreen: mesaInfo es null o vacío, usando mensaje por defecto',
+                );
+                print('🎯⚠️ CartScreen: mesaInfo valor: "$mesaInfo"');
+              }
+            } catch (e) {
+              print('🎯❌ CartScreen: Error obteniendo información de mesa: $e');
+              print('🎯❌ CartScreen: Stack trace: ${e.toString()}');
+              // Usar mensaje por defecto si falla obtener información de mesa
+            }
+          } else {
+            print(
+              '🎯⚠️ CartScreen: orderId es null, no se puede obtener información de mesa',
+            );
+          }
+
+          print(
+            '🎯📋 CartScreen: Mensaje FINAL que se mostrará: "$successMessage"',
+          );
+          print('🎯🎯🎯 CartScreen: ===== FIN DEBUG MESA =====');
+
           await CustomModal.showSuccess(
             context: context,
             title: '¡Pedido Confirmado!',
-            message:
-                'Tu pedido ${orderId != null ? "#$orderId" : ""} ha sido confirmado con éxito.',
+            message: successMessage,
             buttonText: 'Aceptar',
             onPressed: () {},
           );

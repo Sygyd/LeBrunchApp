@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../services/order_status_service.dart'; // Importar el servicio de notificación
 import '../network_config_service.dart';
 import '../../config.dart'; // Importar configuración centralizada
+import '../table_identification_service.dart'; // 🆕 NUEVO: Importar servicio de mesas
 
 /// Servicio para la gestión de pedidos (órdenes)
 ///
@@ -29,6 +30,8 @@ class OrdersService {
   };
   final OrderStatusService _statusService =
       OrderStatusService(); // Instancia del servicio de notificación
+  final TableIdentificationService _tableService =
+      TableIdentificationService(); // 🆕 NUEVO: Servicio de mesas
 
   // Constructor con inicialización de URL base
   OrdersService([this.baseUrl]) {
@@ -1154,7 +1157,7 @@ class OrdersService {
   }
 
   // Método para actualizar el estado de un ítem específico (completado por cocinero o barista)
-  Future<bool> updateItemStatus(
+  Future<Map<String, dynamic>> updateItemStatus(
     int pedidoId,
     int platoId,
     bool completado,
@@ -1168,7 +1171,7 @@ class OrdersService {
       // Validar el rol
       if (role != 'cook' && role != 'barista') {
         print('❌ Rol inválido: $role. Debe ser "cook" o "barista"');
-        return false;
+        return {'success': false, 'message': 'Rol inválido'};
       }
 
       // Determinar campos a actualizar según el rol
@@ -1194,25 +1197,47 @@ class OrdersService {
 
       if (rows.isEmpty) {
         print('⚠️ No se encontró el ítem para actualizar');
-        return false;
+        return {'success': false, 'message': 'Ítem no encontrado'};
       }
 
       print('✅ Ítem actualizado correctamente');
 
       // Si se está marcando como completado, verificar si todo el pedido está listo
       if (completado) {
-        await checkAndUpdateOrderCompletion(pedidoId);
+        final completionResult = await checkAndUpdateOrderCompletion(pedidoId);
+
+        // 🆕 NUEVO: Devolver información adicional si el pedido se completó
+        if (completionResult['success'] == true &&
+            completionResult['completed'] == true) {
+          return {
+            'success': true,
+            'message': 'Ítem completado',
+            'orderCompleted': true,
+            'orderCompletionMessage': completionResult['message'],
+            'mesa': completionResult['mesa'],
+            'pedidoId': pedidoId,
+          };
+        }
       }
 
-      return true;
+      return {
+        'success': true,
+        'message':
+            completado
+                ? 'Ítem marcado como completado'
+                : 'Ítem marcado como pendiente',
+        'orderCompleted': false,
+      };
     } catch (e) {
       print('❌ Error al actualizar estado del ítem: $e');
-      return false;
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 
   // Verificar y actualizar estado de pedido basado en ítems completados
-  Future<bool> checkAndUpdateOrderCompletion(int pedidoId) async {
+  Future<Map<String, dynamic>> checkAndUpdateOrderCompletion(
+    int pedidoId,
+  ) async {
     print('🔄 Verificando si el pedido #$pedidoId está completado...');
 
     try {
@@ -1228,7 +1253,7 @@ class OrdersService {
 
         if (estadoRows.isEmpty) {
           print('⚠️ No se encontró el pedido #$pedidoId');
-          return false;
+          return {'success': false, 'message': 'Pedido no encontrado'};
         }
 
         final estadoActual =
@@ -1239,22 +1264,56 @@ class OrdersService {
           print(
             '✅ Todos los ítems del pedido #$pedidoId están completados. Actualizando estado a completado.',
           );
-          return await updateOrderStatus(pedidoId, 'completado');
+
+          // 🆕 NUEVO: Obtener información de la mesa antes de completar
+          final mesaInfo = await getTableForOrder(pedidoId);
+
+          final success = await updateOrderStatus(pedidoId, 'completado');
+
+          if (success) {
+            final message =
+                mesaInfo != null
+                    ? 'Pedido completado, enviando a $mesaInfo'
+                    : 'Pedido completado exitosamente';
+
+            print('🎯 $message');
+
+            return {
+              'success': true,
+              'message': message,
+              'mesa': mesaInfo,
+              'pedidoId': pedidoId,
+              'completed': true,
+            };
+          } else {
+            return {
+              'success': false,
+              'message': 'Error al completar el pedido',
+            };
+          }
         } else {
           print(
             'ℹ️ Pedido #$pedidoId ya no está pendiente, su estado actual es: $estadoActual',
           );
-          return false;
+          return {
+            'success': false,
+            'message': 'El pedido ya no está pendiente',
+            'currentStatus': estadoActual,
+          };
         }
       } else {
         print(
           'ℹ️ El pedido #$pedidoId aún no cumple las condiciones para ser completado',
         );
-        return false;
+        return {
+          'success': false,
+          'message': 'El pedido aún no está listo para completar',
+          'completed': false,
+        };
       }
     } catch (e) {
       print('❌ Error al verificar y actualizar estado de pedido: $e');
-      return false;
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 
@@ -1549,6 +1608,107 @@ class OrdersService {
       print('❌ Error al obtener pedidos por tipo: $e');
       return [];
     }
+  }
+
+  // 🆕 NUEVO: Método para obtener información de la mesa asociada a un pedido
+  Future<String?> getTableForOrder(int orderId) async {
+    try {
+      print('🔍 Buscando información de mesa para pedido #$orderId');
+
+      // 1. Obtener el ID de la persona que hizo el pedido
+      final query = '''
+        SELECT p.idpersona, pe.nombre, pe.apellido, pe.email
+        FROM pedidos p
+        INNER JOIN personas pe ON p.idpersona = pe.idpersonas
+        WHERE p.idpedido = $orderId
+      ''';
+
+      final result = await _executeQuery(query);
+      final rows = _extractQueryResults(result);
+
+      if (rows.isEmpty) {
+        print('⚠️ No se encontró el pedido #$orderId');
+        return null;
+      }
+
+      final personaData = rows[0];
+      final idPersona = personaData['idpersona'];
+      final nombreCliente =
+          '${personaData['nombre']} ${personaData['apellido']}';
+
+      print('👤 Pedido realizado por: $nombreCliente (ID: $idPersona)');
+
+      // 🆕 NUEVO: Paso 2 - Intentar identificar la mesa actual del dispositivo
+      try {
+        print('📱 Intentando identificar mesa real del dispositivo actual...');
+        final currentTable = await _tableService.identifyTable();
+
+        if (currentTable != null) {
+          print(
+            '✅ Mesa identificada desde dispositivo actual: Mesa ${currentTable.tableNumber}',
+          );
+          return 'Mesa ${currentTable.tableNumber}';
+        } else {
+          print('⚠️ No se pudo identificar mesa desde dispositivo actual');
+        }
+      } catch (e) {
+        print('❌ Error identificando mesa actual: $e');
+      }
+
+      // 3. FALLBACK: Si no se puede identificar la mesa actual, usar algoritmo de distribución
+      print('🔄 Usando algoritmo de distribución como fallback...');
+
+      // Obtener todas las mesas configuradas
+      final tables = await _tableService.getAllTables();
+
+      if (tables.isEmpty) {
+        print('⚠️ No hay mesas configuradas en el sistema');
+        return null;
+      }
+
+      // Usar algoritmo de distribución solo como fallback
+      final tableNumber = _getTableForUser(idPersona, tables);
+
+      if (tableNumber != null) {
+        print(
+          '✅ Usuario $nombreCliente asociado a Mesa $tableNumber (fallback)',
+        );
+        return 'Mesa $tableNumber';
+      } else {
+        print('⚠️ Usuario $nombreCliente no tiene mesa asociada');
+        // Último fallback: usar mesa por defecto o la primera mesa disponible
+        if (tables.isNotEmpty) {
+          final defaultTable = tables.first.tableNumber;
+          print('🔄 Usando mesa por defecto: Mesa $defaultTable');
+          return 'Mesa $defaultTable';
+        }
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error obteniendo información de mesa para pedido #$orderId: $e');
+      return null;
+    }
+  }
+
+  // 🆕 NUEVO: Método auxiliar para asociar usuarios con mesas
+  int? _getTableForUser(int userId, List<TableInfo> availableTables) {
+    // ESTRATEGIA SIMPLE: Rotar usuarios entre las mesas disponibles
+    // Esto es una simulación sin modificar la base de datos
+
+    final tableNumbers =
+        availableTables.map((t) => t.tableNumber).toList()..sort();
+
+    if (tableNumbers.isEmpty) return null;
+
+    // Usar módulo para distribuir usuarios entre las mesas disponibles
+    final index = (userId % tableNumbers.length);
+    final assignedTable = tableNumbers[index];
+
+    print(
+      '🎯 Usuario ID $userId → Mesa $assignedTable (algoritmo: $userId % ${tableNumbers.length} = $index)',
+    );
+
+    return assignedTable;
   }
 }
 

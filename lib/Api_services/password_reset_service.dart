@@ -93,7 +93,7 @@ class PasswordResetService {
 
   /// Validar formato de cédula
   static bool isValidCedula(String cedula) {
-    return cedula.length >= 5 &&
+    return cedula.length >= 3 &&
         cedula.length <= 10 &&
         RegExp(r'^\d+$').hasMatch(cedula);
   }

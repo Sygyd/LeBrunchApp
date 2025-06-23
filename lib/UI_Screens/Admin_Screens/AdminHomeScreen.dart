@@ -8,6 +8,7 @@ import '../../Api_services/menu/get_dishes_service.dart';
 import 'package:intl/intl.dart';
 import '../../Api_services/network_config_service.dart';
 import '../../config.dart';
+import '../../Api_services/table_identification_service.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   final String userName;
@@ -32,6 +33,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   int totalWaiter = 0;
   int totalCustomer = 0;
 
+  // 🆕 NUEVO: Variables para dispositivos conectados
+  List<TableInfo> _connectedDevices = [];
+  int _totalConnectedDevices = 0;
+  final TableIdentificationService _tableService = TableIdentificationService();
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +52,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
       final baseUrl = await getServerUrl();
       print('Server URL: $baseUrl');
+
+      // 🆕 NUEVO: Cargar dispositivos conectados
+      await _loadConnectedDevices();
 
       // Obtener platos disponibles
       final availableDishesResponse = await http.get(
@@ -128,6 +137,47 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // 🆕 NUEVO: Método para cargar dispositivos conectados
+  Future<void> _loadConnectedDevices() async {
+    try {
+      print('📱 AdminHomeScreen: Cargando dispositivos conectados...');
+
+      // 🔄 ACTUALIZADO: Usar el nuevo método que verifica estado real
+      final devices = await _tableService.getTablesWithConnectionStatus();
+
+      if (mounted) {
+        setState(() {
+          _connectedDevices = devices;
+          _totalConnectedDevices =
+              devices
+                  .where((d) => d.isActive)
+                  .length; // 🔄 Solo contar dispositivos activos
+        });
+
+        print(
+          '📱 AdminHomeScreen: ${devices.length} dispositivos configurados',
+        );
+        print(
+          '📱 AdminHomeScreen: ${_totalConnectedDevices} dispositivos realmente conectados',
+        );
+        for (final device in devices) {
+          final status = device.isActive ? "✅ Conectada" : "❌ Desconectada";
+          print(
+            '   - Mesa ${device.tableNumber}: ${device.deviceName} - $status',
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ AdminHomeScreen: Error cargando dispositivos conectados: $e');
+      if (mounted) {
+        setState(() {
+          _connectedDevices = [];
+          _totalConnectedDevices = 0;
         });
       }
     }
@@ -277,6 +327,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           Icons.trending_up,
           const Color(0xFFBA68C8),
           () => Navigator.pushNamed(context, '/admin-popular-dishes'),
+        ),
+        _buildFeatureCard(
+          context,
+          'Dispositivos',
+          '$_totalConnectedDevices mesas',
+          Icons.devices,
+          const Color(0xFF42A5F5),
+          () => _showConnectedDevicesDialog(),
         ),
         _buildFeatureCard(
           context,
@@ -447,6 +505,384 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // 🆕 NUEVO: Mostrar diálogo con dispositivos conectados
+  void _showConnectedDevicesDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.devices, color: Theme.of(context).primaryColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Estado de Mesas',
+                  style: TextStyle(
+                    fontFamily: 'MADE TOMMY',
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 450, // 🔄 AUMENTADO: de 400 a 450 para más espacio
+            child:
+                _connectedDevices.isEmpty
+                    ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.phonelink_off,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'No hay mesas configuradas',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                              fontFamily: 'MADE TOMMY',
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : Column(
+                      children: [
+                        // 🆕 NUEVO: Header con estadísticas mejorado
+                        Container(
+                          padding: const EdgeInsets.all(
+                            16,
+                          ), // 🔄 AUMENTADO: de 12 a 16
+                          margin: const EdgeInsets.only(
+                            bottom: 12,
+                          ), // 🔄 AUMENTADO: de 8 a 12
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(
+                              12,
+                            ), // 🔄 AUMENTADO: de 8 a 12
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).primaryColor.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStatColumn(
+                                '${_connectedDevices.where((d) => d.isActive).length}',
+                                'Conectadas',
+                                Colors.green,
+                              ),
+                              Container(
+                                width: 2, // 🔄 AUMENTADO: de 1 a 2
+                                height: 40, // 🔄 AUMENTADO: de 30 a 40
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(1),
+                                ),
+                              ),
+                              _buildStatColumn(
+                                '${_connectedDevices.where((d) => !d.isActive).length}',
+                                'Sin dispositivo',
+                                Colors.orange,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Lista de dispositivos con mejor espaciado
+                        Expanded(
+                          child: RefreshIndicator(
+                            onRefresh: _loadConnectedDevices,
+                            child: ListView.separated(
+                              // 🔄 CAMBIADO: de ListView.builder a ListView.separated
+                              itemCount: _connectedDevices.length,
+                              separatorBuilder:
+                                  (context, index) => const SizedBox(
+                                    height: 8,
+                                  ), // 🆕 NUEVO: Separador entre items
+                              itemBuilder: (context, index) {
+                                final device = _connectedDevices[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ), // 🔄 REDUCIDO: margin vertical
+                                  elevation: 3, // 🔄 AUMENTADO: de 2 a 3
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      12,
+                                    ), // 🆕 NUEVO: Bordes redondeados
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(
+                                      12,
+                                    ), // 🆕 NUEVO: Padding interno
+                                    child: Row(
+                                      children: [
+                                        // Avatar con mejor diseño
+                                        Container(
+                                          width: 50,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color:
+                                                device.isActive
+                                                    ? Colors.green.withOpacity(
+                                                      0.1,
+                                                    )
+                                                    : Colors.orange.withOpacity(
+                                                      0.1,
+                                                    ),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color:
+                                                  device.isActive
+                                                      ? Colors.green
+                                                      : Colors.orange,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '${device.tableNumber}',
+                                              style: TextStyle(
+                                                fontSize: 18, // 🔄 AUMENTADO
+                                                fontWeight: FontWeight.bold,
+                                                color:
+                                                    device.isActive
+                                                        ? Colors.green
+                                                        : Colors.orange,
+                                                fontFamily: 'MADE TOMMY',
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                        const SizedBox(
+                                          width: 16,
+                                        ), // 🔄 AUMENTADO: de 12 a 16
+                                        // Información del dispositivo
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Mesa ${device.tableNumber}',
+                                                style: const TextStyle(
+                                                  fontSize: 16, // 🔄 AUMENTADO
+                                                  fontWeight: FontWeight.bold,
+                                                  fontFamily: 'MADE TOMMY',
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                device.deviceName,
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontFamily: 'MADE TOMMY',
+                                                  color: Colors.grey,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(
+                                                height: 6,
+                                              ), // 🔄 AUMENTADO: de 4 a 6
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey
+                                                      .withOpacity(0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  'MAC: ${device.macAddress}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey,
+                                                    fontFamily: 'MADE TOMMY',
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        const SizedBox(width: 12),
+
+                                        // Estado del dispositivo
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal:
+                                                12, // 🔄 AUMENTADO: de 8 a 12
+                                            vertical:
+                                                6, // 🔄 AUMENTADO: de 4 a 6
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                device.isActive
+                                                    ? Colors.green.withOpacity(
+                                                      0.1,
+                                                    )
+                                                    : Colors.orange.withOpacity(
+                                                      0.1,
+                                                    ),
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ), // 🔄 AUMENTADO: de 12 a 16
+                                            border: Border.all(
+                                              color:
+                                                  device.isActive
+                                                      ? Colors.green
+                                                      : Colors.orange,
+                                              width:
+                                                  1.5, // 🔄 AUMENTADO: de 1 a 1.5
+                                            ),
+                                          ),
+                                          child: Text(
+                                            device.isActive
+                                                ? 'Conectado'
+                                                : 'Sin dispositivo',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                                  device.isActive
+                                                      ? Colors.green
+                                                      : Colors.orange,
+                                              fontFamily: 'MADE TOMMY',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+          ),
+          actions: [
+            // 🆕 NUEVO: Botón de debug para MACs
+            TextButton(
+              onPressed: () async {
+                try {
+                  final deviceInfo = await _tableService.getDeviceInfo();
+                  final currentMac = await _tableService.getCurrentDeviceMac();
+
+                  showDialog(
+                    context: context,
+                    builder:
+                        (context) => AlertDialog(
+                          title: const Text('🔧 Debug: MAC Info'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '📱 Device ID:\n${deviceInfo['deviceId']}\n',
+                              ),
+                              Text(
+                                '📱 Device Name:\n${deviceInfo['deviceName']}\n',
+                              ),
+                              Text('📱 MAC generada:\n$currentMac\n'),
+                              Text(
+                                '📱 Plataforma:\n${deviceInfo['platform']}\n',
+                              ),
+                              const Text(
+                                '💡 Copia la MAC generada y agrégala al código',
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cerrar'),
+                            ),
+                          ],
+                        ),
+                  );
+                } catch (e) {
+                  print('Error obteniendo MAC: $e');
+                }
+              },
+              child: const Text(
+                'Debug MAC',
+                style: TextStyle(fontFamily: 'MADE TOMMY'),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _loadConnectedDevices();
+              },
+              child: const Text(
+                'Actualizar',
+                style: TextStyle(fontFamily: 'MADE TOMMY'),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Cerrar',
+                style: TextStyle(fontFamily: 'MADE TOMMY'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 🆕 NUEVO: Widget helper para columnas de estadísticas
+  Widget _buildStatColumn(String number, String label, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          number,
+          style: TextStyle(
+            fontSize: 24, // 🔄 AUMENTADO: de 20 a 24
+            fontWeight: FontWeight.bold,
+            color: color,
+            fontFamily: 'MADE TOMMY',
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13, // 🔄 AUMENTADO: de 12 a 13
+            color: color,
+            fontFamily: 'MADE TOMMY',
+            fontWeight: FontWeight.w500,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }

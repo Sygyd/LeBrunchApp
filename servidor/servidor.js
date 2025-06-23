@@ -2694,6 +2694,244 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
   }
 });
 
+// ========================================
+// 🏺 SISTEMA DE IDENTIFICACIÓN DE MESAS
+// ========================================
+
+// 🔧 CONFIGURACIÓN HARDCODEADA DE MESAS (para evitar usar base de datos)
+const MESA_CONFIGURATIONS = {
+  12: { 
+    tableNumber: 12, 
+    macAddress: '09:7F:32:DB:00:00', 
+    deviceName: 'Samsung SM-A556E Mesa 12', 
+    isActive: true 
+  },
+  13: { 
+    tableNumber: 13, 
+    macAddress: '17:56:BA:18:00:00', 
+    deviceName: 'Dispositivo Mesa 13', 
+    isActive: true 
+  },
+  14: { 
+    tableNumber: 14, 
+    macAddress: 'AA:BB:CC:DD:EE:14', 
+    deviceName: 'Dispositivo Mesa 14', 
+    isActive: true 
+  }
+};
+
+// 🔍 Endpoint para identificar mesa basada en MAC
+app.post('/api/table/identify', async (req, res) => {
+  try {
+    const { macAddress, deviceName, deviceInfo } = req.body;
+
+    console.log(`🔍 Solicitud de identificación de mesa:`);
+    console.log(`   - MAC recibida: ${macAddress}`);
+    console.log(`   - Dispositivo: ${deviceName}`);
+    console.log(`   - Info adicional:`, deviceInfo);
+
+    if (!macAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'MAC address es requerida',
+        table: null
+      });
+    }
+
+    // Buscar SOLO en las configuraciones hardcodeadas
+    let foundTable = null;
+    for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+      if (config.macAddress.toUpperCase() === macAddress.toUpperCase()) {
+        foundTable = config;
+        break;
+      }
+    }
+
+    if (foundTable) {
+      console.log(`✅ Mesa identificada: Mesa ${foundTable.tableNumber}`);
+      console.log(`   - MAC: ${foundTable.macAddress}`);
+      console.log(`   - Dispositivo: ${foundTable.deviceName}`);
+
+      res.json({
+        success: true,
+        message: `Mesa ${foundTable.tableNumber} identificada correctamente`,
+        table: foundTable
+      });
+    } else {
+      console.log(`⚠️ Dispositivo no registrado:`);
+      console.log(`   - MAC buscada: ${macAddress}`);
+      console.log(`   - Mesas disponibles: ${Object.keys(MESA_CONFIGURATIONS).join(', ')}`);
+
+      res.json({
+        success: false,
+        message: 'Dispositivo no registrado en ninguna mesa',
+        table: null,
+        availableTables: Object.keys(MESA_CONFIGURATIONS).map(num => parseInt(num)),
+        receivedMac: macAddress
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error en identificación de mesa:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+      table: null
+    });
+  }
+});
+
+// 📝 Endpoint para actualizar configuración hardcodeada (solo administradores)
+app.post('/api/table/register', async (req, res) => {
+  try {
+    const { tableNumber, macAddress, deviceName } = req.body;
+
+    console.log(`📝 Solicitud de actualización de configuración hardcodeada:`);
+    console.log(`   - Mesa: ${tableNumber}`);
+    console.log(`   - MAC: ${macAddress}`);
+    console.log(`   - Dispositivo: ${deviceName}`);
+
+    // Validaciones
+    if (!tableNumber || !macAddress || !deviceName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Todos los campos son requeridos (tableNumber, macAddress, deviceName)'
+      });
+    }
+
+    if (![12, 13, 14].includes(parseInt(tableNumber))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Solo las mesas 12, 13 y 14 están disponibles para dispositivos'
+      });
+    }
+
+    // Actualizar la configuración hardcodeada en memoria
+    if (MESA_CONFIGURATIONS[tableNumber]) {
+      MESA_CONFIGURATIONS[tableNumber] = {
+        tableNumber: parseInt(tableNumber),
+        macAddress: macAddress.toUpperCase(),
+        deviceName: deviceName,
+        isActive: true
+      };
+
+      console.log(`✅ Configuración hardcodeada actualizada para Mesa ${tableNumber}`);
+      console.log(`   - Nueva MAC: ${macAddress.toUpperCase()}`);
+      console.log(`   - Nuevo dispositivo: ${deviceName}`);
+
+      res.json({
+        success: true,
+        message: `Configuración actualizada para Mesa ${tableNumber}`,
+        device: MESA_CONFIGURATIONS[tableNumber],
+        note: 'Los cambios se aplican en memoria hasta el próximo reinicio del servidor'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: `Mesa ${tableNumber} no encontrada en configuración`
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error en actualización de configuración:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+});
+
+// 📋 Endpoint para obtener todas las mesas hardcodeadas
+app.get('/api/table/all', async (req, res) => {
+  try {
+    console.log('📋 Solicitud de todas las mesas hardcodeadas');
+
+    // Obtener solo las mesas hardcodeadas
+    const allTables = [];
+    for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+      allTables.push({
+        ...config,
+        source: 'hardcoded'
+      });
+    }
+
+    // Ordenar por número de mesa
+    allTables.sort((a, b) => a.tableNumber - b.tableNumber);
+
+    console.log(`✅ Enviando ${allTables.length} mesas hardcodeadas`);
+    allTables.forEach(table => {
+      console.log(`   - Mesa ${table.tableNumber}: ${table.deviceName} (${table.macAddress})`);
+    });
+
+    res.json({
+      success: true,
+      message: `${allTables.length} mesas hardcodeadas encontradas`,
+      tables: allTables,
+      availableTableNumbers: [12, 13, 14],
+      note: 'Configuración completamente hardcodeada - no se consultan tablas de BD'
+    });
+
+  } catch (error) {
+    console.error('❌ Error obteniendo mesas:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+      tables: []
+    });
+  }
+});
+
+// 🔧 Endpoint para testing - obtener MAC del primer dispositivo encontrado  
+app.get('/api/table/debug/mac', (req, res) => {
+  try {
+    const { macAddress } = req.query;
+    
+    if (macAddress) {
+      console.log(`🔍 Debug: Buscando mesa para MAC: ${macAddress}`);
+      
+      for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+        if (config.macAddress.toUpperCase() === macAddress.toUpperCase()) {
+          return res.json({
+            success: true,
+            found: true,
+            table: config,
+            searchedMac: macAddress
+          });
+        }
+      }
+      
+      return res.json({
+        success: true,
+        found: false,
+        searchedMac: macAddress,
+        availableMacs: Object.values(MESA_CONFIGURATIONS).map(c => c.macAddress)
+      });
+    } else {
+      res.json({
+        success: true,
+        availableTables: MESA_CONFIGURATIONS,
+        message: 'Usa ?macAddress=XX:XX:XX:XX:XX:XX para buscar una mesa específica'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+console.log('🏺 Sistema de identificación de mesas inicializado');
+console.log(`   - Mesas configuradas: ${Object.keys(MESA_CONFIGURATIONS).join(', ')}`);
+console.log(`   - Endpoints disponibles:`);
+console.log(`     • POST /api/table/identify - Identificar mesa por MAC`);
+console.log(`     • POST /api/table/register - Registrar dispositivo (admin)`);
+console.log(`     • GET /api/table/all - Listar todas las mesas`);
+console.log(`     • GET /api/table/debug/mac - Debug y testing`);
+
 // Registrar los routers al final para evitar conflictos
 app.use(userRoutes);
 app.use(menuRoutes);

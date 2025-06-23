@@ -323,7 +323,38 @@ router.post("/login", async (req, res) => {
     }
 
   try {
-    // Verificar que el usuario no esté eliminado (actualizada)
+    // 🆕 NUEVO: Primero verificar si el usuario existe (sin importar si está eliminado)
+    const userExistsQuery = await pool.query(
+      `SELECT u.idpersona, u.contrasena, u.rol, p.nombre, p.apellido, p.email, p.cedula, 
+              p.isDelete as persona_eliminada, COALESCE(u.isDelete, FALSE) as usuario_eliminado
+       FROM usuario u
+       JOIN personas p ON u.idpersona = p.idpersonas 
+       WHERE p.email = $1`,
+      [email]
+    );
+
+    if (userExistsQuery.rows.length === 0) {
+      console.log(`❌ Login fallido: Usuario no encontrado para ${email}`);
+      return res.status(401).json({ 
+        error: "credenciales_invalidas",
+        message: "Email o contraseña incorrectos" 
+      });
+    }
+
+    const userRecord = userExistsQuery.rows[0];
+    
+    // 🆕 NUEVO: Verificar si el usuario está eliminado/baneado
+    if (userRecord.persona_eliminada === true || userRecord.usuario_eliminado === true) {
+      console.log(`🚫 Login fallido: Usuario eliminado/baneado para ${email}`);
+      console.log(`   - Persona eliminada: ${userRecord.persona_eliminada}`);
+      console.log(`   - Usuario eliminado: ${userRecord.usuario_eliminado}`);
+      return res.status(403).json({ 
+        error: "usuario_eliminado",
+        message: "Esta cuenta ha sido eliminada o suspendida. Contacta al administrador para más información." 
+      });
+    }
+
+    // Si llegamos aquí, el usuario existe y no está eliminado
     const { rows } = await pool.query(
       `SELECT u.idpersona, u.contrasena, u.rol, p.nombre, p.apellido, p.email, p.cedula 
        FROM usuario u
@@ -335,8 +366,11 @@ router.post("/login", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      console.log(`❌ Login fallido: Usuario no encontrado para ${email}`);
-      return res.status(401).json({ error: "Credenciales inválidas" });
+      console.log(`❌ Login fallido: Usuario no encontrado para ${email} (verificación secundaria)`);
+      return res.status(401).json({ 
+        error: "credenciales_invalidas",
+        message: "Email o contraseña incorrectos" 
+      });
     }
 
     const user = rows[0];
@@ -346,7 +380,10 @@ router.post("/login", async (req, res) => {
     const validPassword = await bcrypt.compare(contrasena, user.contrasena);
     if (!validPassword) {
       console.log(`❌ Login fallido: Contraseña incorrecta para ${email}`);
-      return res.status(401).json({ error: "Credenciales inválidas" });
+      return res.status(401).json({ 
+        error: "credenciales_invalidas",
+        message: "Email o contraseña incorrectos" 
+      });
     }
 
     // Determinar si es super admin - solo verificar rol "00"

@@ -188,14 +188,33 @@ class ValidationUtils {
   // =====================================================
 
   /// Obtener mensaje de error específico basado en la respuesta del servidor
-  static String getServerErrorMessage(int statusCode, String? serverMessage) {
+  static String getServerErrorMessage(
+    int statusCode,
+    String? serverMessage, {
+    String? errorCode,
+  }) {
+    // 🆕 NUEVO: Manejo específico para usuarios eliminados/baneados
+    if (statusCode == 403 && errorCode == 'usuario_eliminado') {
+      return serverMessage?.isNotEmpty == true
+          ? serverMessage!
+          : "Esta cuenta ha sido eliminada o suspendida. Contacta al administrador para más información.";
+    }
+
     switch (statusCode) {
       case 401:
+        if (errorCode == 'credenciales_invalidas') {
+          return serverMessage?.isNotEmpty == true
+              ? serverMessage!
+              : "Email o contraseña incorrectos";
+        }
         return "Email o contraseña incorrectos";
       case 403:
         if (serverMessage?.toLowerCase().contains('eliminado') == true ||
-            serverMessage?.toLowerCase().contains('deleted') == true) {
-          return "Esta cuenta ha sido eliminada. Contacta al administrador.";
+            serverMessage?.toLowerCase().contains('deleted') == true ||
+            serverMessage?.toLowerCase().contains('suspendida') == true) {
+          return serverMessage?.isNotEmpty == true
+              ? serverMessage!
+              : "Esta cuenta ha sido eliminada o suspendida. Contacta al administrador.";
         } else {
           return "Acceso denegado. Tu cuenta puede estar inactiva.";
         }

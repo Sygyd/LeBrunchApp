@@ -743,6 +743,15 @@ class _SharedOrderHistoryScreenState extends State<SharedOrderHistoryScreen> {
                     ? (newStatus) => _updateOrderStatus(index, newStatus)
                     : null,
             role: widget.isAdminView ? 'admin' : widget.role,
+            // 🆕 NUEVO: Agregar onRefresh para activar funcionalidad de mesa
+            onRefresh: () async {
+              // Recargar los datos según el tipo de vista
+              if (widget.isAdminView) {
+                await _loadOrdersForAdmin();
+              } else {
+                await _loadOrdersForCookAndBarista();
+              }
+            },
           ),
         );
       },
