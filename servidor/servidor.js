@@ -2027,13 +2027,39 @@ async function processActionSuggestion(geminiResponse, requestId) {
 
 // Endpoint /chat ACTUALIZADO con configuración global
 app.post('/chat', async (req, res) => {
-  const { message, sessionId, isAdmin, clientId } = req.body;
+  const { message, sessionId, isAdmin, clientId, deviceInfo } = req.body;
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   console.log(`📝 Chat [${requestId}]: Mensaje recibido: "${String(message).substring(0, 50)}..."`);
   console.log(`📝 Chat [${requestId}]: Session ID: ${sessionId || 'No proporcionado'}`);
   console.log(`📝 Chat [${requestId}]: Es Admin: ${isAdmin || false}`);
   console.log(`📝 Chat [${requestId}]: Cliente ID: ${clientId || 'No proporcionado'}`);
+
+  // 🆕 NUEVO: Registrar actividad del dispositivo si se proporciona información
+  console.log(`🔍 Chat [${requestId}]: deviceInfo recibido:`, JSON.stringify(deviceInfo, null, 2));
+  
+  if (deviceInfo && deviceInfo.macAddress) {
+    console.log(`📱 Chat [${requestId}]: Dispositivo detectado: ${deviceInfo.deviceName} (${deviceInfo.macAddress})`);
+    
+    // Buscar mesa asociada a esta MAC
+    let deviceFound = false;
+    for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+      console.log(`🔍 Chat [${requestId}]: Comparando ${deviceInfo.macAddress.toUpperCase()} con ${config.macAddress.toUpperCase()}`);
+      if (config.macAddress.toUpperCase() === deviceInfo.macAddress.toUpperCase()) {
+        registerDeviceActivity(deviceInfo.macAddress, config.tableNumber, deviceInfo.deviceName || config.deviceName);
+        console.log(`✅ Chat [${requestId}]: Actividad registrada para Mesa ${config.tableNumber}`);
+        deviceFound = true;
+        break;
+      }
+    }
+    
+    if (!deviceFound) {
+      console.log(`⚠️ Chat [${requestId}]: MAC ${deviceInfo.macAddress} no encontrada en configuraciones`);
+      console.log(`🔍 Chat [${requestId}]: MACs disponibles: ${Object.values(MESA_CONFIGURATIONS).map(c => c.macAddress).join(', ')}`);
+    }
+  } else {
+    console.log(`⚠️ Chat [${requestId}]: deviceInfo no válido o sin macAddress`);
+  }
 
   if (!message || !sessionId) {
     return res.status(400).json({
@@ -2698,6 +2724,68 @@ app.post('/admin/fix-super-admin-role', async (req, res) => {
 // 🏺 SISTEMA DE IDENTIFICACIÓN DE MESAS
 // ========================================
 
+// 🆕 NUEVO: Sistema de tracking de dispositivos activos
+const ACTIVE_DEVICES = new Map(); // MAC -> { lastSeen: timestamp, tableNumber: number, deviceName: string }
+const DEVICE_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milliseconds
+
+// 🆕 NUEVO: Función para registrar actividad de un dispositivo
+function registerDeviceActivity(macAddress, tableNumber, deviceName) {
+  console.log(`🔄 registerDeviceActivity llamada con: MAC=${macAddress}, Mesa=${tableNumber}, Dispositivo=${deviceName}`);
+  
+  if (!macAddress) {
+    console.log(`❌ registerDeviceActivity: macAddress está vacía`);
+    return;
+  }
+  
+  const now = Date.now();
+  const macUpper = macAddress.toUpperCase();
+  
+  ACTIVE_DEVICES.set(macUpper, {
+    lastSeen: now,
+    tableNumber: tableNumber,
+    deviceName: deviceName,
+    firstSeen: ACTIVE_DEVICES.get(macUpper)?.firstSeen || now
+  });
+  
+  console.log(`✅ Actividad registrada: Mesa ${tableNumber} - ${deviceName} (${macAddress})`);
+  console.log(`📊 Total dispositivos activos: ${ACTIVE_DEVICES.size}`);
+  console.log(`🗺️ ACTIVE_DEVICES actual:`, Array.from(ACTIVE_DEVICES.entries()));
+}
+
+// 🆕 NUEVO: Función para limpiar dispositivos inactivos
+function cleanupInactiveDevices() {
+  const now = Date.now();
+  const timeout = DEVICE_TIMEOUT;
+  
+  for (const [mac, info] of ACTIVE_DEVICES.entries()) {
+    if (now - info.lastSeen > timeout) {
+      console.log(`🔄 Limpiando dispositivo inactivo: Mesa ${info.tableNumber} - ${info.deviceName}`);
+      ACTIVE_DEVICES.delete(mac);
+    }
+  }
+}
+
+// 🆕 NUEVO: Función para verificar si un dispositivo está realmente activo
+function isDeviceReallyActive(macAddress) {
+  if (!macAddress) return false;
+  
+  const deviceInfo = ACTIVE_DEVICES.get(macAddress.toUpperCase());
+  if (!deviceInfo) return false;
+  
+  const now = Date.now();
+  const isActive = (now - deviceInfo.lastSeen) <= DEVICE_TIMEOUT;
+  
+  if (!isActive) {
+    // Limpiar automáticamente si está inactivo
+    ACTIVE_DEVICES.delete(macAddress.toUpperCase());
+  }
+  
+  return isActive;
+}
+
+// 🆕 NUEVO: Ejecutar limpieza cada minuto
+setInterval(cleanupInactiveDevices, 60 * 1000);
+
 // 🔧 CONFIGURACIÓN HARDCODEADA DE MESAS (para evitar usar base de datos)
 const MESA_CONFIGURATIONS = {
   12: { 
@@ -2729,6 +2817,7 @@ app.post('/api/table/identify', async (req, res) => {
     console.log(`   - MAC recibida: ${macAddress}`);
     console.log(`   - Dispositivo: ${deviceName}`);
     console.log(`   - Info adicional:`, deviceInfo);
+    console.log(`🔍 MACs configuradas: ${Object.values(MESA_CONFIGURATIONS).map(c => c.macAddress).join(', ')}`);
 
     if (!macAddress) {
       return res.status(400).json({
@@ -2751,6 +2840,9 @@ app.post('/api/table/identify', async (req, res) => {
       console.log(`✅ Mesa identificada: Mesa ${foundTable.tableNumber}`);
       console.log(`   - MAC: ${foundTable.macAddress}`);
       console.log(`   - Dispositivo: ${foundTable.deviceName}`);
+
+      // 🆕 NUEVO: Registrar actividad del dispositivo
+      registerDeviceActivity(macAddress, foundTable.tableNumber, foundTable.deviceName);
 
       res.json({
         success: true,
@@ -2848,12 +2940,17 @@ app.get('/api/table/all', async (req, res) => {
   try {
     console.log('📋 Solicitud de todas las mesas hardcodeadas');
 
-    // Obtener solo las mesas hardcodeadas
+    // Obtener solo las mesas hardcodeadas con estado real de conexión
     const allTables = [];
     for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+      const isReallyActive = isDeviceReallyActive(config.macAddress);
+      
       allTables.push({
         ...config,
-        source: 'hardcoded'
+        isActive: isReallyActive, // 🔄 ACTUALIZADO: Usar estado real, no hardcodeado
+        source: 'hardcoded',
+        realTimeStatus: isReallyActive ? 'connected' : 'disconnected',
+        lastSeen: ACTIVE_DEVICES.get(config.macAddress.toUpperCase())?.lastSeen || null
       });
     }
 
@@ -2884,21 +2981,94 @@ app.get('/api/table/all', async (req, res) => {
   }
 });
 
-// 🔧 Endpoint para testing - obtener MAC del primer dispositivo encontrado  
+// 🔧 Endpoint para testing y verificación real de estado de conexión
+// 🆕 NUEVO: Endpoint POST para verificación de conexión desde el frontend
+app.post('/api/table/debug/mac', (req, res) => {
+  try {
+    const { macAddress } = req.body;
+    
+    if (!macAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'MAC address requerida'
+      });
+    }
+    
+    console.log(`🔍 Verificación POST para MAC: ${macAddress}`);
+    
+    // Buscar la configuración de la mesa
+    let foundConfig = null;
+    for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+      if (config.macAddress.toUpperCase() === macAddress.toUpperCase()) {
+        foundConfig = config;
+        break;
+      }
+    }
+    
+    if (!foundConfig) {
+      return res.json({
+        success: false,
+        found: false,
+        message: 'Dispositivo no registrado'
+      });
+    }
+    
+    // Verificar estado real de conexión
+    const isReallyActive = isDeviceReallyActive(macAddress);
+    const activeDeviceInfo = ACTIVE_DEVICES.get(macAddress.toUpperCase());
+    
+    res.json({
+      success: isReallyActive, // Solo success=true si está realmente conectado
+      found: true,
+      table: {
+        ...foundConfig,
+        isActive: isReallyActive
+      },
+      realTimeStatus: {
+        isActive: isReallyActive,
+        lastSeen: activeDeviceInfo?.lastSeen || null,
+        lastSeenHuman: activeDeviceInfo?.lastSeen ? 
+          new Date(activeDeviceInfo.lastSeen).toLocaleString('es-ES') : 'Nunca',
+        timeoutMinutes: DEVICE_TIMEOUT / (60 * 1000)
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en verificación POST:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/table/debug/mac', (req, res) => {
   try {
     const { macAddress } = req.query;
     
     if (macAddress) {
-      console.log(`🔍 Debug: Buscando mesa para MAC: ${macAddress}`);
+      console.log(`🔍 Debug: Verificando estado real para MAC: ${macAddress}`);
       
       for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
         if (config.macAddress.toUpperCase() === macAddress.toUpperCase()) {
+          const isReallyActive = isDeviceReallyActive(macAddress);
+          const activeDeviceInfo = ACTIVE_DEVICES.get(macAddress.toUpperCase());
+          
           return res.json({
             success: true,
             found: true,
-            table: config,
-            searchedMac: macAddress
+            table: {
+              ...config,
+              isActive: isReallyActive, // Estado real, no hardcodeado
+            },
+            searchedMac: macAddress,
+            realTimeStatus: {
+              isActive: isReallyActive,
+              lastSeen: activeDeviceInfo?.lastSeen || null,
+              lastSeenHuman: activeDeviceInfo?.lastSeen ? 
+                new Date(activeDeviceInfo.lastSeen).toLocaleString('es-ES') : 'Nunca',
+              timeoutMinutes: DEVICE_TIMEOUT / (60 * 1000)
+            }
           });
         }
       }
@@ -2910,10 +3080,30 @@ app.get('/api/table/debug/mac', (req, res) => {
         availableMacs: Object.values(MESA_CONFIGURATIONS).map(c => c.macAddress)
       });
     } else {
+      // Mostrar estado general de todos los dispositivos
+      const deviceStatus = {};
+      for (const [tableNum, config] of Object.entries(MESA_CONFIGURATIONS)) {
+        const isReallyActive = isDeviceReallyActive(config.macAddress);
+        const activeDeviceInfo = ACTIVE_DEVICES.get(config.macAddress.toUpperCase());
+        
+        deviceStatus[`mesa${tableNum}`] = {
+          tableNumber: config.tableNumber,
+          deviceName: config.deviceName,
+          macAddress: config.macAddress,
+          isActive: isReallyActive,
+          lastSeen: activeDeviceInfo?.lastSeen || null,
+          lastSeenHuman: activeDeviceInfo?.lastSeen ? 
+            new Date(activeDeviceInfo.lastSeen).toLocaleString('es-ES') : 'Nunca'
+        };
+      }
+      
       res.json({
         success: true,
-        availableTables: MESA_CONFIGURATIONS,
-        message: 'Usa ?macAddress=XX:XX:XX:XX:XX:XX para buscar una mesa específica'
+        deviceStatus: deviceStatus,
+        activeDevicesCount: Array.from(ACTIVE_DEVICES.values()).length,
+        configuredDevicesCount: Object.keys(MESA_CONFIGURATIONS).length,
+        timeoutMinutes: DEVICE_TIMEOUT / (60 * 1000),
+        message: 'Usa ?macAddress=XX:XX:XX:XX:XX:XX para verificar una mesa específica'
       });
     }
   } catch (error) {
@@ -2924,6 +3114,12 @@ app.get('/api/table/debug/mac', (req, res) => {
   }
 });
 
+// Registrar los routers al final para evitar conflictos
+app.use(userRoutes);
+app.use(menuRoutes);
+app.use(pedidosRoutes);
+// app.use(authRoutes); // Comentado: user.js solo exporta funciones, no un router
+
 console.log('🏺 Sistema de identificación de mesas inicializado');
 console.log(`   - Mesas configuradas: ${Object.keys(MESA_CONFIGURATIONS).join(', ')}`);
 console.log(`   - Endpoints disponibles:`);
@@ -2931,12 +3127,6 @@ console.log(`     • POST /api/table/identify - Identificar mesa por MAC`);
 console.log(`     • POST /api/table/register - Registrar dispositivo (admin)`);
 console.log(`     • GET /api/table/all - Listar todas las mesas`);
 console.log(`     • GET /api/table/debug/mac - Debug y testing`);
-
-// Registrar los routers al final para evitar conflictos
-app.use(userRoutes);
-app.use(menuRoutes);
-app.use(pedidosRoutes);
-// app.use(authRoutes); // Comentado: user.js solo exporta funciones, no un router
 
 // Iniciar el servidor
 console.log('🔄 Intentando iniciar servidor...');

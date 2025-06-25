@@ -393,25 +393,14 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
           if (itemTipo == 'bebida') hayBebida = true;
         }
 
-        // Mensaje específico según el contexto
-        String mensaje = 'Todos los ítems de $tipo completados';
-
-        if (hayComida && hayBebida) {
-          if (tipo == 'comida') {
-            mensaje = 'Comida completada. Faltan bebidas.';
-          } else {
-            mensaje = 'Bebidas completadas. Falta comida.';
-          }
-        }
-
         // 🆕 NUEVO: Verificar si el pedido se completa automáticamente y capturar resultado
         final completionResult = await _ordersService
             .checkAndUpdateOrderCompletion(widget.order['idpedido']);
 
-        // Mostrar mensaje apropiado según si se completó el pedido o no
+        // 🎯 PRIORIZAR SIEMPRE el mensaje de mesa si el pedido se completó
         if (completionResult['success'] == true &&
             completionResult['completed'] == true) {
-          // 🆕 NUEVO: Si se completó el pedido, mostrar mensaje con mesa
+          // Si se completó el pedido, mostrar mensaje con mesa
           final orderMessage =
               completionResult['message'] ?? 'Pedido completado exitosamente';
           await CustomModal.showSuccess(
@@ -419,7 +408,17 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
             message: orderMessage,
           );
         } else {
-          // Si no se completó, mostrar mensaje normal
+          // Si no se completó, mostrar mensaje específico según el contexto
+          String mensaje = 'Todos los ítems de $tipo completados';
+
+          if (hayComida && hayBebida) {
+            if (tipo == 'comida') {
+              mensaje = 'Comida completada. Faltan bebidas.';
+            } else {
+              mensaje = 'Bebidas completadas. Falta comida.';
+            }
+          }
+
           await CustomModal.showSuccess(context: context, message: mensaje);
         }
 
@@ -994,7 +993,14 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                                 ? null // Desactivar cambio si ya está completado
                                 : (value) {
                                   if (value != null && value == true) {
-                                    _updateItemStatus(item['idplato'], true);
+                                    final platoId = item['idplato'];
+                                    if (platoId != null && platoId is int) {
+                                      _updateItemStatus(platoId, true);
+                                    } else {
+                                      debugPrint(
+                                        '❌ Error: idplato es null o no es un entero: $platoId',
+                                      );
+                                    }
                                   }
                                 },
                         activeColor: Colors.green,

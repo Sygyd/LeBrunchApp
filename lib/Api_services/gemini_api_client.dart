@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../config.dart';
+import 'table_identification_service.dart';
 
 /// Cliente para comunicarse directamente con la API de Gemini
 /// y con compatibilidad con el MCP del servidor Node.js
@@ -106,9 +107,52 @@ class GeminiApiClient {
         requestBodyMap['clientId'] = clientId;
       }
 
+      // 🆕 NUEVO: Agregar información del dispositivo para tracking de actividad
+      print('🔄 GeminiApiClient: Iniciando obtención de deviceInfo...');
+      try {
+        // Obtener información del dispositivo usando el servicio de identificación
+        final TableIdentificationService tableService =
+            TableIdentificationService();
+        print('🔄 GeminiApiClient: TableIdentificationService creado');
+
+        final deviceInfo = await tableService.getDeviceInfo();
+        print('🔄 GeminiApiClient: deviceInfo obtenido: $deviceInfo');
+
+        requestBodyMap['deviceInfo'] = {
+          'macAddress': deviceInfo['macAddress'],
+          'deviceName': deviceInfo['deviceName'],
+          'platform': deviceInfo['platform'],
+          'deviceId': deviceInfo['deviceId'],
+        };
+
+        print('✅ GeminiApiClient: Información del dispositivo agregada');
+        print('   - MAC: ${deviceInfo['macAddress']}');
+        print('   - Nombre: ${deviceInfo['deviceName']}');
+        print('   - Platform: ${deviceInfo['platform']}');
+        print('   - DeviceId: ${deviceInfo['deviceId']}');
+      } catch (e, stackTrace) {
+        print('❌ GeminiApiClient: ERROR obteniendo info del dispositivo: $e');
+        print('❌ GeminiApiClient: StackTrace: $stackTrace');
+        // Continuar sin deviceInfo
+      }
+
       final requestBody = jsonEncode(requestBodyMap);
 
-      print('📤 GeminiApiClient: Enviando request body: $requestBody');
+      print(
+        '📤 GeminiApiClient: Enviando request body (${requestBody.length} chars)',
+      );
+      print(
+        '📋 GeminiApiClient: RequestBodyMap keys: ${requestBodyMap.keys.toList()}',
+      );
+      print(
+        '📋 GeminiApiClient: Tiene deviceInfo: ${requestBodyMap.containsKey('deviceInfo')}',
+      );
+      if (requestBodyMap.containsKey('deviceInfo')) {
+        print(
+          '📋 GeminiApiClient: deviceInfo.macAddress: ${requestBodyMap['deviceInfo']?['macAddress']}',
+        );
+      }
+      print('📤 GeminiApiClient: Request body completo: $requestBody');
 
       final response = await _client
           .post(

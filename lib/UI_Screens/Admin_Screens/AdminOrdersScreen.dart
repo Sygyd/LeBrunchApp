@@ -610,7 +610,35 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         );
       }
 
-      final result = await _ordersService.updateOrderStatus(orderId, newStatus);
+      // 🆕 NUEVO: Para pedidos completados, usar checkAndUpdateOrderCompletion para obtener info de mesa
+      bool result = false;
+      String? mesaInfo;
+
+      if (newStatus.toLowerCase() == 'completado') {
+        try {
+          print(
+            '🎯 AdminOrdersScreen: Obteniendo información de mesa para pedido #$orderId',
+          );
+          mesaInfo = await _ordersService.getTableForOrder(orderId);
+          print('🎯 AdminOrdersScreen: mesaInfo obtenida: $mesaInfo');
+
+          print(
+            '🎯 AdminOrdersScreen: Verificando y completando pedido #$orderId',
+          );
+          final completionResult = await _ordersService
+              .checkAndUpdateOrderCompletion(orderId);
+          print('🎯 AdminOrdersScreen: completionResult: $completionResult');
+
+          result = completionResult['success'] ?? false;
+          print('🎯 AdminOrdersScreen: result: $result');
+        } catch (e) {
+          print('❌ AdminOrdersScreen: Error al completar pedido: $e');
+          result = false;
+        }
+      } else {
+        // Para otros estados (cancelado), usar el método directo
+        result = await _ordersService.updateOrderStatus(orderId, newStatus);
+      }
 
       if (result) {
         setState(() {
@@ -632,6 +660,16 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           final icon =
               isCompletado ? Icons.check_circle_outline : Icons.cancel_outlined;
 
+          // 🆕 NUEVO: Mensaje personalizado con información de mesa para pedidos completados
+          String mensaje;
+          if (isCompletado && mesaInfo != null && mesaInfo.isNotEmpty) {
+            mensaje = 'Pedido #$orderId completado, enviando a $mesaInfo';
+          } else if (isCompletado) {
+            mensaje = 'Pedido #$orderId completado con éxito';
+          } else {
+            mensaje = 'Pedido #$orderId cancelado';
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
@@ -640,9 +678,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      isCompletado
-                          ? 'Pedido #$orderId completado con éxito'
-                          : 'Pedido #$orderId cancelado',
+                      mensaje,
                       style: TextStyle(
                         fontFamily: 'MADE TOMMY',
                         color: textColor,

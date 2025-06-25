@@ -281,10 +281,9 @@ class TableIdentificationService {
   /// Verificar si un dispositivo está realmente conectado
   Future<bool> _checkRealConnection(String macAddress) async {
     try {
-      print('🔍 Verificando conexión para MAC: $macAddress');
+      print('🔍 Verificando conexión REAL para MAC: $macAddress');
 
-      // 🔄 MEJORADO: Lógica más robusta para verificar conexión
-      // Primero intentar con el endpoint del servidor
+      // 🔄 MEJORADO: Usar el nuevo endpoint POST para verificación real
       final url = Uri.parse('${AppConfig.serverUrl}/api/table/debug/mac');
       final response = await http
           .post(
@@ -293,7 +292,7 @@ class TableIdentificationService {
             body: json.encode({'macAddress': macAddress}),
           )
           .timeout(
-            Duration(seconds: 5), // Timeout corto para no esperar mucho
+            Duration(seconds: 8), // Un poco más de tiempo para conexión real
             onTimeout: () {
               print('⏰ Timeout verificando conexión para $macAddress');
               throw Exception('Timeout');
@@ -304,38 +303,38 @@ class TableIdentificationService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final isConnected = data['success'] == true;
-        print('✅ Servidor respondió para $macAddress: $isConnected');
+        final isConnected =
+            data['success'] == true &&
+            data['found'] == true &&
+            data['table']?['isActive'] == true;
+
+        if (data['realTimeStatus'] != null) {
+          final lastSeen = data['realTimeStatus']['lastSeenHuman'];
+          print('📊 Estado detallado para $macAddress:');
+          print('   - Conectado: $isConnected');
+          print('   - Última actividad: $lastSeen');
+          print(
+            '   - Timeout: ${data['realTimeStatus']['timeoutMinutes']} minutos',
+          );
+        }
+
+        print('✅ Verificación REAL para $macAddress: $isConnected');
         return isConnected;
       }
 
-      // Si el servidor no responde con 200, usar lógica de fallback
-      print('⚠️ Servidor no respondió 200, usando lógica de fallback');
-      return _getFallbackConnectionStatus(macAddress);
+      // Si hay error del servidor, considerar desconectado
+      print(
+        '⚠️ Servidor respondió ${response.statusCode}, considerando desconectado',
+      );
+      return false;
     } catch (e) {
-      print('❌ Error verificando conexión para MAC $macAddress: $e');
-      print('🔄 Usando lógica de fallback para determinar estado');
+      print('❌ Error verificando conexión REAL para MAC $macAddress: $e');
+      print('🔄 Sin conexión al servidor, considerando desconectado');
 
-      // Usar lógica de fallback cuando hay errores de red
-      return _getFallbackConnectionStatus(macAddress);
+      // 🔄 CAMBIO IMPORTANTE: Sin fallback hardcodeado
+      // Si no podemos verificar con el servidor, consideramos desconectado
+      return false;
     }
-  }
-
-  /// 🆕 NUEVO: Lógica de fallback para determinar estado de conexión
-  bool _getFallbackConnectionStatus(String macAddress) {
-    // Lista de MACs que consideramos "realmente conectadas"
-    final connectedMacs = {
-      '09:7F:32:DB:00:00', // Mesa 12 - Samsung SM-A556E (dispositivo real del usuario)
-      '17:56:BA:18:00:00', // 🆕 NUEVO: Mesa 13 - Segundo dispositivo conectado
-      // Puedes agregar más MACs aquí cuando tengas dispositivos reales
-    };
-
-    final isConnected = connectedMacs.contains(macAddress);
-    print(
-      '🎯 Fallback para $macAddress: ${isConnected ? "Conectada" : "Desconectada"}',
-    );
-
-    return isConnected;
   }
 
   /// Método para testing - obtener solo la MAC del dispositivo actual
