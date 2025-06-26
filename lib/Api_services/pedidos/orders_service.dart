@@ -1,14 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async'; // Importar dart:async para TimeoutException
-import 'package:http_parser/http_parser.dart';
-import 'package:flutter/foundation.dart';
 import '../../services/order_status_service.dart'; // Importar el servicio de notificación
-import '../network_config_service.dart';
 import '../../config.dart'; // Importar configuración centralizada
-import '../table_identification_service.dart'; // 🆕 NUEVO: Importar servicio de mesas
+import '../table_identification_service.dart'; // 🆕 NUEVO: Importar servicio de mesas real
 
 /// Servicio para la gestión de pedidos (órdenes)
 ///
@@ -31,7 +27,7 @@ class OrdersService {
   final OrderStatusService _statusService =
       OrderStatusService(); // Instancia del servicio de notificación
   final TableIdentificationService _tableService =
-      TableIdentificationService(); // 🆕 NUEVO: Servicio de mesas
+      TableIdentificationService(); // 🆕 NUEVO: Servicio de mesas real
 
   // Constructor con inicialización de URL base
   OrdersService([this.baseUrl]) {
@@ -43,10 +39,7 @@ class OrdersService {
     if (baseUrl != null) return baseUrl!;
 
     final prefs = await SharedPreferences.getInstance();
-    final serverIp =
-        prefs.getString('serverIp') ??
-        AppConfig.serverIp ??
-        NetworkConfigService().serverIp;
+    final serverIp = prefs.getString('serverIp') ?? AppConfig.serverIp;
     final serverPort = AppConfig.serverPort;
     return 'http://$serverIp:$serverPort';
   }
@@ -1086,13 +1079,13 @@ class OrdersService {
             '✅ Verificación: El estado del pedido #$orderId es ahora "$estadoActual"',
           );
 
-          // Si es un cambio de pendiente a completado, notificar
+          // 🔇 REMOVIDO: Notificación aquí causa duplicación
+          // La notificación se maneja en checkAndUpdateOrderCompletion con información de mesa
           if (estadoAnterior == 'pendiente' &&
               newStatus.toLowerCase() == 'completado') {
             print(
-              '🔔 Notificando cambio de pendiente a completado para pedido #$orderId',
+              '✅ Estado actualizado de pendiente a completado para pedido #$orderId (notificación manejada por checkAndUpdateOrderCompletion)',
             );
-            _statusService.notifyOrderCompleted(orderId);
           }
 
           return true;
@@ -1106,14 +1099,14 @@ class OrdersService {
             newStatus,
           );
 
-          // Si el método alternativo tuvo éxito y es un cambio de pendiente a completado, notificar
+          // 🔇 REMOVIDO: Notificación aquí causa duplicación
+          // La notificación se maneja en checkAndUpdateOrderCompletion con información de mesa
           if (success &&
               estadoAnterior == 'pendiente' &&
               newStatus.toLowerCase() == 'completado') {
             print(
-              '🔔 Notificando cambio de pendiente a completado para pedido #$orderId',
+              '✅ Estado actualizado de pendiente a completado para pedido #$orderId (método alternativo - notificación manejada por checkAndUpdateOrderCompletion)',
             );
-            _statusService.notifyOrderCompleted(orderId);
           }
 
           return success;
@@ -1277,6 +1270,16 @@ class OrdersService {
                     : 'Pedido completado exitosamente';
 
             print('🎯 $message');
+
+            // 🆕 NUEVO: Notificar via servidor WebSocket
+            await _notifyOrderCompletedViaServer(pedidoId, mesaInfo, message);
+
+            // 🔄 MANTENER: Notificación local para admin en la misma app
+            _statusService.notifyOrderCompleted(
+              pedidoId,
+              mesa: mesaInfo,
+              mensaje: message,
+            );
 
             return {
               'success': true,
@@ -1455,8 +1458,6 @@ class OrdersService {
         return [];
       }
 
-      final baseUrl = await getBaseUrl;
-
       // Consulta base para obtener todos los pedidos pendientes
       final query = '''
         SELECT 
@@ -1613,102 +1614,139 @@ class OrdersService {
   // 🆕 NUEVO: Método para obtener información de la mesa asociada a un pedido
   Future<String?> getTableForOrder(int orderId) async {
     try {
-      print('🔍 Buscando información de mesa para pedido #$orderId');
+      print('🔍 Buscando información de mesa REAL para pedido #$orderId');
 
-      // 1. Obtener el ID de la persona que hizo el pedido
-      final query = '''
-        SELECT p.idpersona, pe.nombre, pe.apellido, pe.email
-        FROM pedidos p
-        INNER JOIN personas pe ON p.idpersona = pe.idpersonas
-        WHERE p.idpedido = $orderId
-      ''';
-
-      final result = await _executeQuery(query);
-      final rows = _extractQueryResults(result);
-
-      if (rows.isEmpty) {
-        print('⚠️ No se encontró el pedido #$orderId');
-        return null;
-      }
-
-      final personaData = rows[0];
-      final idPersona = personaData['idpersona'];
-      final nombreCliente =
-          '${personaData['nombre']} ${personaData['apellido']}';
-
-      print('👤 Pedido realizado por: $nombreCliente (ID: $idPersona)');
-
-      // 🆕 NUEVO: Paso 2 - Intentar identificar la mesa actual del dispositivo
+      // 🆕 PASO 1: Verificar si tenemos información de mesa guardada del momento de creación
       try {
-        print('📱 Intentando identificar mesa real del dispositivo actual...');
-        final currentTable = await _tableService.identifyTable();
+        final prefs = await SharedPreferences.getInstance();
+        final lastOrderTable = prefs.getString('last_order_table');
+        final lastOrderTimestamp = prefs.getString('last_order_timestamp');
 
-        if (currentTable != null) {
-          print(
-            '✅ Mesa identificada desde dispositivo actual: Mesa ${currentTable.tableNumber}',
-          );
-          return 'Mesa ${currentTable.tableNumber}';
-        } else {
-          print('⚠️ No se pudo identificar mesa desde dispositivo actual');
+        if (lastOrderTable != null && lastOrderTimestamp != null) {
+          // Verificar si esta información es reciente (últimos 30 minutos)
+          try {
+            final orderTime = DateTime.parse(lastOrderTimestamp);
+            final currentTime = DateTime.now();
+            final timeDifference = currentTime.difference(orderTime);
+
+            if (timeDifference.inMinutes <= 30) {
+              print(
+                '✅ Información de mesa reciente (${timeDifference.inMinutes} min), usando: $lastOrderTable',
+              );
+              return lastOrderTable;
+            } else {
+              print(
+                '⚠️ Información de mesa obsoleta (${timeDifference.inMinutes} min), buscando mesa real',
+              );
+            }
+          } catch (e) {
+            print('❌ Error verificando timestamp de mesa: $e');
+          }
         }
       } catch (e) {
-        print('❌ Error identificando mesa actual: $e');
+        print('❌ Error accediendo a SharedPreferences: $e');
       }
 
-      // 3. FALLBACK: Si no se puede identificar la mesa actual, usar algoritmo de distribución
-      print('🔄 Usando algoritmo de distribución como fallback...');
+      // 🆕 PASO 2: Obtener dispositivos REALMENTE conectados del sistema
+      print('📱 Consultando dispositivos realmente conectados al servidor...');
+      final connectedDevices =
+          await _tableService.getTablesWithConnectionStatus();
+      final activeDevices = connectedDevices.where((d) => d.isActive).toList();
 
-      // Obtener todas las mesas configuradas
-      final tables = await _tableService.getAllTables();
+      print('📊 Dispositivos encontrados:');
+      print('   - Total configurados: ${connectedDevices.length}');
+      print('   - Realmente conectados: ${activeDevices.length}');
 
-      if (tables.isEmpty) {
-        print('⚠️ No hay mesas configuradas en el sistema');
-        return null;
+      for (final device in activeDevices) {
+        print('   ✅ Mesa ${device.tableNumber}: ${device.deviceName}');
       }
 
-      // Usar algoritmo de distribución solo como fallback
-      final tableNumber = _getTableForUser(idPersona, tables);
-
-      if (tableNumber != null) {
-        print(
-          '✅ Usuario $nombreCliente asociado a Mesa $tableNumber (fallback)',
-        );
-        return 'Mesa $tableNumber';
-      } else {
-        print('⚠️ Usuario $nombreCliente no tiene mesa asociada');
-        // Último fallback: usar mesa por defecto o la primera mesa disponible
-        if (tables.isNotEmpty) {
-          final defaultTable = tables.first.tableNumber;
-          print('🔄 Usando mesa por defecto: Mesa $defaultTable');
-          return 'Mesa $defaultTable';
-        }
-        return null;
+      if (activeDevices.isEmpty) {
+        print('⚠️ No hay dispositivos realmente conectados');
+        print('🔄 Usando mesa por defecto: Mesa 12');
+        return 'Mesa 12';
       }
+
+      // 🆕 PASO 3: Asignar mesa basada en dispositivos REALES conectados
+      // Si solo hay un dispositivo conectado, usar esa mesa
+      if (activeDevices.length == 1) {
+        final mesaUnica = activeDevices.first.tableNumber;
+        print('📱 Solo hay un dispositivo conectado: Mesa $mesaUnica');
+        return 'Mesa $mesaUnica';
+      }
+
+      // Si hay múltiples dispositivos, usar distribución consistente basada en ID del pedido
+      final mesaIndex = orderId % activeDevices.length;
+      final mesaAsignada = activeDevices[mesaIndex].tableNumber;
+
+      print(
+        '🎯 Distribución entre ${activeDevices.length} dispositivos conectados:',
+      );
+      print('   - Pedido #$orderId → índice $mesaIndex → Mesa $mesaAsignada');
+      print(
+        '   - Dispositivos activos: ${activeDevices.map((d) => 'Mesa ${d.tableNumber}').join(', ')}',
+      );
+
+      return 'Mesa $mesaAsignada';
     } catch (e) {
       print('❌ Error obteniendo información de mesa para pedido #$orderId: $e');
-      return null;
+      print('🔄 Fallback: Usando mesa por defecto Mesa 12');
+      return 'Mesa 12';
     }
   }
 
-  // 🆕 NUEVO: Método auxiliar para asociar usuarios con mesas
-  int? _getTableForUser(int userId, List<TableInfo> availableTables) {
-    // ESTRATEGIA SIMPLE: Rotar usuarios entre las mesas disponibles
-    // Esto es una simulación sin modificar la base de datos
+  // 🆕 NUEVO: Método para enviar notificación vía servidor WebSocket
+  Future<void> _notifyOrderCompletedViaServer(
+    int orderId,
+    String? mesaInfo,
+    String message,
+  ) async {
+    try {
+      if (mesaInfo == null || !mesaInfo.startsWith('Mesa ')) {
+        print(
+          '⚠️ No se puede enviar notificación: información de mesa inválida ($mesaInfo)',
+        );
+        return;
+      }
 
-    final tableNumbers =
-        availableTables.map((t) => t.tableNumber).toList()..sort();
+      // Extraer número de mesa
+      final tableNumberMatch = RegExp(r'Mesa (\d+)').firstMatch(mesaInfo);
+      if (tableNumberMatch == null) {
+        print('⚠️ No se pudo extraer número de mesa de: $mesaInfo');
+        return;
+      }
 
-    if (tableNumbers.isEmpty) return null;
+      final tableNumber = int.parse(tableNumberMatch.group(1)!);
 
-    // Usar módulo para distribuir usuarios entre las mesas disponibles
-    final index = (userId % tableNumbers.length);
-    final assignedTable = tableNumbers[index];
+      print(
+        '🔔 Enviando notificación via servidor: Pedido #$orderId → Mesa $tableNumber',
+      );
 
-    print(
-      '🎯 Usuario ID $userId → Mesa $assignedTable (algoritmo: $userId % ${tableNumbers.length} = $index)',
-    );
+      final baseUrl = await getBaseUrl;
+      final response = await _post(
+        'notifications/order-completed',
+        body: {
+          'orderId': orderId,
+          'tableNumber': tableNumber,
+          'message': message,
+        },
+      );
 
-    return assignedTable;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          print('✅ Notificación enviada via servidor: ${data['message']}');
+        } else {
+          print('⚠️ Servidor reportó fallo: ${data['message']}');
+        }
+      } else {
+        print(
+          '❌ Error enviando notificación via servidor: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      print('❌ Excepción enviando notificación via servidor: $e');
+    }
   }
 }
 

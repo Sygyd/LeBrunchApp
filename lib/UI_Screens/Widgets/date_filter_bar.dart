@@ -52,7 +52,9 @@ class _DateFilterBarState extends State<DateFilterBar> {
   }
 
   // Cuando un pedido se completa, actualizar si estamos en un filtro relevante
-  void _handleOrderCompleted(int orderId) {
+  void _handleOrderCompleted(Map<String, dynamic> orderData) {
+    final int orderId = orderData['orderId'];
+
     developer.log(
       '📣 DateFilterBar: Recibida notificación de pedido #$orderId completado',
       name: 'DateFilterBar',

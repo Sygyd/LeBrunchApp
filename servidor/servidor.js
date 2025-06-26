@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const http = require('http'); // 🆕 NUEVO: Para WebSockets
+const { Server } = require('socket.io'); // 🆕 NUEVO: Socket.IO para notificaciones
 const pool = require('./db');  // Conexión a PostgreSQL desde db.js
 const userRoutes = require("./login_register");
 const menuRoutes = require("./menu");
@@ -2070,6 +2072,28 @@ app.post('/chat', async (req, res) => {
   }
 
   try {
+    // 🆕 NUEVO: Filtrar comandos administrativos para clientes (doble seguridad)
+    if (!isAdmin && typeof message === 'string') {
+      const trimmedMessage = message.trim().toLowerCase();
+      const adminCommands = ['/status', '/config', '/help', '/ip', '/model', 
+                            '/reports', '/popular', '/debug', '/test', '/reload'];
+      
+      if (trimmedMessage.startsWith('/')) {
+        const command = trimmedMessage.split(' ')[0];
+        if (adminCommands.includes(command)) {
+          console.log(`🚫 Chat [${requestId}]: Comando administrativo bloqueado en servidor para cliente: ${command}`);
+          
+          res.json({
+            text_response: '❌ Lo siento, ese comando no está disponible para clientes. ¡Pero puedo ayudarte con el menú, recomendaciones y pedidos! 😊',
+            action: 'none',
+            requestId,
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+      }
+    }
+
     // 🔥 CAMBIO CLAVE: TODO va directamente a Brunchy para que use su inteligencia mejorada
     // Solo logueamos si es admin para debug, pero ya no interceptamos nada
     if (isAdmin) {
@@ -2792,19 +2816,22 @@ const MESA_CONFIGURATIONS = {
     tableNumber: 12, 
     macAddress: '09:7F:32:DB:00:00', 
     deviceName: 'Samsung SM-A556E Mesa 12', 
-    isActive: true 
+    isActive: true,
+    type: 'staff'
   },
   13: { 
     tableNumber: 13, 
     macAddress: '17:56:BA:18:00:00', 
     deviceName: 'Dispositivo Mesa 13', 
-    isActive: true 
+    isActive: true,
+    type: 'staff'
   },
   14: { 
     tableNumber: 14, 
     macAddress: 'AA:BB:CC:DD:EE:14', 
     deviceName: 'Dispositivo Mesa 14', 
-    isActive: true 
+    isActive: true,
+    type: 'staff'
   }
 };
 
@@ -3128,15 +3155,137 @@ console.log(`     • POST /api/table/register - Registrar dispositivo (admin)`)
 console.log(`     • GET /api/table/all - Listar todas las mesas`);
 console.log(`     • GET /api/table/debug/mac - Debug y testing`);
 
+
+
+// 🆕 NUEVO: Sistema de Notificaciones con WebSockets
+class NotificationManager {
+  constructor() {
+    this.connectedClients = new Map(); // Mapa de dispositivos conectados
+    this.io = null;
+  }
+
+  initialize(server) {
+    this.io = new Server(server, {
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+      }
+    });
+
+    this.io.on('connection', (socket) => {
+      console.log(`🔔 Cliente conectado: ${socket.id}`);
+
+      // Registrar cliente
+      socket.on('register', (data) => {
+        const { tableNumber, deviceMac, userRole, userId } = data;
+        this.connectedClients.set(socket.id, {
+          socket,
+          tableNumber,
+          deviceMac,
+          userRole,
+          userId,
+          connectedAt: new Date()
+        });
+        
+        console.log(`📱 Cliente registrado: Mesa ${tableNumber}, Role ${userRole}, Usuario ${userId}`);
+        console.log(`🔔 Total clientes conectados: ${this.connectedClients.size}`);
+      });
+
+      // Manejar desconexión
+      socket.on('disconnect', () => {
+        this.connectedClients.delete(socket.id);
+        console.log(`👋 Cliente desconectado: ${socket.id}`);
+        console.log(`🔔 Clientes restantes: ${this.connectedClients.size}`);
+      });
+    });
+
+    console.log('🔔 Sistema de notificaciones WebSocket inicializado');
+  }
+
+  // Notificar pedido completado a clientes específicos
+  notifyOrderCompleted(orderId, tableNumber, message) {
+    if (!this.io) {
+      console.warn('⚠️ Sistema de notificaciones no inicializado');
+      return false;
+    }
+
+    let clientsNotified = 0;
+
+    // Buscar clientes conectados en la mesa específica
+    for (const [socketId, client] of this.connectedClients) {
+      if (client.tableNumber == tableNumber && client.userRole == 1) { // Solo clientes
+        try {
+          client.socket.emit('order-completed', {
+            orderId,
+            tableNumber,
+            message,
+            timestamp: new Date().toISOString()
+          });
+          clientsNotified++;
+          console.log(`🔔 Notificación enviada a cliente en Mesa ${tableNumber} (Socket: ${socketId})`);
+        } catch (error) {
+          console.error(`❌ Error enviando notificación a ${socketId}:`, error);
+        }
+      }
+    }
+
+    if (clientsNotified > 0) {
+      console.log(`✅ Notificación enviada a ${clientsNotified} cliente(s) en Mesa ${tableNumber}`);
+      return true;
+    } else {
+      console.warn(`⚠️ No hay clientes conectados en Mesa ${tableNumber}`);
+      return false;
+    }
+  }
+
+  // Obtener estadísticas de conexiones
+  getConnectionStats() {
+    const stats = {
+      totalConnections: this.connectedClients.size,
+      clientsByTable: {},
+      clientsByRole: {},
+      activeClients: 0
+    };
+
+    for (const [socketId, client] of this.connectedClients) {
+      // Por mesa
+      if (!stats.clientsByTable[client.tableNumber]) {
+        stats.clientsByTable[client.tableNumber] = 0;
+      }
+      stats.clientsByTable[client.tableNumber]++;
+
+      // Por rol
+      if (!stats.clientsByRole[client.userRole]) {
+        stats.clientsByRole[client.userRole] = 0;
+      }
+      stats.clientsByRole[client.userRole]++;
+
+      stats.activeClients++;
+    }
+
+    return stats;
+  }
+}
+
+// Instanciar el manager de notificaciones
+const notificationManager = new NotificationManager();
+
+// 🆕 NUEVO: Crear servidor HTTP para WebSockets
+const server = http.createServer(app);
+
+// 🆕 NUEVO: Inicializar sistema de notificaciones
+notificationManager.initialize(server);
+
 // Iniciar el servidor
 console.log('🔄 Intentando iniciar servidor...');
 console.log(`🔍 Variables: ip=${ip}, port=${port}, realServerIP=${realServerIP}`);
-app.listen(port, ip, () => {
+server.listen(port, ip, () => {
   console.log(`🚀 Servidor Brunchy MCP v1.4.1 corriendo en http://${ip}:${port}`);
   console.log(`🌐 IP de escucha: ${ip}:${port} (todas las interfaces)`);
   console.log(`📍 IP real detectada: ${realServerIP}:${port}`);
   console.log(`🔗 URL completa del servidor: http://${realServerIP}:${port}`);
   console.log(`💬 Endpoint de chat principal disponible en http://${realServerIP}:${port}/chat`);
+  console.log(`🔔 Sistema de notificaciones WebSocket activo en ws://${realServerIP}:${port}`);
   console.log(`🤖 Modelo de Gemini por defecto: ${brunchy.currentModel} (estable)`);
   console.log(`🔧 Configuración de modelo disponible en http://${realServerIP}:${port}/mcp/model`);
   console.log(`🔑 Sistema de rotación de claves mejorado con ${keyManager.apiKeys.length} claves API`);
@@ -3150,6 +3299,62 @@ app.listen(port, ip, () => {
 
 // Las rutas de /login_register, /menu, /pedidos se manejan a través de los routers importados.
 // Asegúrate que esos archivos no definan rutas duplicadas que puedan causar conflictos.
+
+// 🆕 NUEVO: Endpoints para notificaciones
+app.post('/notifications/order-completed', (req, res) => {
+  try {
+    const { orderId, tableNumber, message } = req.body;
+    
+    console.log(`🔔 Recibida solicitud de notificación: Pedido #${orderId} → Mesa ${tableNumber}`);
+    
+    if (!orderId || !tableNumber) {
+      return res.status(400).json({
+        success: false,
+        error: 'orderId y tableNumber son requeridos'
+      });
+    }
+
+    const sent = notificationManager.notifyOrderCompleted(
+      orderId, 
+      tableNumber, 
+      message || `Tu pedido #${orderId} está listo`
+    );
+
+    res.json({
+      success: true,
+      sent,
+      message: sent 
+        ? `Notificación enviada a Mesa ${tableNumber}`
+        : `No hay clientes conectados en Mesa ${tableNumber}`,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error enviando notificación:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor'
+    });
+  }
+});
+
+// 🆕 NUEVO: Endpoint para estadísticas de conexiones
+app.get('/notifications/stats', (req, res) => {
+  try {
+    const stats = notificationManager.getConnectionStats();
+    res.json({
+      success: true,
+      stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error obteniendo estadísticas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo estadísticas'
+    });
+  }
+});
 
 // NUEVO: Endpoint para sincronización inicial del frontend
 app.get('/config/sync', (req, res) => {
@@ -3424,5 +3629,7 @@ app.get('/menu-completo-corrected', async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor al obtener el menú.' });
   }
 });
+
+
 
 

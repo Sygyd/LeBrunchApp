@@ -4,6 +4,7 @@ import '../Widgets/background_scaffold.dart';
 import '../Widgets/recommendations_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Api_services/table_identification_service.dart';
+import '../../services/client_notification_service.dart';
 
 class ClientHomeScreen extends StatefulWidget {
   final String userName;
@@ -23,16 +24,33 @@ class ClientHomeScreen extends StatefulWidget {
 
 class _ClientHomeScreenState extends State<ClientHomeScreen> {
   final TableIdentificationService _tableService = TableIdentificationService();
+  final ClientNotificationService _notificationService =
+      ClientNotificationService();
 
   // Estado para la información de la mesa
   TableInfo? _currentTable;
   bool _isLoadingTable = true;
   String? _deviceMac;
 
+  // 🆕 NUEVO: Variable para almacenar el ID del cliente
+  int? _clientId;
+
   @override
   void initState() {
     super.initState();
     _identifyTable();
+    _loadClientId(); // 🆕 NUEVO: Cargar ID del cliente
+    // Inicializar servicio de notificaciones para clientes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notificationService.initialize(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    // Limpiar servicio de notificaciones
+    _notificationService.dispose();
+    super.dispose();
   }
 
   /// Identificar la mesa del dispositivo actual
@@ -42,18 +60,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
         _isLoadingTable = true;
       });
 
-      print('🔍 ClientHomeScreen: Iniciando identificación de mesa...');
-
-      // 🆕 NUEVO: Obtener información completa del dispositivo para debugging
-      final deviceInfo = await _tableService.getDeviceInfo();
-      print('📱 ====== INFORMACIÓN COMPLETA DEL DISPOSITIVO ======');
-      print('📱 Device ID: ${deviceInfo['deviceId']}');
-      print('📱 Device Name: ${deviceInfo['deviceName']}');
-      print('📱 MAC generada por la app: ${deviceInfo['macAddress']}');
-      print('📱 Plataforma: ${deviceInfo['platform']}');
-      print('📱 ===============================================');
-
-      // Primero obtener la MAC del dispositivo para debugging
+      // Obtener la MAC del dispositivo
       final mac = await _tableService.getCurrentDeviceMac();
 
       // Intentar identificar la mesa
@@ -65,19 +72,6 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
           _deviceMac = mac;
           _isLoadingTable = false;
         });
-
-        if (tableInfo != null) {
-          print(
-            '✅ ClientHomeScreen: Mesa identificada - Mesa ${tableInfo.tableNumber}',
-          );
-        } else {
-          print(
-            '⚠️ ClientHomeScreen: Dispositivo no registrado en ninguna mesa',
-          );
-          print('   - MAC del dispositivo: $mac');
-          print('🔧 PARA AGREGAR ESTE DISPOSITIVO:');
-          print('   Agregar esta MAC a connectedMacs: $mac');
-        }
       }
     } catch (e) {
       print('❌ ClientHomeScreen: Error identificando mesa: $e');
@@ -89,13 +83,19 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
     }
   }
 
-  Future<int?> _getCurrentUserId() async {
+  /// 🆕 NUEVO: Cargar el ID del cliente desde SharedPreferences
+  Future<void> _loadClientId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt('user_id');
+      final userId = prefs.getInt('user_id');
+      if (mounted) {
+        setState(() {
+          _clientId = userId;
+        });
+      }
+      print('🔍 ClientHomeScreen: ID del cliente cargado: $_clientId');
     } catch (e) {
-      print('Error al obtener ID del usuario: $e');
-      return null;
+      print('❌ ClientHomeScreen: Error al cargar ID del cliente: $e');
     }
   }
 
@@ -169,27 +169,65 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
                 // Añadir tarjeta de Brunchy
                 _buildBrunchyCard(context, theme),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-                // Widget de recomendaciones personalizadas
-                FutureBuilder<int?>(
-                  future: _getCurrentUserId(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasData && snapshot.data != null) {
-                      return Column(
+                // Añadir tarjeta de Recomendaciones
+                if (_clientId != null)
+                  RecommendationsWidget(clientId: _clientId!)
+                else
+                  Card(
+                    elevation: 2,
+                    shadowColor: theme.colorScheme.shadow.withOpacity(0.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
                         children: [
-                          RecommendationsWidget(clientId: snapshot.data!),
-                          const SizedBox(height: 24),
+                          CircleAvatar(
+                            backgroundColor: theme.colorScheme.primary
+                                .withOpacity(0.2),
+                            radius: 24,
+                            child: Icon(
+                              Icons.restaurant_menu,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Cargando Recomendaciones',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'LightHouse',
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Estamos preparando sugerencias personalizadas para ti',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.7),
+                                    fontFamily: 'MADE TOMMY',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              theme.colorScheme.primary,
+                            ),
+                          ),
                         ],
-                      );
-                    } else {
-                      // Si no hay usuario logueado, no mostrar recomendaciones
-                      return const SizedBox(height: 8);
-                    }
-                  },
-                ),
-
-                // Resto del contenido...
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

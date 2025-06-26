@@ -30,12 +30,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     _startAutoRefresh();
 
     _orderCompletedSubscription = _statusService.onOrderCompleted.listen((
-      orderId,
+      orderData,
     ) {
       print(
-        '📣 AdminOrdersScreen: Notificación recibida - Pedido #$orderId completado',
+        '📣 AdminOrdersScreen: Notificación recibida - Pedido #${orderData['orderId']} completado',
       );
-      _handleOrderCompleted(orderId);
+      _handleOrderCompleted(orderData);
     });
   }
 
@@ -46,12 +46,43 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     super.dispose();
   }
 
-  void _handleOrderCompleted(int orderId) {
+  void _handleOrderCompleted(Map<String, dynamic> orderData) {
+    final int orderId = orderData['orderId'];
+    final String? mesa = orderData['mesa'];
+
     if (mounted) {
       setState(() {
         _pendingOrders.removeWhere((order) => order['idpedido'] == orderId);
         _expandedOrders.remove(orderId);
       });
+
+      // Mostrar mensaje informativo con información de mesa si está disponible
+      final displayMessage =
+          mesa != null
+              ? 'Pedido #$orderId completado automáticamente, enviando a $mesa'
+              : 'Pedido #$orderId completado automáticamente';
+
+      final theme = Theme.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  displayMessage,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
@@ -163,11 +194,14 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         for (int orderId in ordersToComplete) {
           orders.removeWhere((order) => order['idpedido'] == orderId);
 
-          _ordersService.updateOrderStatus(orderId, 'completado').then((
-            success,
+          // 🆕 NUEVO: Usar checkAndUpdateOrderCompletion para obtener info de mesa
+          _ordersService.checkAndUpdateOrderCompletion(orderId).then((
+            completionResult,
           ) {
+            final success = completionResult['success'] ?? false;
             if (success) {
               print('✅ Pedido #$orderId completado automáticamente');
+              // 🔇 NO mostrar SnackBar aquí - el listener _handleOrderCompleted ya se encarga
             } else {
               print('❌ Error al completar automáticamente el pedido #$orderId');
               if (mounted) {
@@ -478,102 +512,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _updateOrderStatus(int orderId, String newStatus) async {
     try {
-      if (newStatus.toLowerCase() == 'completado') {
-        final orderIndex = _pendingOrders.indexWhere(
-          (order) => order['idpedido'] == orderId,
-        );
-        if (orderIndex >= 0) {
-          final order = _pendingOrders[orderIndex];
-          final items = List<Map<String, dynamic>>.from(order['items'] ?? []);
-
-          bool hayComida = false;
-          bool hayBebida = false;
-          bool todosItemsComidaCompletados = true;
-          bool todosItemsBebidaCompletados = true;
-
-          for (var item in items) {
-            final tipo = item['tipo']?.toString().toLowerCase() ?? '';
-
-            if (tipo == 'comida') {
-              hayComida = true;
-              if (!(item['completado_cocinero'] ?? false)) {
-                todosItemsComidaCompletados = false;
-              }
-            } else if (tipo == 'bebida') {
-              hayBebida = true;
-              if (!(item['completado_barista'] ?? false)) {
-                todosItemsBebidaCompletados = false;
-              }
-            }
-          }
-
-          bool debeCompletarse = false;
-          String mensajeError = '';
-
-          if (hayComida && hayBebida) {
-            if (todosItemsComidaCompletados && todosItemsBebidaCompletados) {
-              debeCompletarse = true;
-            } else {
-              if (!todosItemsComidaCompletados &&
-                  !todosItemsBebidaCompletados) {
-                mensajeError =
-                    'No se puede completar: Faltan ítems de comida y bebida';
-              } else if (!todosItemsComidaCompletados) {
-                mensajeError = 'No se puede completar: Faltan ítems de comida';
-              } else {
-                mensajeError = 'No se puede completar: Faltan ítems de bebida';
-              }
-            }
-          } else if (hayComida && !hayBebida) {
-            debeCompletarse = todosItemsComidaCompletados;
-            if (!debeCompletarse) {
-              mensajeError = 'No se puede completar: Faltan ítems de comida';
-            }
-          } else if (!hayComida && hayBebida) {
-            debeCompletarse = todosItemsBebidaCompletados;
-            if (!debeCompletarse) {
-              mensajeError = 'No se puede completar: Faltan ítems de bebida';
-            }
-          }
-
-          if (!debeCompletarse) {
-            if (mounted) {
-              final theme = Theme.of(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: theme.colorScheme.onErrorContainer,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          mensajeError,
-                          style: TextStyle(
-                            fontFamily: 'MADE TOMMY',
-                            color: theme.colorScheme.onErrorContainer,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  backgroundColor: theme.colorScheme.errorContainer,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                  margin: const EdgeInsets.all(8),
-                  elevation: 4,
-                ),
-              );
-            }
-            return;
-          }
-        }
-      }
-
       if (mounted) {
         final theme = Theme.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -612,16 +550,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
       // 🆕 NUEVO: Para pedidos completados, usar checkAndUpdateOrderCompletion para obtener info de mesa
       bool result = false;
-      String? mesaInfo;
 
       if (newStatus.toLowerCase() == 'completado') {
         try {
-          print(
-            '🎯 AdminOrdersScreen: Obteniendo información de mesa para pedido #$orderId',
-          );
-          mesaInfo = await _ordersService.getTableForOrder(orderId);
-          print('🎯 AdminOrdersScreen: mesaInfo obtenida: $mesaInfo');
-
           print(
             '🎯 AdminOrdersScreen: Verificando y completando pedido #$orderId',
           );
@@ -631,64 +562,71 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
           result = completionResult['success'] ?? false;
           print('🎯 AdminOrdersScreen: result: $result');
+
+          // 🔇 ELIMINADO: SnackBar duplicado - el listener _handleOrderCompleted ya se encarga
+          // El OrderStatusService notificará automáticamente y _handleOrderCompleted mostrará el SnackBar
         } catch (e) {
           print('❌ AdminOrdersScreen: Error al completar pedido: $e');
           result = false;
+
+          // Solo mostrar SnackBar de error en caso de excepción
+          if (mounted) {
+            final theme = Theme.of(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: theme.colorScheme.onError),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Error al completar el pedido #$orderId: $e',
+                        style: TextStyle(
+                          fontFamily: 'MADE TOMMY',
+                          color: theme.colorScheme.onError,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: theme.colorScheme.error,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(8),
+                elevation: 4,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
         }
       } else {
         // Para otros estados (cancelado), usar el método directo
         result = await _ordersService.updateOrderStatus(orderId, newStatus);
-      }
 
-      if (result) {
-        setState(() {
-          _pendingOrders.removeWhere((order) => order['idpedido'] == orderId);
-          _expandedOrders.remove(orderId);
-        });
-
-        if (mounted) {
+        // Solo mostrar SnackBar para estados NO completados (ej: cancelado)
+        if (result && mounted) {
           final theme = Theme.of(context);
-          final isCompletado = newStatus.toLowerCase() == 'completado';
-          final backgroundColor =
-              isCompletado
-                  ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.errorContainer;
-          final textColor =
-              isCompletado
-                  ? theme.colorScheme.onPrimaryContainer
-                  : theme.colorScheme.onErrorContainer;
-          final icon =
-              isCompletado ? Icons.check_circle_outline : Icons.cancel_outlined;
-
-          // 🆕 NUEVO: Mensaje personalizado con información de mesa para pedidos completados
-          String mensaje;
-          if (isCompletado && mesaInfo != null && mesaInfo.isNotEmpty) {
-            mensaje = 'Pedido #$orderId completado, enviando a $mesaInfo';
-          } else if (isCompletado) {
-            mensaje = 'Pedido #$orderId completado con éxito';
-          } else {
-            mensaje = 'Pedido #$orderId cancelado';
-          }
-
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
                 children: [
-                  Icon(icon, color: textColor),
+                  const Icon(Icons.cancel_outlined, color: Colors.white),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      mensaje,
-                      style: TextStyle(
+                      'Pedido #$orderId cancelado',
+                      style: const TextStyle(
                         fontFamily: 'MADE TOMMY',
-                        color: textColor,
+                        color: Colors.white,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
                 ],
               ),
-              backgroundColor: backgroundColor,
+              backgroundColor: theme.colorScheme.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -698,9 +636,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               duration: const Duration(seconds: 3),
             ),
           );
-        }
-      } else {
-        if (mounted) {
+        } else if (!result && mounted) {
           final theme = Theme.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -710,7 +646,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Error al actualizar el estado del pedido #$orderId',
+                      'Error al cambiar estado del pedido #$orderId',
                       style: TextStyle(
                         fontFamily: 'MADE TOMMY',
                         color: theme.colorScheme.onError,
@@ -730,6 +666,14 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             ),
           );
         }
+      }
+
+      // Actualizar estado local para completados exitosos (sin mostrar SnackBar aquí)
+      if (result && mounted) {
+        setState(() {
+          _pendingOrders.removeWhere((order) => order['idpedido'] == orderId);
+          _expandedOrders.remove(orderId);
+        });
       }
 
       _loadPendingOrders();

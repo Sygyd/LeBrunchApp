@@ -98,6 +98,42 @@ class GeminiService extends ChangeNotifier {
     print('🆔 GeminiService: SessionId: "$sessionId"');
     print('👤 GeminiService: ClientId: ${clientId ?? "No proporcionado"}');
 
+    // 🆕 NUEVO: Filtrar comandos administrativos para clientes
+    if (clientId != null) {
+      // Solo filtrar si hay clientId (es decir, es un cliente)
+      final trimmedMessage = message.trim().toLowerCase();
+
+      // Lista de comandos administrativos prohibidos para clientes
+      const adminCommands = [
+        '/status',
+        '/config',
+        '/help',
+        '/ip',
+        '/model',
+        '/reports',
+        '/popular',
+        '/debug',
+        '/test',
+        '/reload',
+      ];
+
+      // Verificar si el mensaje es un comando administrativo
+      if (trimmedMessage.startsWith('/')) {
+        final command = trimmedMessage.split(' ')[0];
+        if (adminCommands.contains(command)) {
+          print(
+            '🚫 GeminiService: Comando administrativo bloqueado para cliente: $command',
+          );
+
+          return {
+            'text_response':
+                '❌ Lo siento, ese comando no está disponible para clientes. ¡Pero puedo ayudarte con el menú, recomendaciones y pedidos! 😊',
+            'action': 'none',
+          };
+        }
+      }
+    }
+
     final responseData = await _geminiApiClient.generateContent(
       message,
       sessionId: sessionId,

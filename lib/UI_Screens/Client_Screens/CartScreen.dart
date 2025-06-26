@@ -13,6 +13,7 @@ import '../../services/cart_event_bus.dart';
 import 'dart:convert';
 import '../../services/user_preferences_service.dart';
 import '../../Api_services/pedidos/orders_service.dart'; // 🆕 NUEVO: Importar OrdersService
+import '../../services/client_notification_service.dart'; // 🆕 NUEVO: Importar servicio de notificaciones
 
 class CartScreen extends StatefulWidget {
   final bool isEmbedded;
@@ -32,6 +33,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       UserPreferencesService();
   final OrdersService _ordersService =
       OrdersService(); // 🆕 NUEVO: Añadir OrdersService
+  final ClientNotificationService _notificationService =
+      ClientNotificationService(); // 🆕 NUEVO: Servicio de notificaciones
   // Lista modificable de items del carrito
   List<CartItem> _cartItems = [];
   List<Map<String, dynamic>> _recommendedDishes = [];
@@ -68,6 +71,8 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     // Inicialización ligera en background
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       print('📱 CartScreen: addPostFrameCallback ejecutándose');
+      // 🆕 NUEVO: Inicializar notificaciones
+      _notificationService.updateContext(context);
       await _initializeCartOptimized();
       _checkChatSync();
       // Verificar si llegamos desde ChatScreen (importante para la integración con chat)

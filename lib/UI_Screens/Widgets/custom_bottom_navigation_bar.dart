@@ -26,6 +26,8 @@ import '../../Api_services/cart_service.dart';
 import '../../services/cart_event_bus.dart';
 import '../../Api_services/network_config_service.dart';
 import '../../Api_services/global_config_service.dart'; // NUEVO: Importar GlobalConfigService
+import '../../services/client_notification_service.dart'; // 🆕 NUEVO: Servicio de notificaciones
+import '../../main.dart'; // 🆕 NUEVO: Para usar servicio global y función de inicialización
 import 'background_scaffold.dart';
 
 // PlaceholderScreen para reemplazar pantallas eliminadas o no implementadas
@@ -92,6 +94,10 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
   // CartService para obtener la cantidad de elementos
   final CartService _cartService = CartService();
+
+  // 🆕 NUEVO: Servicio de notificaciones para clientes
+  final ClientNotificationService _notificationService =
+      ClientNotificationService();
 
   // Usar ValueNotifier para el contador del carrito - esto permite actualizaciones más eficientes
   final ValueNotifier<int> _cartItemCountNotifier = ValueNotifier<int>(0);
@@ -161,6 +167,9 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
 
     // Actualizar el contador inmediatamente
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 🆕 MEJORADO: Inicializar notificaciones para clientes de manera robusta
+      await _initializeClientNotificationsIfNeeded();
+
       await _updateCartItemCount();
 
       // Verificar actualizaciones desde ChatScreen inmediatamente
@@ -197,6 +206,14 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         !_initializationCompleter!.isCompleted) {
       _initializationCompleter!.complete();
     }
+
+    // 🆕 COMENTADO: NO limpiar servicio de notificaciones para evitar perder suscripciones
+    // El servicio debe mantenerse activo durante toda la sesión del cliente
+    /*
+    if (_userRole == 1) {
+      _notificationService.dispose();
+    }
+    */
 
     print('⚡ BottomNav: Limpieza completa - eventos, timers y servicios');
 
@@ -286,6 +303,29 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         Future.delayed(Duration.zero, () async {
           if (mounted) {
             try {
+              // 🆕 NUEVO: Actualizar contexto de notificaciones para clientes
+              if (_userRole == 1) {
+                print(
+                  '🔔 BottomNav: Actualizando contexto de notificaciones para navegación $fromIndex → $index',
+                );
+                print(
+                  '🔔 BottomNav: Context disponible para actualización: ${context != null}',
+                );
+                print(
+                  '🔔 BottomNav: Context mounted para actualización: ${context.mounted}',
+                );
+
+                // 🆕 USAR SERVICIO GLOBAL para mantener notificaciones activas
+                globalNotificationService.updateContext(context);
+
+                // 🆕 TAMBIÉN re-inicializar para asegurar suscripción activa
+                globalNotificationService.initialize(context);
+
+                print(
+                  '🔔 BottomNav: Contexto de notificaciones GLOBAL actualizado y re-inicializado',
+                );
+              }
+
               // Actualizar contadores pero sin forzar múltiples sincronizaciones
               final cartService = CartService();
               await cartService.registerScreenNavigation(fromIndex, index);
@@ -2124,6 +2164,15 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
         );
         _servicesInitialized = true;
       }
+    }
+  }
+
+  // NUEVO: Método para inicializar notificaciones para clientes de manera robusta
+  Future<void> _initializeClientNotificationsIfNeeded() async {
+    if (_userRole == 1) {
+      // Usar servicio global para clientes
+      globalNotificationService.initialize(context);
+      await initializeClientNotifications(context);
     }
   }
 }

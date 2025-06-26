@@ -10,10 +10,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'UI_Screens/Widgets/routes.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/notification_service.dart';
+import 'services/client_notification_service.dart';
+import 'services/user_preferences_service.dart';
 
 // ScaffoldMessengerState global para mostrar SnackBars desde cualquier parte
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
+// 🆕 NUEVO: ClientNotificationService global
+final ClientNotificationService globalNotificationService =
+    ClientNotificationService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -382,5 +388,20 @@ Future<void> _migrateObsoleteModelConfiguration() async {
     }
   } catch (e) {
     print('⚠️ Error en migración de modelo: $e');
+  }
+}
+
+/// Función para inicializar notificaciones de cliente de manera global
+Future<void> initializeClientNotifications(BuildContext context) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final userRole = prefs.getInt('user_role');
+
+    // Solo inicializar notificaciones para clientes (rol 1)
+    if (userRole == 1) {
+      globalNotificationService.initialize(context);
+    }
+  } catch (e) {
+    print('❌ Error al inicializar notificaciones de cliente: $e');
   }
 }

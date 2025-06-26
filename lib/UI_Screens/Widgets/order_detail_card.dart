@@ -793,6 +793,7 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     ThemeData theme,
   ) {
     final isCocinero = widget.role == 'cook';
+    final estado = widget.order['estado'] ?? 'pendiente';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -806,10 +807,12 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
         ),
         const SizedBox(height: 8),
         ...items.map((item) {
+          // 🆕 MEJORADO: Si el pedido está completado, todos los ítems se consideran completados
           final bool isCompleted =
-              isCocinero
+              estado.toLowerCase() == 'completado' ||
+              (isCocinero
                   ? (item['completado_cocinero'] ?? false)
-                  : (item['completado_barista'] ?? false);
+                  : (item['completado_barista'] ?? false));
 
           return Card(
             color: theme.colorScheme.surface,
@@ -863,18 +866,11 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         ],
                       ),
                     ),
-                    // Checkbox para marcar como completado
-                    Checkbox(
-                      value: isCompleted,
-                      onChanged:
-                          isCompleted
-                              ? null // Desactivar cambio si ya está completado
-                              : (value) {
-                                if (value != null && value == true) {
-                                  _updateItemStatus(item['idplato'], true);
-                                }
-                              },
-                      activeColor: Colors.green,
+                    // Checkbox para marcar como completado O ícono de completado para historial
+                    _buildCompletionIndicator(
+                      isCompleted,
+                      item,
+                      showForAllRoles: true,
                     ),
                   ],
                 ),
@@ -886,11 +882,75 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
     );
   }
 
+  // 🆕 NUEVO: Widget para mostrar indicador de completado (checkbox o ícono)
+  Widget _buildCompletionIndicator(
+    bool isCompleted,
+    Map<String, dynamic> item, {
+    bool showForAllRoles =
+        false, // 🆕 NUEVO: Parámetro para controlar visibilidad
+  }) {
+    final bool isHistoryMode = widget.onStatusChange == null;
+
+    // Determinar si debe mostrarse este indicador
+    final bool shouldShow = showForAllRoles || widget.role == 'admin';
+    if (!shouldShow) {
+      return const SizedBox.shrink(); // No mostrar nada
+    }
+
+    if (isHistoryMode) {
+      // En modo historial, mostrar ícono de estado
+      if (isCompleted) {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.green.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.green, width: 1),
+          ),
+          child: Icon(Icons.check, color: Colors.green, size: 20),
+        );
+      } else {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey, width: 1),
+          ),
+          child: Icon(Icons.pending, color: Colors.grey, size: 20),
+        );
+      }
+    } else {
+      // En modo activo, mostrar checkbox funcional
+      return Checkbox(
+        value: isCompleted,
+        onChanged:
+            isCompleted
+                ? null // Desactivar cambio si ya está completado
+                : (value) {
+                  if (value != null && value == true) {
+                    final platoId = item['idplato'];
+                    if (platoId != null && platoId is int) {
+                      _updateItemStatus(platoId, true);
+                    } else {
+                      debugPrint(
+                        '❌ Error: idplato es null o no es un entero: $platoId',
+                      );
+                    }
+                  }
+                },
+        activeColor: Colors.green,
+      );
+    }
+  }
+
   // Lista completa para administradores
   Widget _buildFullItemsList(
     List<Map<String, dynamic>> items,
     ThemeData theme,
   ) {
+    final estado = widget.order['estado'] ?? 'pendiente';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -905,10 +965,12 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
         ...items.map((item) {
           final tipo = item['tipo']?.toString().toLowerCase() ?? '';
           final bool isComida = tipo == 'comida';
+          // 🆕 MEJORADO: Si el pedido está completado, todos los ítems se consideran completados
           final bool isCompleted =
-              isComida
+              estado.toLowerCase() == 'completado' ||
+              (isComida
                   ? (item['completado_cocinero'] ?? false)
-                  : (item['completado_barista'] ?? false);
+                  : (item['completado_barista'] ?? false));
 
           return Card(
             color: theme.colorScheme.surface,
@@ -983,28 +1045,12 @@ class _OrderDetailCardState extends State<OrderDetailCard> {
                         ],
                       ),
                     ),
-                    // Checkbox para marcar como completado
-                    if (widget.role ==
-                        'admin') // Solo mostrar checkbox si es admin
-                      Checkbox(
-                        value: isCompleted,
-                        onChanged:
-                            isCompleted
-                                ? null // Desactivar cambio si ya está completado
-                                : (value) {
-                                  if (value != null && value == true) {
-                                    final platoId = item['idplato'];
-                                    if (platoId != null && platoId is int) {
-                                      _updateItemStatus(platoId, true);
-                                    } else {
-                                      debugPrint(
-                                        '❌ Error: idplato es null o no es un entero: $platoId',
-                                      );
-                                    }
-                                  }
-                                },
-                        activeColor: Colors.green,
-                      ),
+                    // Checkbox para marcar como completado O ícono de completado para historial
+                    _buildCompletionIndicator(
+                      isCompleted,
+                      item,
+                      showForAllRoles: true,
+                    ),
                   ],
                 ),
               ),

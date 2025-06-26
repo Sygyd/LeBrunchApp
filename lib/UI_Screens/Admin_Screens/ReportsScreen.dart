@@ -664,20 +664,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               _buildDistributionSection(theme),
                               const SizedBox(height: 16),
                               ElevatedButton.icon(
-                                onPressed: _navigateToOrderHistory,
-                                icon: const Icon(Icons.history),
-                                label: const Text('Ver historial de pedidos'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: theme.colorScheme.primary,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 48),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
                                 onPressed: _generateAndDownloadPDF,
                                 icon: const Icon(Icons.download),
                                 label: const Text('Descargar reporte'),
@@ -710,21 +696,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     ),
                                   ),
                                 ),
-                              // 🔄 NUEVO: Botón de información del sistema
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
-                                onPressed: () => _showSystemInfoDialog(context),
-                                icon: const Icon(Icons.info_outline),
-                                label: const Text('Información del Sistema'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 48),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
                         ),

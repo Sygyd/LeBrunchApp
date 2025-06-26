@@ -3,9 +3,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/cart_item.dart';
 import '../network_config_service.dart';
+import '../table_identification_service.dart';
 
 class CreateOrderService {
   final String baseUrl = NetworkConfigService().baseUrl;
+  final TableIdentificationService _tableService = TableIdentificationService();
 
   /// Crear un nuevo pedido en la base de datos
   Future<Map<String, dynamic>> createOrder(List<CartItem> items) async {
@@ -21,10 +23,55 @@ class CreateOrderService {
       print('🔍 Creando pedido para usuario ID: $userId');
       print('🔍 Número de items en el carrito: ${items.length}');
 
+      // 🆕 NUEVO: Identificar la mesa del dispositivo donde se origina el pedido
+      String? mesaDelDispositivo;
+      try {
+        print(
+          '📱 Identificando mesa del dispositivo donde se crea el pedido...',
+        );
+        final tableInfo = await _tableService.identifyTable();
+        if (tableInfo != null) {
+          mesaDelDispositivo = 'Mesa ${tableInfo.tableNumber}';
+          print('✅ Pedido originado desde: $mesaDelDispositivo');
+          print(
+            '📋 Información del dispositivo: ${tableInfo.deviceName} (MAC: ${tableInfo.macAddress})',
+          );
+
+          // 🔄 LIMPIAR información de pedidos anteriores antes de guardar la nueva
+          await prefs.remove('last_order_table');
+          await prefs.remove('last_order_table_number');
+
+          // Guardar en SharedPreferences para uso posterior
+          await prefs.setString('last_order_table', mesaDelDispositivo);
+          await prefs.setInt('last_order_table_number', tableInfo.tableNumber);
+          await prefs.setString(
+            'last_order_timestamp',
+            DateTime.now().toIso8601String(),
+          );
+          print('💾 Mesa guardada en SharedPreferences para referencia futura');
+          print(
+            '💾 Datos guardados: Mesa ${tableInfo.tableNumber} - $mesaDelDispositivo',
+          );
+        } else {
+          print('⚠️ No se pudo identificar mesa del dispositivo');
+          // Limpiar datos obsoletos si no hay mesa identificada
+          await prefs.remove('last_order_table');
+          await prefs.remove('last_order_table_number');
+          await prefs.remove('last_order_timestamp');
+        }
+      } catch (e) {
+        print('❌ Error identificando mesa del dispositivo: $e');
+        // En caso de error, también limpiar datos obsoletos
+        await prefs.remove('last_order_table');
+        await prefs.remove('last_order_table_number');
+        await prefs.remove('last_order_timestamp');
+      }
+
       // Preparar los datos del pedido
       final orderData = {
         'idpersona': userId,
         'estado': 'pendiente',
+        if (mesaDelDispositivo != null) 'mesa_origen': mesaDelDispositivo,
         'items':
             items.map((item) {
               // Manejar IDs únicos que pueden tener formato "ID_HASH" para items con notas
