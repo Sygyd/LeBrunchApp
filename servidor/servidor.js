@@ -2828,8 +2828,8 @@ const MESA_CONFIGURATIONS = {
   },
   14: { 
     tableNumber: 14, 
-    macAddress: 'AA:BB:CC:DD:EE:14', 
-    deviceName: 'Dispositivo Mesa 14', 
+    macAddress: '39:39:DD:61:00:00', 
+    deviceName: 'Redmi 220733SL Mesa 14', 
     isActive: true,
     type: 'staff'
   }

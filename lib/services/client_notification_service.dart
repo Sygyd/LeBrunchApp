@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../Api_services/table_identification_service.dart';
+import '../config.dart';
 
 /// Servicio de notificaciones específico para clientes
 /// Se suscribe al OrderStatusService Y al servidor WebSocket para recibir notificaciones cuando pedidos están listos
@@ -111,7 +112,10 @@ class ClientNotificationService {
       // Verificar realmente si el pedido pertenece al usuario
       try {
         final prefs = await SharedPreferences.getInstance();
-        final serverIp = prefs.getString('serverIp') ?? '192.168.1.85';
+        final serverIp = prefs.getString('serverIp') ?? 
+                        prefs.getString('network_server_ip') ?? 
+                        prefs.getString('global_server_ip') ?? 
+                        AppConfig.serverIp;
         final url = Uri.parse('http://$serverIp:3000/db/query');
 
         final query = '''
@@ -322,9 +326,13 @@ class ClientNotificationService {
         _currentDeviceMac = 'unknown';
       }
 
-      // Obtener IP del servidor
+      // Obtener IP del servidor desde AppConfig
       final prefs = await SharedPreferences.getInstance();
-      final serverIp = prefs.getString('serverIp') ?? '192.168.1.85';
+      final serverIp =
+          prefs.getString('serverIp') ??
+          prefs.getString('network_server_ip') ??
+          prefs.getString('global_server_ip') ??
+          AppConfig.serverIp;
       final serverUrl = 'http://$serverIp:3000';
 
       // Limpiar socket anterior si existe

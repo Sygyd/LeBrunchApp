@@ -2,7 +2,7 @@
 // ================================
 // IP POR DEFECTO (se puede cambiar desde el modal de configuración):
 
-const String DEFAULT_SERVER_IP = "192.168.1.85"; // 👈 IP por defecto
+const String DEFAULT_SERVER_IP = "192.168.0.128"; // 👈 IP por defecto
 const String SERVER_PORT = "3000";
 
 // ================================
